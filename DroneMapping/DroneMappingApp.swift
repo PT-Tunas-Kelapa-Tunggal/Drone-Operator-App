@@ -9,9 +9,17 @@ import SwiftUI
 
 @main
 struct DroneMappingApp: App {
+    @StateObject private var model: CameraViewModel
+    private let link: LocalLink
+    init() {
+        let dependencies = CameraDependencies()
+        link = dependencies.link
+        _model = StateObject(wrappedValue: dependencies.viewModel)
+    }
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(model: model, link: link)
+                .preferredColorScheme(.dark)
         }
     }
 }

@@ -1,0 +1,10 @@
+
+# Local build and Python validation artifacts
+.DS_Store
+DerivedData/
+.build/
+__pycache__/
+*.pyc
+
+# Xcode user state
+xcuserdata/
