@@ -77,6 +77,11 @@ extension ControlViewModel {
         FileManager.default.fileExists(
             atPath: link.store.directory(id).appendingPathComponent("mission.json").path)
     }
+    func refreshLocalDatasets() {
+        let local = link.store.records()
+        records = (records.filter { remote in !local.contains(where: { $0.id == remote.id }) } + local)
+            .sorted { $0.createdAt > $1.createdAt }
+    }
     func openDatasetFolder(missionID: UUID? = nil) {
         let folder = missionID.map { link.store.directory($0) } ?? link.store.root
         do {

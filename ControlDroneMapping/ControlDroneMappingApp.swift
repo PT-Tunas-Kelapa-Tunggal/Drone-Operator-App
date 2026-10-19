@@ -16,6 +16,22 @@ struct ControlDroneMappingApp: App {
     @StateObject private var farms: FarmAreaViewModel
 
     init() {
+        // Exercise the actual signed app and inherited helper sandbox without opening a window.
+        let checkFeatures = ProcessInfo.processInfo.arguments.contains("--check-orthomosaic-features")
+        if checkFeatures || ProcessInfo.processInfo.arguments.contains("--check-orthomosaic-engine") {
+            do {
+                guard let runtime = BundledOrthomosaicEngine.embeddedDirectory,
+                    let worker = Bundle.main.url(forResource: "orthomosaic_worker", withExtension: "py")
+                else { throw MappingError.invalid("Engine bawaan belum disertakan dalam build.") }
+                let message = try LocalOrthomosaicProcessor(worker: worker).check(
+                    runtime: runtime, cancellation: OrthomosaicCancellation(), features: checkFeatures)
+                print(message)
+                exit(0)
+            } catch {
+                FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
+                exit(1)
+            }
+        }
         let demo =
             ProcessInfo.processInfo.arguments.contains("--demo")
             || Bundle.main.object(forInfoDictionaryKey: "DroneControlDemoMode") as? Bool == true

@@ -28,4 +28,17 @@ struct ControlDependencies {
     {
         WebODMExportViewModel(record: record, service: WebODMExporter(store: store))
     }
+    static func orthomosaicViewModel(store: any DatasetRepository, demo: Bool) -> OrthomosaicViewModel {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("DroneControl")
+        return OrthomosaicViewModel(
+            repository: FileOrthomosaicRepository(
+                root: support.appendingPathComponent(demo ? "DemoOrthomosaics" : "Orthomosaics")),
+            service: LocalOrthomosaicProcessor(
+                worker: Bundle.main.url(forResource: "orthomosaic_worker", withExtension: "py")
+                    ?? support.appendingPathComponent("missing-orthomosaic-worker.py")),
+            datasets: store, runtimeAccess: OrthomosaicRuntimeAccess(defaults: .standard),
+            installer: LocalOrthomosaicEngineInstaller(
+                directory: LocalOrthomosaicEngineInstaller.defaultDirectory))
+    }
 }

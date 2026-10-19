@@ -8,6 +8,7 @@ struct ContentView: View {
     @ObservedObject var farms: FarmAreaViewModel
     @ObservedObject var location: OperatorLocationViewModel
     @ObservedObject var planner: FlightPlannerViewModel
+    @StateObject private var orthomosaic: OrthomosaicViewModel
     @State private var showingPlanner = false
     @State private var plannerMissionID: UUID?
     @State private var plannerFarm: FarmArea?
@@ -26,6 +27,8 @@ struct ContentView: View {
         self.farms = farms
         self.location = location
         self.planner = planner
+        _orthomosaic = StateObject(
+            wrappedValue: ControlDependencies.orthomosaicViewModel(store: link.store, demo: model.isDemo))
     }
     private func openPlanner(farm: FarmArea? = nil) {
         let mission = model.hasMissionDetail ? model.selectedMission : nil
@@ -85,7 +88,10 @@ struct ContentView: View {
                                 case .settings:
                                     AppSettingsView(model: model)
                                 case .datasets:
-                                    DatasetListView(model: model, link: link, search: search) {
+                                    DatasetListView(
+                                        model: model, link: link, processing: orthomosaic, search: search,
+                                        resetSearch: { search = "" }
+                                    ) {
                                         exportMission = $0
                                     }
                                 case .mission:
@@ -113,6 +119,9 @@ struct ContentView: View {
         }
         .sheet(item: $exportMission) { record in
             WebODMExportView(model: ControlDependencies.exportViewModel(record: record, store: link.store))
+        }
+        .sheet(isPresented: $orthomosaic.showingEditor) {
+            OrthomosaicView(model: orthomosaic)
         }
         .sheet(isPresented: $showingPlanner) {
             FlightPlannerView(

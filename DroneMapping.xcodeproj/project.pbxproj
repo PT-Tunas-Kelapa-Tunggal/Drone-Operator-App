@@ -6,7 +6,26 @@
 	objectVersion = 110;
 	objects = {
 
+/* Begin PBXBuildFile section */
+        ABC000000000000000000011 /* OrthomosaicPython in Copy Helpers */ = {isa = PBXBuildFile; fileRef = ABC000000000000000000013; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+        ABC000000000000000000012 /* OrthomosaicEngine in Resources */ = {isa = PBXBuildFile; fileRef = ABC000000000000000000014; };
+/* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+        ABC000000000000000000010 /* Embed orthomosaic engine */ = {
+            isa = PBXCopyFilesBuildPhase;
+            buildActionMask = 2147483647;
+            dstPath = "";
+            dstSubfolderSpec = 6;
+            files = (ABC000000000000000000011, );
+            name = "Embed orthomosaic engine";
+            runOnlyForDeploymentPostprocessing = 0;
+        };
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+        ABC000000000000000000013 /* OrthomosaicPython */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; path = .build/OrthomosaicPython; sourceTree = SOURCE_ROOT; };
+        ABC000000000000000000014 /* OrthomosaicEngine */ = {isa = PBXFileReference; lastKnownFileType = folder; path = .build/OrthomosaicEngine; sourceTree = SOURCE_ROOT; };
 		2F62F980307A216600B1968B /* DroneMapping.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DroneMapping.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2F62F992307A21EF00B1968B /* ControlDroneMapping.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ControlDroneMapping.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -91,6 +110,7 @@
 				2F62F98E307A21EF00B1968B /* Sources */,
 				2F62F98F307A21EF00B1968B /* Frameworks */,
 				2F62F990307A21EF00B1968B /* Resources */,
+				ABC000000000000000000010 /* Embed orthomosaic engine */,
 			);
 			buildRules = (
 			);
@@ -150,9 +170,12 @@
 		2F62F990307A21EF00B1968B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
+                ABC000000000000000000012,
 			);
 		};
 /* End PBXResourcesBuildPhase section */
+
+
 
 /* Begin PBXSourcesBuildPhase section */
 		2F62F97C307A216600B1968B /* Sources */ = {

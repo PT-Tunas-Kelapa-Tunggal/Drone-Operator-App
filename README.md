@@ -5,7 +5,7 @@ Dua aplikasi Swift/SwiftUI native untuk akuisisi foto udara dan ground station l
 - Target Xcode `DroneMapping` → DroneCam (iOS 17+).
 - Target Xcode `ControlDroneMapping` → DroneControl (macOS 14+).
 - Proyek dibuat dengan Xcode 27; format project mengikuti workspace yang sudah ada.
-- Tidak ada backend, akun, internet, atau dependency pihak ketiga untuk runtime aplikasi.
+- Capture, kontrol, dan transfer tidak memerlukan backend, akun, atau internet. Pengolahan orthomosaic lokal memakai engine OpenSfM yang disertakan dalam aplikasi Mac.
 
 ## Yang tersedia
 
@@ -22,7 +22,7 @@ Kontrol ISO, shutter, WB temperature/tint atau gain gray card, fokus manual, int
 7. Di **Misi**, isi tinggi AGL, kecepatan, target GSD dan overlap, lalu periksa rencana terbang. Di **Perangkat**, lakukan persiapan kamera otomatis atau isi rekomendasi dari survei, sesuaikan ISO/fokus/format, lalu **Terapkan kamera**. Kamera, white balance, kalibrasi, foto uji, dan pemeriksaan hasil berada di panel Perangkat.
 8. Di **Perangkat**, bila gray card dipilih: **Kunci WB → Simpan referensi → keluarkan kartu → Ambil foto uji**. Checklist terbuka setelah foto uji tersimpan. Unduh asli untuk inspeksi ketajaman; lakukan uji cadence dan lengkapi pemeriksaan lapangan.
 9. Kembali ke **Misi**. Tombol **Mulai capture • 3–2–1** tersedia di bawah layar dan aktif ketika indikator iPhone siap capture. Satu alasan penghalang tampil; daftar lengkap dapat dibuka bila perlu. Selama misi, layar yang sama menampilkan progres, baterai, suhu, disk serta Jeda/Lanjut/Selesai. iPhone harus tetap di foreground; capture tidak bergantung koneksi Mac.
-10. Setelah selesai, layar **Hasil** menampilkan daftar misi, **Transfer ke Mac**, dan **Siapkan WebODM**. Transfer menyertakan gray card beserta foto asli; tidak perlu mengunduh referensi satu per satu. Pilih ekspor original atau koreksi acuan kartu dengan ROI yang dikonfirmasi operator. Upload hanya isi Images dari hasil ekspor; referensi/foto uji terpisah. Koreksi overlap bersifat eksperimental dan melaporkan pasangan yang tidak cocok. [Workflow lengkap](docs/WEBODM_COLOR_WORKFLOW.md).
+10. Setelah selesai, layar **Hasil** menyediakan **Transfer ke Mac**, **Olah foto** per misi, dan **Impor dari Finder** untuk foto/folder lokal. Transfer menyertakan gray card beserta foto asli. Pada pengolah misi, gray card bersifat opsional. Tanpa gray card, langsung pilih **Buat orthomosaic** tanpa normalisasi; jika gray card diunggah, tandai area kartu dan konfirmasi untuk menerapkan normalisasi. Engine lokal merekonstruksi kamera/permukaan, dan menulis TIFF atau GeoTIFF sesuai referensi koordinat yang tersedia. Riwayat hasil, progres, Hentikan, dan Simpan TIFF tersedia per misi. [Pemasangan engine dan batas pengolahan](ControlDroneMapping/Resources/ORTHOMOSAIC_ENGINE.md). Ekspor WebODM tetap tersedia di **Lainnya**; [workflow ekspor](docs/WEBODM_COLOR_WORKFLOW.md).
 
 ## Pembagian kontrol dan tampilan
 
@@ -82,7 +82,7 @@ Build generik tanpa signing memvalidasi kompilasi, bukan kamera/transport nyata.
 
 - Belum ada kontrol navigasi/autopilot drone, telemetry flight controller, atau terrain following.
 - Mac menampilkan preview foto uji/referensi setelah tersimpan (hingga 1200 pixel), bukan live video. Belum ada histogram/zebra, blur detector, atau clipping detector otomatis.
-- Belum ada pemrosesan orthomosaic internal, ColorChecker profiling, reflectance calibration otomatis, atau pengukuran akurasi survei.
+- Panel Hasil mengintegrasikan pengolahan orthomosaic lokal melalui OpenSfM komunitas 1.x. Engine dan helper Python bertanda tangan disertakan dalam aplikasi Mac; pemeriksaan engine/GPU berhasil melalui aplikasi Apple Development dengan App Sandbox aktif. Aset engine perlu disiapkan sebelum build Mac (lihat panduan engine). Sampel 12 foto Caliterra telah menghasilkan GeoTIFF melalui runtime pengembangan native; [pengukuran dan optimasi M5](docs/ORTHOMOSAIC_PERFORMANCE.md) mencakup preparasi JPEG, thread fitur, dan pembersihan data kerja setelah berhasil. Seluruh misi pribadi pengguna, distribusi Developer ID/notarisasi pada Mac lain, serta akurasi survei belum divalidasi. Belum ada ColorChecker profiling, reflectance calibration otomatis, atau VARI.
 - Pilihan format sensor/resolusi alternatif, ProRAW/HEIF, aperture variabel dan parameter hardware tambahan perlu capability discovery serta eksperimen lanjutan. Maksimum format aktif bukan janji 48/64/108 MP.
 - Retry command ID dideduplikasi selama proses hidup (cache 256); bukan exactly-once lintas restart. Status ACK yang hilang harus diperiksa pada telemetry sebelum perintah baru.
 - Transfer ulang berkas tersedia; belum byte-range resume, whole-dataset transactional import, atau autentikasi pasangan berbasis sertifikat.
