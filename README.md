@@ -13,7 +13,9 @@ Kontrol ISO, shutter, WB temperature/tint atau gain gray card, fokus manual, int
 
 ## Menjalankan
 
-1. Buka `DroneMapping.xcodeproj` di Xcode. Pertahankan/ganti development team sesuai signing milik Anda.
+Untuk clone baru atau komputer teman, ikuti **[Setup developer dan kolaborasi GitHub](docs/DEVELOPMENT_SETUP.md)** terlebih dahulu: konfigurasi akun lokal → pasang engine dengan versi terkunci → kemas dengan identitas Apple sendiri → build. Runtime besar tidak disimpan di Git; script mengambil dependensi yang diperlukan.
+
+1. Buka `DroneMapping.xcodeproj` di Xcode. Isi Team ID dan prefix bundle pribadi melalui `Config/Developer.local.xcconfig` sesuai panduan setup; file ini tidak ikut Git.
 2. Pilih scheme `DroneMapping`, pilih iPhone fisik, Build & Run. Izinkan Kamera, Local Network, dan Location (opsional untuk geotag perkiraan).
 3. Jalankan scheme `ControlDroneMapping` pada Mac. Aktifkan Wi-Fi kedua perangkat; jaringan lokal tidak membutuhkan internet. Peer-to-peer harus diuji pada perangkat aktual.
 4. Pada iPhone kamera disiapkan otomatis saat aplikasi dibuka; berikan izin jika diminta. Pada Mac buka panel **Perangkat**, pilih peer DroneCam, lalu setujui undangan pada iPhone. Setup dan koneksi drone dibuka melalui **QGroundControl** di panel Perangkat.

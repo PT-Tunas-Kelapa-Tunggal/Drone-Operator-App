@@ -14,7 +14,7 @@ Readiness berhasil diuji melalui executable aplikasi Apple Development bertanda 
 
 Kompilasi OpenSfM dilakukan di luar aplikasi sandbox. `xcrun` secara eksplisit menolak dijalankan di dalam App Sandbox; memasang Xcode tambahan tidak memperbaikinya. Memilih folder Python eksternal juga tidak memberikan izin eksekusi sandbox.
 
-1. Bangun runtime di luar aplikasi menggunakan `Scripts/setup-orthomosaic-engine.sh` atau pemasang pengembangan. Gunakan prefix tanpa spasi, compiler/linker Apple, dan SciPy conda-forge 1.15.2 untuk Python 3.10. Wheel PyPI SciPy 1.15.3 ditolak dyld pada macOS pengujian.
+1. Ikuti [setup developer](../../docs/DEVELOPMENT_SETUP.md), termasuk `Config/Developer.local.xcconfig`. Bangun runtime di luar aplikasi menggunakan `Scripts/setup-orthomosaic-engine.sh`; script memakai commit OpenSfM dan lock dependensi di `Config/Engine/`, bukan branch upstream terbaru. Gunakan prefix tanpa spasi, compiler/linker Apple, dan SciPy conda-forge 1.15.2 untuk Python 3.10. Wheel PyPI SciPy 1.15.3 ditolak dyld pada macOS pengujian. Runtime lama tanpa marker resep dipertahankan: pilih prefix baru untuk setup terkunci.
 2. Jalankan:
 
    ```sh

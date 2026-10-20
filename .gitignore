@@ -10,6 +10,17 @@ ControlDroneMapping/Resources/orthomosaic-engine.json
 
 # Xcode user state
 xcuserdata/
+Config/Developer.local.xcconfig
+
+# Developer environments and signing secrets
+.venv/
+.env
+.env.*
+!.env.example
+*.p12
+*.p8
+*.mobileprovision
+*.provisionprofile
 
 # Sample datasets
 odm_data_caliterra*

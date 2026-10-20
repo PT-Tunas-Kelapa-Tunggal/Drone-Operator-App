@@ -24,6 +24,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		ABC000000000000000000015 /* Developer.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Developer.xcconfig; sourceTree = SOURCE_ROOT; };
 		2F62F980307A216600B1968B /* DroneMapping.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DroneMapping.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2F62F992307A21EF00B1968B /* ControlDroneMapping.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ControlDroneMapping.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		ABC000000000000000000013 /* .build/OrthomosaicPython */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; path = .build/OrthomosaicPython; sourceTree = SOURCE_ROOT; };
@@ -65,6 +66,7 @@
 		2F62F977307A216600B1968B = {
 			isa = PBXGroup;
 			children = (
+				ABC000000000000000000015 /* Developer.xcconfig */,
 				ABC000000000000000000001 /* Shared */,
 				2F62F982307A216600B1968B /* DroneMapping */,
 				2F62F993307A21EF00B1968B /* ControlDroneMapping */,
@@ -201,6 +203,7 @@
 /* Begin XCBuildConfiguration section */
 		2F62F989307A216700B1968B /* Debug configuration for PBXProject "DroneMapping" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = ABC000000000000000000015 /* Developer.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -234,7 +237,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = 4Z34RN4542;
+				DEVELOPMENT_TEAM = "$(DRONE_DEVELOPMENT_TEAM)";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -265,6 +268,7 @@
 		};
 		2F62F98A307A216700B1968B /* Release configuration for PBXProject "DroneMapping" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = ABC000000000000000000015 /* Developer.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -298,7 +302,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = 4Z34RN4542;
+				DEVELOPMENT_TEAM = "$(DRONE_DEVELOPMENT_TEAM)";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -322,12 +326,13 @@
 		};
 		2F62F98C307A216700B1968B /* Debug configuration for PBXNativeTarget "DroneMapping" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = ABC000000000000000000015 /* Developer.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 4Z34RN4542;
+				DEVELOPMENT_TEAM = "$(DRONE_DEVELOPMENT_TEAM)";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "$(SRCROOT)/Config/Info.plist";
@@ -348,7 +353,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hata.DroneMapping;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DRONE_BUNDLE_PREFIX).DroneMapping";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -362,12 +367,13 @@
 		};
 		2F62F98D307A216700B1968B /* Release configuration for PBXNativeTarget "DroneMapping" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = ABC000000000000000000015 /* Developer.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 4Z34RN4542;
+				DEVELOPMENT_TEAM = "$(DRONE_DEVELOPMENT_TEAM)";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "$(SRCROOT)/Config/Info.plist";
@@ -388,7 +394,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hata.DroneMapping;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DRONE_BUNDLE_PREFIX).DroneMapping";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -402,6 +408,7 @@
 		};
 		2F62F99B307A21F000B1968B /* Debug configuration for PBXNativeTarget "ControlDroneMapping" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = ABC000000000000000000015 /* Developer.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -409,7 +416,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 4Z34RN4542;
+				DEVELOPMENT_TEAM = "$(DRONE_DEVELOPMENT_TEAM)";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
@@ -429,7 +436,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hata.ControlDroneMapping;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DRONE_BUNDLE_PREFIX).ControlDroneMapping";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = macosx;
@@ -444,6 +451,7 @@
 		};
 		2F62F99C307A21F000B1968B /* Release configuration for PBXNativeTarget "ControlDroneMapping" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = ABC000000000000000000015 /* Developer.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -451,7 +459,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 4Z34RN4542;
+				DEVELOPMENT_TEAM = "$(DRONE_DEVELOPMENT_TEAM)";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
@@ -471,7 +479,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hata.ControlDroneMapping;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DRONE_BUNDLE_PREFIX).ControlDroneMapping";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = macosx;

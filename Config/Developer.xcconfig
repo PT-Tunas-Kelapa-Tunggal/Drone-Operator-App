@@ -1,0 +1,4 @@
+// Shared defaults. Keep account-specific values in the ignored local file.
+DRONE_DEVELOPMENT_TEAM =
+DRONE_BUNDLE_PREFIX = com.hata
+#include? "Developer.local.xcconfig"
