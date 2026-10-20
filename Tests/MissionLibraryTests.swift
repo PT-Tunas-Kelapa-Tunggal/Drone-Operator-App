@@ -70,14 +70,20 @@ struct MissionLibraryTests {
         check(
             afterACK.selectedMission?.remoteID == remoteID && afterACK.geometry.heightAGL == 78,
             "Acknowledged missions and later edits remain saved across restart")
+        afterACK.deleteMission(first) { _ in
+            throw MappingError.invalid("Simulated cleanup failure")
+        }
+        check(afterACK.savedMissions().contains { $0.id == first }, "Failed cleanup retains the mission for retry")
+        check(afterACK.missionLibrary.deletedFileIDs?.contains(remoteID) == true,
+              "Deletion intent survives a cleanup failure")
         afterACK.deleteMission(first)
         check(afterACK.savedMissions().map(\.id) == [second], "Delete removes only the chosen mission")
         var remote = MissionRecord(id: remoteID, plan: MissionPlan())
         remote.phase = .completed
         afterACK.link.onPacket?(Packet(missions: [remote]))
         check(
-            afterACK.savedMissions().map(\.id) == [second] && afterACK.records.contains { $0.id == remoteID },
-            "Deleted cards stay deleted after reconnect while datasets remain available")
+            afterACK.savedMissions().map(\.id) == [second] && !afterACK.records.contains { $0.id == remoteID },
+            "Deleted missions and datasets remain hidden after reconnect")
         let final = ControlViewModel(demo: true, draftURL: journal, missions: repository)
         final.openMission(second)
         check(
@@ -121,6 +127,18 @@ struct MissionLibraryTests {
         check(
             broken.missionStorageError != nil && (try! String(contentsOf: url, encoding: .utf8)) == "broken",
             "An unreadable library reports failure and cannot overwrite existing storage")
+        let store = DatasetStore(root: folder.appendingPathComponent("datasets"))
+        let deletedID = UUID()
+        let keptID = UUID()
+        try! store.write(MissionRecord(id: deletedID, plan: MissionPlan()))
+        try! store.write(MissionRecord(id: keptID, plan: MissionPlan()))
+        let cache = store.directory(deletedID).appendingPathComponent("Exports/.pending")
+        try! FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        try! Data("cache".utf8).write(to: cache.appendingPathComponent("working.bin"))
+        try! store.removeLocalMissionFiles([deletedID])
+        try! store.removeLocalMissionFiles([deletedID])
+        check(store.records().map(\.id) == [keptID], "Cleanup is idempotent and preserves unrelated datasets")
+        check(!FileManager.default.fileExists(atPath: cache.path), "Cleanup removes nested cache and export files")
         return checks
     }
 }

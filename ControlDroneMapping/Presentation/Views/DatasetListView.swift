@@ -21,7 +21,7 @@ struct DatasetListView: View {
                 id: mission.remoteID ?? mission.id, createdAt: mission.createdAt,
                 plan: mission.plan, phase: mission.phase, saved: mission.saved)
         }
-        return (model.records + pending).sorted { $0.createdAt > $1.createdAt }
+        return (model.records + pending).filter { !model.missionLibrary.hiddenRemoteIDs.contains($0.id) }.sorted { $0.createdAt > $1.createdAt }
     }
     private var visibleRecords: [MissionRecord] {
         resultRecords.filter { record in
@@ -45,7 +45,9 @@ struct DatasetListView: View {
     }
     private var imported: [OrthomosaicProject] {
         processing.projects.filter { project in
-            guard !resultRecords.contains(where: { processingID($0) == project.id }),
+            guard !model.missionLibrary.hiddenRemoteIDs.contains(project.id),
+                project.datasetID.map({ !model.missionLibrary.hiddenRemoteIDs.contains($0) }) ?? true,
+                !resultRecords.contains(where: { processingID($0) == project.id }),
                 model.selectedDatasetID == nil || model.selectedDatasetID == project.id
                     || model.selectedDatasetID == project.datasetID,
                 search.isEmpty || project.name.localizedCaseInsensitiveContains(search)

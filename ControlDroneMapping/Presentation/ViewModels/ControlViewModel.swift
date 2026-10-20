@@ -123,7 +123,7 @@ final class ControlViewModel: ObservableObject {
                 errorMessage = "Migrasi dataset: " + error.localizedDescription
             }
         }
-        records = link.store.records()
+        records = link.store.records().filter { !missionLibrary.hiddenRemoteIDs.contains($0.id) }
         mergeSavedRecords()
         connectionObservation = link.connectionChanges.sink { [weak self] _ in self?.objectWillChange.send() }
         link.onConnect = { [weak self] in
@@ -355,23 +355,68 @@ final class ControlViewModel: ObservableObject {
         guard saveLibrary(updated) else { return }
         if selectedMissionID == id { plan.name = name }
     }
-    func deleteMission(_ id: UUID) {
+    func deleteMission(
+        _ id: UUID, removeAssociatedFiles: (Set<UUID>) throws -> Void = { _ in }
+    ) {
         guard !editingLocked, !(hasLocalDraft && selectedMission?.preparationRequested == true),
             let mission = missionLibrary.missions.first(where: { $0.id == id })
         else { return }
+        let ids = Set([mission.id] + (mission.remoteID.map { [$0] } ?? []))
+        // Persist the tombstone before deleting files. Keep the card until every cleanup
+        // succeeds, so a failed deletion can be retried without losing its identity.
         var updated = missionLibrary
-        updated.missions.removeAll { $0.id == id }
-        if let remoteID = mission.remoteID { updated.hiddenRemoteIDs.insert(remoteID) }
+        updated.hiddenRemoteIDs.formUnion(ids)
+        updated.deletedFileIDs = (updated.deletedFileIDs ?? []).union(ids)
         guard saveLibrary(updated) else { return }
+        do {
+            try removeAssociatedFiles(ids)
+            try link.store.removeLocalMissionFiles(ids)
+            if selectedMissionID == id { try drafts.clear() }
+        } catch {
+            errorMessage = "Penghapusan belum selesai. Coba hapus misi lagi: " + error.localizedDescription
+            return
+        }
+        updated.missions.removeAll { $0.id == id }
+        guard saveLibrary(updated) else { return }
+        records.removeAll { ids.contains($0.id) }
+        if selectedDatasetID.map({ ids.contains($0) }) == true { selectedDatasetID = nil }
         if selectedMissionID == id {
             switchingMission = true
             selectedMissionID = nil
+            missionDetailVisible = false
             hasLocalDraft = false
             draftCommandID = nil
+            sample = nil
+            displayedPreview = nil
             switchingMission = false
             step = .mission
         }
     }
+
+    var liveMissionFileIDs: Set<UUID> {
+        Set(missionLibrary.missions.flatMap { [$0.id] + ($0.remoteID.map { [$0] } ?? []) })
+    }
+
+    func cleanDeletedMissionFiles(legacyIDs: Set<UUID> = [], removeAssociatedFiles: (Set<UUID>) throws -> Void) {
+        guard libraryReady, missionStorageError == nil, !editingLocked else { return }
+        let liveIDs = Set(missionLibrary.missions.flatMap { [$0.id] + ($0.remoteID.map { [$0] } ?? []) })
+        let deleted = (missionLibrary.deletedFileIDs ?? []).union(legacyIDs).subtracting(liveIDs)
+        if !legacyIDs.isEmpty {
+            var updated = missionLibrary
+            updated.deletedFileIDs = (updated.deletedFileIDs ?? []).union(deleted)
+            guard saveLibrary(updated) else { return }
+        }
+        guard !deleted.isEmpty else { return }
+        do {
+            try removeAssociatedFiles(deleted)
+            try link.store.removeLocalMissionFiles(deleted)
+            records.removeAll { deleted.contains($0.id) }
+            if errorMessage?.hasPrefix("Sisa misi terhapus") == true { errorMessage = nil }
+        } catch {
+            errorMessage = "Sisa misi terhapus belum bersih: " + error.localizedDescription
+        }
+    }
+
     func setMissionArea(_ area: FarmArea?) {
         guard !editingLocked, !(hasLocalDraft && selectedMission?.preparationRequested == true),
             let index = missionLibrary.missions.firstIndex(where: { $0.id == selectedMissionID })
@@ -629,7 +674,7 @@ final class ControlViewModel: ObservableObject {
         if let records = packet.missions {
             let local = link.store.records().filter { saved in !records.contains(where: { $0.id == saved.id })
             }
-            self.records = (records + local).sorted { $0.createdAt > $1.createdAt }
+            self.records = (records + local).filter { !missionLibrary.hiddenRemoteIDs.contains($0.id) }.sorted { $0.createdAt > $1.createdAt }
         }
         // Restore the authoritative mission only once per identity. Never overwrite
         // unsent edits on each heartbeat or a draft that belongs to this Mac.

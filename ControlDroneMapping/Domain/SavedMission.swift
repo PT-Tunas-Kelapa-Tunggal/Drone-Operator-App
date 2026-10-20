@@ -17,6 +17,8 @@ struct MissionLibrary: Codable, Equatable {
     var missions: [SavedMission] = []
     // Deleting a Mac entry must stay deleted when the iPhone sends its manifests again.
     var hiddenRemoteIDs: Set<UUID> = []
+    // Optional for compatibility with libraries saved before file cleanup existed.
+    var deletedFileIDs: Set<UUID>? = nil
 }
 
 protocol MissionLibraryRepository {

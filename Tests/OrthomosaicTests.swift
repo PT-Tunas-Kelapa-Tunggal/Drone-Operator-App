@@ -606,6 +606,16 @@ private final class GatedOrthomosaicProcessor: OrthomosaicProcessing, @unchecked
         check(
             manager.selectedID == localMissionID && manager.project(localMissionID)?.mappingPhotos.count == 3,
             "Opening the same linked mission reuses its project")
+        check(manager.legacyDeletedFileIDs(liveIDs: [localMissionID], hiddenIDs: [cameraDataset.id]).isEmpty,
+              "Legacy cleanup preserves projects belonging to a surviving mission")
+        check(manager.legacyDeletedFileIDs(liveIDs: [], hiddenIDs: [cameraDataset.id]) == [localMissionID, cameraDataset.id],
+              "Legacy cleanup links deleted camera datasets to their Mac project")
+        try manager.removeMissionFiles([cameraDataset.id])
+        try manager.removeMissionFiles([cameraDataset.id])
+        check(manager.project(localMissionID) == nil && !fm.fileExists(atPath: repository.projectDirectory(localMissionID).path),
+              "Deletion removes the mission project and all its managed files, idempotently")
+        check(fm.fileExists(atPath: a.path) && manager.project(first.id) != nil,
+              "Deletion preserves Finder source photos and unrelated projects")
         let sourceBefore = first.photos[0].url
         try Data("changed".utf8).write(to: sourceBefore)
         rejects("Reject corrupted or changed source bytes before using them") {

@@ -25,6 +25,58 @@ enum ControlScreen: String, CaseIterable, Identifiable {
     }
 }
 
+/// Groups the existing pages into the four primary sidebar destinations.
+enum ControlPanelSection: String, CaseIterable, Identifiable {
+    case home, review, notifications, settings
+
+    var id: String { rawValue }
+
+    init(screen: ControlScreen) {
+        switch screen {
+        case .dashboard: self = .home
+        case .mission, .datasets: self = .review
+        case .requests: self = .notifications
+        case .settings, .devices: self = .settings
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .home: return "Ringkasan"
+        case .review: return "Misi"
+        case .notifications: return "Notifikasi"
+        case .settings: return "Pengaturan"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .home: return "house"
+        case .review: return "drone"
+        case .notifications: return "bell"
+        case .settings: return "gearshape"
+        }
+    }
+
+    var screens: [ControlScreen] {
+        switch self {
+        case .home: return [.dashboard]
+        case .review: return [.mission, .datasets]
+        case .notifications: return [.requests]
+        case .settings: return [.settings, .devices]
+        }
+    }
+
+    var defaultScreen: ControlScreen {
+        switch self {
+        case .home: return .dashboard
+        case .review: return .mission
+        case .notifications: return .requests
+        case .settings: return .settings
+        }
+    }
+}
+
 enum DatasetFilter: String, CaseIterable, Identifiable {
     case all, attention, today, withPhotos
     var id: String { rawValue }

@@ -4,6 +4,8 @@ import SwiftUI
 struct MissionFooterView: View {
     @ObservedObject var model: ControlViewModel
     @ObservedObject var link: LocalLink
+    var continueTitle = "Buka persiapan"
+    var continuePreparation: (() -> Void)? = nil
     private var active: Bool { model.isActiveMission && model.selectedMissionIsCurrent }
     private var showingResults: Bool { model.step == .datasets }
     var body: some View {
@@ -45,9 +47,12 @@ struct MissionFooterView: View {
                     }
                     Button("Selesai") { model.send(.finish) }.disabled(!model.canOperate)
                 } else {
+                    if !model.iphoneReadyForCapture, let continuePreparation {
+                        Button(continueTitle, action: continuePreparation).kropsPrimaryAction()
+                    }
                     Button("Mulai capture • 3–2–1") { model.send(.start) }.kropsPrimaryAction(
                         size: .large
-                    ).tint(KropsStyle.accent).disabled(!readiness.canStart)
+                    ).tint(KropsStyle.accent).disabled(!readiness.canStart || !model.selectedMissionIsCurrent)
                 }
             }
         }.padding(.horizontal, 22).padding(.vertical, 16).background(KropsStyle.surface)

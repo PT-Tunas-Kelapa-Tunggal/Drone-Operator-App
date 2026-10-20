@@ -56,6 +56,40 @@ final class OrthomosaicViewModel: ObservableObject {
         return engineReady && !engineInstalling && !busy && storageError == nil
             && project.colorPreparationReady && project.mappingPhotos.count >= 3
     }
+    func legacyDeletedFileIDs(liveIDs: Set<UUID>, hiddenIDs: Set<UUID>) -> Set<UUID> {
+        // Hidden IDs also include superseded camera sessions. Only infer a legacy
+        // deletion when its mission-owned project has no surviving mission.
+        return Set(projects.filter {
+            $0.fromMission && !liveIDs.contains($0.id)
+                && ($0.datasetID.map { hiddenIDs.contains($0) } == true
+                    || hiddenIDs.contains($0.id) || $0.datasetID == nil)
+                && !($0.datasetID.map { liveIDs.contains($0) } ?? false)
+        }.flatMap { [$0.id] + ($0.datasetID.map { [$0] } ?? []) })
+    }
+
+    func removeMissionFiles(_ ids: Set<UUID>) throws {
+        if let storageError {
+            throw MappingError.invalid("Penyimpanan proyek tidak dapat dibaca: " + storageError)
+        }
+        guard !busy, workingID == nil else {
+            throw MappingError.invalid("Aplikasi masih menyiapkan engine, mengolah, atau mengimpor foto. Coba lagi setelah selesai.")
+        }
+        let matches = projects.filter {
+            ids.contains($0.id) || $0.datasetID.map { ids.contains($0) } == true
+        }
+        for project in matches {
+            let directory = repository.projectDirectory(project.id)
+            if FileManager.default.fileExists(atPath: directory.path) {
+                try FileManager.default.removeItem(at: directory)
+            }
+            projects.removeAll { $0.id == project.id }
+            if selectedID == project.id {
+                selectedID = nil
+                showingEditor = false
+            }
+        }
+    }
+
     func project(_ id: UUID) -> OrthomosaicProject? { projects.first { $0.id == id } }
     func open(_ id: UUID) {
         guard project(id) != nil else { return }
@@ -216,7 +250,7 @@ final class OrthomosaicViewModel: ObservableObject {
                 name: mission?.plan.name ?? urls.first.map {
                     $0.hasDirectoryPath
                         ? $0.lastPathComponent : $0.deletingLastPathComponent().lastPathComponent
-                } ?? "Impor foto", fromMission: mission != nil)
+                } ?? "Impor foto", fromMission: mission != nil, datasetID: mission?.id)
         busy = true
         error = nil
         queue.async { [self] in

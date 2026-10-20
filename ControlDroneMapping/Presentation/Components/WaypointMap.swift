@@ -13,6 +13,7 @@ struct WaypointMap: NSViewRepresentable {
     var onMove: (UUID, MapCoordinate) -> Void
     var drawingBoundary = false
     var editingEnabled = true
+    var dragWhileAdding = false
     var focusOperator = false
     var onBoundaryClick: ((MapCoordinate) -> Void)? = nil
     var onBoundaryMove: ((Int, MapCoordinate) -> Void)? = nil
@@ -90,6 +91,13 @@ struct WaypointMap: NSViewRepresentable {
                 points.append(home.clCoordinate)
             }
             if points.count >= 2 { map.addOverlay(MKPolyline(coordinates: points, count: points.count)) }
+        }
+        if dragWhileAdding {
+            for case let marker as RouteMarker in map.annotations where marker.kind == .waypoint {
+                if let view = map.view(for: marker) as? MKMarkerAnnotationView {
+                    view.markerTintColor = marker.id == selectedWaypoint ? .systemBlue : .systemOrange
+                }
+            }
         }
         if coordinator.lastFit != fitRequest {
             coordinator.lastFit = fitRequest
@@ -193,13 +201,14 @@ struct WaypointMap: NSViewRepresentable {
         func mapView(_ map: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
             guard let marker = annotation as? RouteMarker else { return nil }
             let view = MKMarkerAnnotationView(annotation: marker, reuseIdentifier: nil)
-            view.canShowCallout = true
+            view.canShowCallout = !parent.dragWhileAdding
+            if parent.dragWhileAdding { view.titleVisibility = .hidden }
             switch marker.kind {
             case .home:
                 view.markerTintColor = .systemGreen
                 view.glyphText = "H"
                 view.isDraggable =
-                    parent.editingEnabled && parent.mode == .inspect
+                    parent.editingEnabled && (parent.mode == .inspect || parent.dragWhileAdding)
                     && !parent.drawingBoundary && parent.onHomeMove != nil
             case .waypoint:
                 view.markerTintColor = .systemOrange

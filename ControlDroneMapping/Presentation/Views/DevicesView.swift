@@ -3,6 +3,7 @@ import SwiftUI
 struct DevicesView: View {
     @ObservedObject var model: ControlViewModel
     @ObservedObject var link: LocalLink
+    var missionContext = false
     private var active: Bool { model.isActiveMission }
     private var availableMissions: [SavedMission] {
         model.savedMissions().filter { $0.phase != .completed }
@@ -51,6 +52,7 @@ struct DevicesView: View {
                 }
             }
             ControlPanel("Persiapan capture", state: model.iphoneReadyForCapture ? "Siap" : nil) {
+                if !missionContext {
                 Text(
                     "Pilih misi yang akan memakai iPhone. Pengaturan kamera dan kalibrasi tetap mengikuti masing-masing misi."
                 )
@@ -69,6 +71,7 @@ struct DevicesView: View {
                         Text(mission.plan.name + " · selesai").tag(Optional(mission.id))
                     }
                 }.disabled(model.pending != nil || link.sending || link.receiving)
+                }
                 if let mission = model.selectedMission, mission.phase != .completed {
                     HStack {
                         Label(

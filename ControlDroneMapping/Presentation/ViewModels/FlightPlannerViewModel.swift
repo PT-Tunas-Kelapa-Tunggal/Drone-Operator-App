@@ -163,6 +163,22 @@ final class FlightPlannerViewModel: ObservableObject {
             ? nil : "Periksa home, rute, tinggi dan profil drone, lalu tandai rute sudah diperiksa."
     }
     var selectedWaypoint: FlightWaypoint? { draft.waypoints.first { $0.id == selectedWaypointID } }
+    func removeMissionRoutes(_ ids: Set<UUID>) throws {
+        guard storageReady, storageError == nil else {
+            throw MappingError.invalid("Daftar rute belum dapat dibaca. Coba muat ulang sebelum menghapus.")
+        }
+        let remaining = routes.filter { $0.missionID.map { !ids.contains($0) } ?? true }
+        try repository.save(remaining)
+        routes = remaining
+        if draft.missionID.map({ ids.contains($0) }) == true {
+            switching = true
+            draft = FlightRoute()
+            switching = false
+            selectedWaypointID = nil
+            undoStack = []
+        }
+    }
+
     func retrySaving() {
         if !storageReady {
             do {
