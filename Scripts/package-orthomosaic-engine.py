@@ -53,12 +53,18 @@ def main():
             path = runtime/'environment'/name
             if path.is_dir():
                 shutil.rmtree(path)
-        for editable in site.glob('_editable*opensfm*'):
-            editable.unlink()
         # Install compiled extensions alongside the normal Python package, with no
         # editable-import hook pointing back to the developer's source directory.
-        for extension in (site/'opensfm').glob('*.so'):
-            shutil.copy2(extension, runtime/'OpenSfM/opensfm'/extension.name)
+        if (site/'opensfm').is_dir():
+            for extension in (site/'opensfm').glob('*.so'):
+                shutil.copy2(extension, runtime/'OpenSfM/opensfm'/extension.name)
+            shutil.rmtree(site/'opensfm')
+        for pattern in ('*editable*opensfm*', '*opensfm*editable*', 'opensfm*.dist-info'):
+            for item in site.glob(pattern):
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
         for cache in runtime.rglob('__pycache__'):
             shutil.rmtree(cache)
         for link in runtime.rglob('*'):
