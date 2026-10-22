@@ -139,6 +139,7 @@ struct Packet: Codable {
     var reply: Reply?
     var telemetry: Telemetry?
     var missions: [MissionRecord]?
+    var transferError: String? = nil
 }
 
 enum MappingError: LocalizedError {

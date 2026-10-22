@@ -24,11 +24,11 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		ABC000000000000000000015 /* Developer.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Developer.xcconfig; sourceTree = SOURCE_ROOT; };
 		2F62F980307A216600B1968B /* DroneMapping.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DroneMapping.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2F62F992307A21EF00B1968B /* ControlDroneMapping.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ControlDroneMapping.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		ABC000000000000000000013 /* .build/OrthomosaicPython */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; path = .build/OrthomosaicPython; sourceTree = SOURCE_ROOT; };
 		ABC000000000000000000014 /* .build/OrthomosaicEngine */ = {isa = PBXFileReference; lastKnownFileType = folder; path = .build/OrthomosaicEngine; sourceTree = SOURCE_ROOT; };
+		ABC000000000000000000015 /* Config/Developer.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Developer.xcconfig; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -66,7 +66,7 @@
 		2F62F977307A216600B1968B = {
 			isa = PBXGroup;
 			children = (
-				ABC000000000000000000015 /* Developer.xcconfig */,
+				ABC000000000000000000015 /* Config/Developer.xcconfig */,
 				ABC000000000000000000001 /* Shared */,
 				2F62F982307A216600B1968B /* DroneMapping */,
 				2F62F993307A21EF00B1968B /* ControlDroneMapping */,
@@ -203,7 +203,7 @@
 /* Begin XCBuildConfiguration section */
 		2F62F989307A216700B1968B /* Debug configuration for PBXProject "DroneMapping" */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = ABC000000000000000000015 /* Developer.xcconfig */;
+			baseConfigurationReference = ABC000000000000000000015 /* Config/Developer.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -268,7 +268,7 @@
 		};
 		2F62F98A307A216700B1968B /* Release configuration for PBXProject "DroneMapping" */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = ABC000000000000000000015 /* Developer.xcconfig */;
+			baseConfigurationReference = ABC000000000000000000015 /* Config/Developer.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -326,7 +326,7 @@
 		};
 		2F62F98C307A216700B1968B /* Debug configuration for PBXNativeTarget "DroneMapping" */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = ABC000000000000000000015 /* Developer.xcconfig */;
+			baseConfigurationReference = ABC000000000000000000015 /* Config/Developer.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -367,7 +367,7 @@
 		};
 		2F62F98D307A216700B1968B /* Release configuration for PBXNativeTarget "DroneMapping" */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = ABC000000000000000000015 /* Developer.xcconfig */;
+			baseConfigurationReference = ABC000000000000000000015 /* Config/Developer.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -408,7 +408,7 @@
 		};
 		2F62F99B307A21F000B1968B /* Debug configuration for PBXNativeTarget "ControlDroneMapping" */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = ABC000000000000000000015 /* Developer.xcconfig */;
+			baseConfigurationReference = ABC000000000000000000015 /* Config/Developer.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -451,7 +451,7 @@
 		};
 		2F62F99C307A21F000B1968B /* Release configuration for PBXNativeTarget "ControlDroneMapping" */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = ABC000000000000000000015 /* Developer.xcconfig */;
+			baseConfigurationReference = ABC000000000000000000015 /* Config/Developer.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;

@@ -27,6 +27,8 @@ final class LocalLink: NSObject, ObservableObject, LocalTransport {
     private var attemptingPeer: MCPeerID?
     private var attemptExpiresAt: Double = 0
     private var lastDiscoveryRefresh: Double = 0
+    private var activeExportID: UUID?
+    private var exportProgress: Progress?
 
     init(camera: Bool, enabled: Bool = true, store: any DatasetRepository = DatasetStore()) {
         self.store = store
@@ -85,6 +87,24 @@ final class LocalLink: NSObject, ObservableObject, LocalTransport {
         status = automatic ? "Menghubungkan kembali ke iPhone…" : "Menunggu persetujuan di iPhone…"
         browser.invitePeer(peer, to: session, withContext: nil, timeout: reconnectPolicy.invitationTimeout)
     }
+    func refreshDiscovery() {
+        guard !connected else { return }
+        answerInvitation(false)
+        attemptingPeer = nil
+        reconnectPolicy = ReconnectPolicy()
+        lastDiscoveryRefresh = ProcessInfo.processInfo.systemUptime
+        if isCamera {
+            advertiser.stopAdvertisingPeer()
+            advertiser.startAdvertisingPeer()
+            status = "Menunggu Mac • buka Foto di DroneControl dan pilih Hubungkan"
+        } else {
+            peers.removeAll()
+            browser.stopBrowsingForPeers()
+            browser.startBrowsingForPeers()
+            status = "Mencari iPhone • buka DroneCam dan setujui koneksi"
+        }
+    }
+
     func connect(_ peer: MCPeerID) {
         invite(peer, automatic: identities.approvedPeer == peer)
     }
@@ -103,44 +123,84 @@ final class LocalLink: NSObject, ObservableObject, LocalTransport {
         guard !sending, let peer = session.connectedPeers.first else {
             throw MappingError.invalid("Transfer sibuk atau koneksi terputus")
         }
+        let transferID = UUID()
+        activeExportID = transferID
         sending = true
         transferStatus = "Menyiapkan dataset…"
         fileQueue.async {
             do {
                 try self.store.migrateLegacy()
                 let files = try self.store.files(id)
-                self.sendNext(files, index: 0, mission: id, peer: peer)
-            } catch { self.finishTransfer(error.localizedDescription) }
-        }
-    }
-    private func sendNext(_ files: [URL], index: Int, mission: UUID, peer: MCPeerID) {
-        guard index < files.count else {
-            finishTransfer("Transfer selesai: \(files.count) berkas dikirim")
-            return
-        }
-        do {
-            let file = files[index]
-            let hash = try DatasetStore.hashFile(file)
-            let relative = String(file.path.dropFirst(store.directory(mission).path.count + 1))
-            let name =
-                "\(mission.uuidString)|\(hash)|\(relative)|\(store.directory(mission).lastPathComponent)"
-            DispatchQueue.main.async { self.transferStatus = "Mengirim \(index + 1)/\(files.count)" }
-            session.sendResource(at: file, withName: name, toPeer: peer) { error in
-                self.fileQueue.async {
-                    if let error {
-                        self.finishTransfer(error.localizedDescription)
-                    } else {
-                        self.sendNext(files, index: index + 1, mission: mission, peer: peer)
-                    }
+                DispatchQueue.main.async {
+                    self.sendNext(files, index: 0, mission: id, peer: peer, transferID: transferID)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.finishTransfer(error.localizedDescription, transferID: transferID)
                 }
             }
-        } catch { finishTransfer(error.localizedDescription) }
-    }
-    private func finishTransfer(_ message: String) {
-        DispatchQueue.main.async {
-            self.sending = false
-            self.transferStatus = message
         }
+    }
+
+    // Transport state stays on the main queue. A callback from an interrupted
+    // transfer cannot clear or continue a newer transfer after reconnect.
+    private func sendNext(_ files: [URL], index: Int, mission: UUID, peer: MCPeerID, transferID: UUID) {
+        guard activeExportID == transferID else { return }
+        guard session.connectedPeers.contains(peer) else {
+            finishTransfer("Koneksi terputus. Hubungkan kembali lalu transfer ulang.", transferID: transferID)
+            return
+        }
+        guard index < files.count else {
+            finishTransfer("Transfer selesai: \(files.count) berkas dikirim ke Mac", transferID: transferID, succeeded: true)
+            return
+        }
+        transferStatus = "Mengirim \(index + 1)/\(files.count)"
+        fileQueue.async {
+            do {
+                let file = files[index]
+                let hash = try DatasetStore.hashFile(file)
+                let folder = self.store.directory(mission)
+                let relative = String(file.path.dropFirst(folder.path.count + 1))
+                let name = "\(mission.uuidString)|\(hash)|\(relative)|\(folder.lastPathComponent)"
+                DispatchQueue.main.async {
+                    guard self.activeExportID == transferID else { return }
+                    self.exportProgress = self.session.sendResource(at: file, withName: name, toPeer: peer) { error in
+                        DispatchQueue.main.async {
+                            guard self.activeExportID == transferID else { return }
+                            if let error {
+                                self.finishTransfer(error.localizedDescription, transferID: transferID)
+                            } else {
+                                self.sendNext(files, index: index + 1, mission: mission, peer: peer, transferID: transferID)
+                            }
+                        }
+                    }
+                    if self.exportProgress == nil {
+                        self.finishTransfer("Berkas gagal dikirim. Hubungkan kembali lalu transfer ulang.", transferID: transferID)
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.finishTransfer(error.localizedDescription, transferID: transferID)
+                }
+            }
+        }
+    }
+
+    private func finishTransfer(_ message: String, transferID: UUID, succeeded: Bool = false) {
+        guard activeExportID == transferID else { return }
+        activeExportID = nil
+        exportProgress = nil
+        sending = false
+        transferStatus = message
+        // Release the receiver if preparation or a later file fails without
+        // disconnecting the session. Older app versions ignore this optional field.
+        if !succeeded { try? send(Packet(transferError: message)) }
+    }
+
+    private func reportReceiveFailure(_ message: String) {
+        receiving = false
+        transferStatus = message
+        try? send(Packet(transferError: message))
     }
 }
 
@@ -205,6 +265,13 @@ extension LocalLink: MCNearbyServiceAdvertiserDelegate, MCNearbyServiceBrowserDe
             case .notConnected:
                 if self.attemptingPeer == peerID { self.attemptingPeer = nil }
                 if !self.connected {
+                    self.activeExportID = nil
+                    self.exportProgress?.cancel()
+                    self.exportProgress = nil
+                    if self.sending || self.receiving {
+                        self.transferStatus = "Koneksi terputus. Hubungkan kembali lalu transfer ulang."
+                    }
+                    self.sending = false
                     self.receiving = false
                     self.status =
                         self.isCamera
@@ -219,7 +286,17 @@ extension LocalLink: MCNearbyServiceAdvertiserDelegate, MCNearbyServiceBrowserDe
         guard data.count < 1_048_576, let packet = try? JSONDecoder().decode(Packet.self, from: data),
             packet.version == 1
         else { return }
-        DispatchQueue.main.async { self.onPacket?(packet) }
+        DispatchQueue.main.async {
+            if let message = packet.transferError {
+                self.activeExportID = nil
+                self.exportProgress?.cancel()
+                self.exportProgress = nil
+                self.sending = false
+                self.receiving = false
+                self.transferStatus = "Transfer gagal: " + message
+            }
+            self.onPacket?(packet)
+        }
     }
     func session(
         _ session: MCSession, didReceive stream: InputStream, withName streamName: String,
@@ -229,7 +306,9 @@ extension LocalLink: MCNearbyServiceAdvertiserDelegate, MCNearbyServiceBrowserDe
         _ session: MCSession, didStartReceivingResourceWithName resourceName: String,
         fromPeer peerID: MCPeerID, with progress: Progress
     ) {
+        guard !isCamera else { return }
         DispatchQueue.main.async {
+            self.receivedMissionID = nil
             self.receiving = true
             self.transferStatus = "Menerima dataset…"
         }
@@ -275,15 +354,13 @@ extension LocalLink: MCNearbyServiceAdvertiserDelegate, MCNearbyServiceBrowserDe
                     }
                 } catch {
                     DispatchQueue.main.async {
-                        self.receiving = false
-                        self.transferStatus = error.localizedDescription
+                        self.reportReceiveFailure(error.localizedDescription)
                     }
                 }
             }
         } catch {
             DispatchQueue.main.async {
-                self.receiving = false
-                self.transferStatus = error.localizedDescription
+                self.reportReceiveFailure(error.localizedDescription)
             }
         }
     }

@@ -16,6 +16,9 @@ struct ConnectionView: View {
             ForEach(link.peers, id: \.self) { peer in
                 Button("Hubungkan \(peer.displayName)") { link.connect(peer) }
             }
+            if !model.isDemo && !link.connected {
+                Button("Cari ulang") { link.refreshDiscovery() }
+            }
         }.padding(14).background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
     }
 }

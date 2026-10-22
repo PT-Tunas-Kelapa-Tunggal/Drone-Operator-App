@@ -229,6 +229,11 @@ final class ControlViewModel: ObservableObject {
         link.connected && freshness() && pending == nil && telemetry.captureBusy != true && !link.sending
             && !link.receiving
     }
+    var canTransferDatasets: Bool {
+        link.connected && pending == nil && !link.sending && !link.receiving
+            && telemetry.captureBusy != true && ![.capturing, .countdown].contains(telemetry.phase)
+    }
+
     var settingsApplied: Bool { appliedSettings == plan.camera && telemetry.settings == plan.camera }
     func createMission(name: String) {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -426,6 +431,44 @@ final class ControlViewModel: ObservableObject {
         guard saveLibrary(updated) else { return }
         geometry.reviewed = false
     }
+    var canRepeatCapture: Bool {
+        guard let mission = selectedMission else { return false }
+        return [.completed, .failed].contains(mission.phase) && !editingLocked
+            && libraryReady && missionStorageError == nil
+    }
+
+    @discardableResult
+    func repeatCapture(copyRoutes: (UUID, UUID) throws -> Void) -> Bool {
+        guard canRepeatCapture, let previous = selectedMission else { return false }
+        var newPlan = previous.plan
+        let suffix = " · ulang"
+        newPlan.name = String(newPlan.name.prefix(70 - suffix.count)) + suffix
+        newPlan.focusCalibration = nil
+        newPlan.exposureCalibration = nil
+        newPlan.camera.whiteBalanceGains = nil
+        var survey = newPlan.survey ?? SurveyGeometry()
+        survey.reviewed = false
+        newPlan.survey = survey
+        let mission = SavedMission(plan: newPlan, area: previous.area)
+        do {
+            // Copy routes before committing the new mission; a route storage failure
+            // must leave the operator looking at the original capture.
+            try copyRoutes(previous.id, mission.id)
+        } catch {
+            errorMessage = "Capture ulang belum dibuat: " + error.localizedDescription
+            return false
+        }
+        var updated = missionLibrary
+        updated.missions.insert(mission, at: 0)
+        guard saveLibrary(updated) else { return false }
+        selectMission(mission)
+        missionDetailVisible = true
+        step = .mission
+        errorMessage = nil
+        append("Percobaan capture baru dibuat. Periksa rencana dan ulangi persiapan kamera; foto sebelumnya tetap tersimpan.")
+        return true
+    }
+
     func prepareSelectedMission() {
         guard !editingLocked,
             let index = missionLibrary.missions.firstIndex(where: { $0.id == selectedMissionID }),
@@ -585,7 +628,7 @@ final class ControlViewModel: ObservableObject {
             errorMessage = "iPhone terputus. Misi yang sudah berjalan tetap disimpan lokal; tunggu reconnect."
             return
         }
-        guard freshness() || action == .prepare || action == .list else {
+        guard freshness() || [.prepare, .list, .download].contains(action) else {
             errorMessage = "Status iPhone belum terbaru. Tunggu sinkronisasi."
             return
         }
@@ -596,9 +639,12 @@ final class ControlViewModel: ObservableObject {
         }
         if [
             .apply, .grayCard, .grayCardReference, .testCapture, .calibrationBefore, .calibrationAfter,
-            .download,
         ].contains(action), !canOperate || [.capturing, .countdown].contains(telemetry.phase) {
             errorMessage = "Jeda misi dan tunggu foto tersimpan sebelum operasi ini."
+            return
+        }
+        if action == .download, !canTransferDatasets {
+            errorMessage = "Tunggu capture atau transfer sebelumnya selesai sebelum mentransfer foto."
             return
         }
         if [.testCapture, .calibrationBefore, .grayCardReference].contains(action), !settingsApplied {

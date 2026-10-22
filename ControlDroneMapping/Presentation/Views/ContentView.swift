@@ -149,6 +149,9 @@ struct ContentView: View {
                 try planner.removeMissionRoutes(ids)
             }
         }
+        .onChange(of: link.receivedMissionID) { _, id in
+            if id != nil { model.refreshLocalDatasets() }
+        }
         .onChange(of: model.step) { _, _ in search = "" }
         .onChange(of: model.selectedDatasetID) { _, _ in search = "" }
     }
