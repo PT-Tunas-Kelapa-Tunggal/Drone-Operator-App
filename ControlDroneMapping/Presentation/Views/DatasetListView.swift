@@ -203,7 +203,7 @@ struct DatasetListView: View {
                 if !model.hasLocalDataset(record.id) && model.records.contains(where: { $0.id == record.id })
                 {
                     Button("Transfer ke Mac") { model.send(.download, missionID: record.id) }
-                        .disabled(!model.canOperate || active)
+                        .disabled(!model.canTransferDatasets)
                 }
                 if !model.hasLocalDataset(record.id) && processing.project(processingID(record)) == nil {
                     Button("Impor foto") {

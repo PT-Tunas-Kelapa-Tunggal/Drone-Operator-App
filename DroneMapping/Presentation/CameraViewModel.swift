@@ -34,11 +34,16 @@ final class CameraViewModel: ObservableObject {
         }
         engine.onStatus = { [weak self] status in
             guard let self else { return }
+            let datasetChanged = self.telemetry.missionID != status.missionID
+                || self.telemetry.saved != status.saved || self.telemetry.phase != status.phase
             self.telemetry = status
+            if datasetChanged { self.records = self.link.store.records() }
             UIDevice.current.isBatteryMonitoringEnabled = true
-            UIApplication.shared.isIdleTimerDisabled = [.capturing, .countdown].contains(status.phase)
-            // Telemetry is best effort. Transport failure cannot change camera state or timing.
-            if self.link.connected { try? self.link.send(Packet(telemetry: status)) }
+            self.updateIdleTimer()
+            // Publish manifests after capture changes, including automatic completion.
+            if self.link.connected {
+                try? self.link.send(Packet(telemetry: status, missions: datasetChanged ? self.records : nil))
+            }
         }
         engine.onPreview = { [weak self] preview in
             guard let self else { return }
@@ -49,15 +54,38 @@ final class CameraViewModel: ObservableObject {
         link.onPacket = { [weak self] packet in self?.router.receive(packet) }
         link.onConnect = { [weak self] in
             guard let self else { return }
-            try? self.link.send(
-                Packet(
-                    preview: self.lastPreview, telemetry: self.telemetry, missions: self.link.store.records())
-            )
+            self.refreshDatasets()
+            // A large preview must not prevent the dataset list and status from syncing.
+            try? self.link.send(Packet(telemetry: self.telemetry, missions: self.records))
+            if let preview = self.lastPreview { try? self.link.send(Packet(preview: preview)) }
         }
         heartbeat = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             self?.engine.health(battery: UIDevice.current.batteryLevel)
         }
     }
+    var canTransfer: Bool {
+        link.connected && !link.sending && !link.receiving && telemetry.captureBusy != true
+            && ![.capturing, .countdown].contains(telemetry.phase)
+    }
+
+    func transferToMac(_ id: UUID) {
+        guard canTransfer else {
+            message = "Hubungkan Mac dan tunggu capture selesai sebelum transfer."
+            return
+        }
+        router.execute(Command(action: .download, missionID: id))
+        updateIdleTimer()
+    }
+
+    func updateIdleTimer() {
+        UIApplication.shared.isIdleTimerDisabled =
+            [.capturing, .countdown].contains(telemetry.phase) || link.sending
+    }
+
+    func refreshDatasets() {
+        records = link.store.records()
+    }
+
     func prepare() {
         guard !didRequestPreparation else { return }
         didRequestPreparation = true
@@ -74,6 +102,10 @@ final class CameraViewModel: ObservableObject {
     }
     func scene(_ phase: ScenePhase) {
         foreground = phase == .active
+        if foreground {
+            refreshDatasets()
+            updateIdleTimer()
+        }
         // Temporary inactivity (e.g. Control Center) is not a request to pause a mission.
         // Actual camera interruptions are handled independently by CameraEngine.
         if phase == .background {

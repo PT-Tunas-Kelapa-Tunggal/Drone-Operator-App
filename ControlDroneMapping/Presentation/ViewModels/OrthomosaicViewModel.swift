@@ -171,10 +171,12 @@ final class OrthomosaicViewModel: ObservableObject {
         }
     }
 
-    func prepareMission(_ record: MissionRecord, projectID: UUID? = nil, refresh: Bool = false) {
+    func prepareMission(
+        _ record: MissionRecord, projectID: UUID? = nil, refresh: Bool = false, openEditor: Bool = true
+    ) {
         let id = projectID ?? record.id
         if project(id) != nil && !refresh {
-            open(id)
+            if openEditor { open(id) }
             return
         }
         guard !busy, storageError == nil else { return }
@@ -228,7 +230,7 @@ final class OrthomosaicViewModel: ObservableObject {
                     do {
                         try replace(project, save: false)
                         busy = false
-                        open(project.id)
+                        if openEditor { open(project.id) }
                     } catch { finishWithError(error) }
                 }
             } catch { DispatchQueue.main.async { [self] in finishWithError(error) } }

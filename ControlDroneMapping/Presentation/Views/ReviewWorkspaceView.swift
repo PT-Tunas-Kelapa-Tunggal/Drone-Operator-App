@@ -1,5 +1,6 @@
 import AppKit
 import MapKit
+import MultipeerConnectivity
 import SwiftUI
 
 enum ReviewTab: String, CaseIterable, Identifiable {
@@ -146,6 +147,13 @@ struct ReviewWorkspaceView: View {
             if phase == .completed { tab = .imagery }
         }
         .onChange(of: processing.selectedID) { _, _ in resolveImportedProject() }
+        .onChange(of: link.receivedMissionID) { _, id in
+            guard let id, record?.id == id else { return }
+            model.refreshLocalDatasets()
+            guard let transferred = model.records.first(where: { $0.id == id }),
+                !processing.busy, processing.storageError == nil else { return }
+            processing.prepareMission(transferred, projectID: mission?.id ?? id, openEditor: false)
+        }
     }
 
     @ViewBuilder
@@ -177,9 +185,24 @@ struct ReviewWorkspaceView: View {
                         .foregroundStyle(.secondary)
                     if model.selectedMissionIsCurrent && model.isActiveMission {
                         CaptureProgressView(model: model, link: link)
-                    } else if mission?.phase == .completed {
-                        Text("Capture selesai. Lanjutkan ke Foto untuk transfer dan pemeriksaan.")
-                        Button("Buka foto") { tab = .imagery }
+                    } else if let mission, [.completed, .failed].contains(mission.phase) {
+                        Text(mission.phase == .completed
+                             ? "Capture selesai. Lanjutkan ke Foto untuk transfer dan pemeriksaan."
+                             : "Capture gagal. Periksa foto yang tersimpan atau buat percobaan baru.")
+                        HStack(spacing: 12) {
+                            Button("Buka foto") { tab = .imagery }
+                            Button("Ulangi capture", systemImage: "arrow.clockwise") {
+                                if model.repeatCapture(copyRoutes: { sourceID, destinationID in
+                                    try planner.copyMissionRoutes(from: sourceID, to: destinationID)
+                                }) {
+                                    tab = .mission
+                                }
+                            }
+                            .kropsPrimaryAction()
+                            .disabled(!model.canRepeatCapture)
+                        }
+                        Text("Ulangi capture membuat misi baru dengan salinan area, rute, dan pengaturan. Foto sebelumnya tetap tersimpan. Periksa rencana, lalu siapkan kamera dan ambil foto uji lagi.")
+                            .font(.callout).foregroundStyle(.secondary)
                     } else {
                         ControlPanel("Kesiapan capture", state: model.iphoneReadyForCapture ? "Siap" : nil) {
                             if model.iphoneReadyForCapture {
@@ -339,15 +362,43 @@ struct ReviewWorkspaceView: View {
         HStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    if !link.connected {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Hubungkan iPhone").font(.headline)
+                            Text(link.status).font(.caption).foregroundStyle(.secondary)
+                            Text("Buka DroneCam dan izinkan Jaringan Lokal pada kedua perangkat.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            ForEach(link.peers, id: \.self) { peer in
+                                Button("Hubungkan \(peer.displayName)") { link.connect(peer) }
+                            }
+                            Button("Cari iPhone lagi") { link.refreshDiscovery() }
+                            if model.isDemo {
+                                Button("Hubungkan demo") { model.connectDemo() }
+                            }
+                        }
+                    } else {
+                        Label("iPhone terhubung", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Button("Perbarui daftar foto") { model.send(.list) }
+                            .disabled(model.pending != nil || link.receiving || link.sending)
+                    }
                     if let record {
                         Button(model.hasLocalDataset(record.id) ? "Transfer ulang foto" : "Transfer foto dari iPhone") {
                             model.send(.download, missionID: record.id)
                         }
-                        .disabled(!model.canOperate || model.isActiveMission || processing.busy
+                        .disabled(!model.canTransferDatasets || processing.busy
                             || model.missionLibrary.hiddenRemoteIDs.contains(record.id)
                             || record.saved == 0 || !model.records.contains(where: { $0.id == record.id }))
                         Text(link.receiving ? "Transfer berlangsung…" : link.transferStatus)
                             .font(.caption).foregroundStyle(.secondary)
+                        if let pending = model.pending {
+                            Text("Menunggu konfirmasi: " + pending.action.userTitle)
+                                .font(.caption).foregroundStyle(.orange)
+                            Button("Periksa status operasi") { model.requestPendingStatus() }
+                            if model.pendingSince.map({ Date().timeIntervalSince($0) > 15 }) == true {
+                                Button("Tutup operasi tertunda") { model.dismissPending() }
+                            }
+                        }
                         if record.saved == 0 {
                             Text("Belum ada foto capture untuk ditransfer. Kamu juga dapat mengimpor foto dari Finder.")
                                 .font(.caption).foregroundStyle(.secondary)
