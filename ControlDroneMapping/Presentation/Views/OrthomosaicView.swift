@@ -70,6 +70,14 @@ struct OrthomosaicView: View {
                 HStack {
                     Label("Foto pemetaan", systemImage: "photo.on.rectangle.angled").font(.headline)
                     Spacer()
+                    if !project.obliqueMappingPhotos.isEmpty {
+                        Button(
+                            "Keluarkan \(project.obliqueMappingPhotos.count) foto miring (>12°)"
+                        ) {
+                            model.excludeObliquePhotos()
+                        }
+                        .disabled(model.busy)
+                    }
                     Button("Tambah foto dari Finder") {
                         OrthomosaicFilePanels.photos { model.importPhotos($0, append: true) }
                     }.disabled(model.busy)
@@ -78,11 +86,25 @@ struct OrthomosaicView: View {
                     "JPEG, HEIC, PNG, atau TIFF. Untuk RAW, gunakan JPEG pasangannya atau kembangkan terlebih dahulu."
                 )
                 .font(.caption).foregroundStyle(.secondary)
+                if !project.obliqueMappingPhotos.isEmpty {
+                    Text(
+                        "Terdeteksi \(project.obliqueMappingPhotos.count) foto dengan kemiringan >12° dari nadir (mis. saat drone berbelok)."
+                    )
+                    .font(.caption).foregroundStyle(.orange)
+                }
                 DisclosureGroup("Lihat \(project.mappingPhotos.count) foto pemetaan") {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(project.mappingPhotos) { photo in
                             HStack {
                                 Text(photo.url.lastPathComponent).font(.caption).lineLimit(1)
+                                if let attitude = photo.attitude {
+                                    Text(
+                                        String(
+                                            format: "Nadir %.0f°", attitude.tiltFromNadirDegrees)
+                                    )
+                                    .font(.caption2)
+                                    .foregroundStyle(attitude.isOblique ? .orange : .secondary)
+                                }
                                 Spacer()
                                 Button("Keluarkan") { model.excludePhoto(photo.id) }
                                     .font(.caption).disabled(model.busy)

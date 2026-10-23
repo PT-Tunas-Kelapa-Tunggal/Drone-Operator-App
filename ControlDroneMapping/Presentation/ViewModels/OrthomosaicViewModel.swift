@@ -135,6 +135,9 @@ final class OrthomosaicViewModel: ObservableObject {
     func setConfirmed(_ value: Bool) { edit { $0.confirmed = value } }
     func setRetainWorkingFiles(_ value: Bool) { edit { $0.retainWorkingFiles = value } }
     func excludePhoto(_ id: UUID) { edit { $0.photos.removeAll { $0.id == id } } }
+    func excludeObliquePhotos() {
+        edit { $0.photos.removeAll { $0.attitude?.isOblique == true } }
+    }
     func movePatch(x: Double, y: Double) {
         edit {
             $0.patch.x = min(1 - $0.patch.width, max(0, x - $0.patch.width / 2))
@@ -196,7 +199,8 @@ final class OrthomosaicViewModel: ObservableObject {
                     let input = OrthomosaicPhoto(
                         id: capture.id, url: photo.url, sha256: try DatasetStore.hashFile(photo.url),
                         capturedAt: capture.requestedAt, settings: capture.settings,
-                        location: capture.location, locationAge: capture.locationAgeAtRequest)
+                        location: capture.location, locationAge: capture.locationAgeAtRequest,
+                        attitude: capture.attitude)
                     if capture.kind == "mapping" {
                         if let index = project.photos.firstIndex(where: {
                             $0.id == input.id || $0.sha256 == input.sha256

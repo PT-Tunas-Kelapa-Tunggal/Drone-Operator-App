@@ -139,6 +139,11 @@ struct LocalOrthomosaicProcessor: OrthomosaicProcessing {
         if clipping > 0 {
             warnings.append("\(clipping) foto memiliki highlight ≥1% pada preview setelah koreksi.")
         }
+        let obliqueCount = photos.filter { $0.attitude?.isOblique == true }.count
+        if obliqueCount > 0 {
+            warnings.append(
+                "\(obliqueCount) foto memiliki kemiringan >12° dari nadir (mis. saat drone berbelok).")
+        }
         var request: [String: Any] = [
             "version": 2, "missionID": project.id.uuidString, "name": project.name,
             "total": photos.count, "normalization": gain == nil ? "none" : "gray-card",
@@ -425,7 +430,11 @@ struct LocalOrthomosaicProcessor: OrthomosaicProcessing {
             let latitude = gps[kCGImagePropertyGPSLatitudeRef as String] as? String == "S" ? -lat : lat
             let longitude = gps[kCGImagePropertyGPSLongitudeRef as String] as? String == "W" ? -lon : lon
             if validGPS(latitude, longitude) {
-                var location: [String: Any] = ["latitude": latitude, "longitude": longitude, "dop": 15.0]
+                let rawDop =
+                    (gps[kCGImagePropertyGPSHPositioningError as String] as? NSNumber)?.doubleValue
+                    ?? (gps[kCGImagePropertyGPSDOP as String] as? NSNumber)?.doubleValue
+                let dop = (rawDop != nil && rawDop!.isFinite && rawDop! > 0) ? max(1.0, rawDop!) : 15.0
+                var location: [String: Any] = ["latitude": latitude, "longitude": longitude, "dop": dop]
                 if let altitude = (gps[kCGImagePropertyGPSAltitude as String] as? NSNumber)?.doubleValue,
                     altitude.isFinite
                 {

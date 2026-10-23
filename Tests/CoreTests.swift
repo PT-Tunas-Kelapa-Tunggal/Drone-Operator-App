@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import MultipeerConnectivity
 
 @main enum CoreTests {
@@ -217,6 +219,43 @@ import MultipeerConnectivity
         check(
             decodedRequest.command == nil && decodedRequest.replyRequestID == statusRequest.replyRequestID,
             "ACK recovery never contains a mission command")
+        let baseDate = Date(timeIntervalSince1970: 1_700_000_000)
+        check(
+            GeoSample.normalizedAge(
+                requestedAt: baseDate, sampleTimestamp: baseDate.addingTimeInterval(0.3)) == 0,
+            "Sub-second negative clock jitter between CLLocation and capture request is clamped to zero")
+        check(
+            GeoSample.normalizedAge(
+                requestedAt: baseDate, sampleTimestamp: baseDate.addingTimeInterval(2.0)) < 0,
+            "Large future clock anomalies remain rejected")
+        let nadir = AttitudeSample.fromGravity(x: 0, y: 0, z: -1, roll: 0, pitch: 0, yaw: 0)
+        check(abs(nadir.tiltFromNadirDegrees) < 0.001 && !nadir.isOblique, "Flat nadir camera has 0° tilt")
+        let banked = AttitudeSample.fromGravity(x: 0.35, y: 0, z: -0.9367, roll: 0.35, pitch: 0, yaw: 0)
+        check(banked.tiltFromNadirDegrees > 12 && banked.isOblique, "Banking turn >12° is flagged as oblique")
+        var pixel: [UInt8] = [120, 130, 140, 255]
+        let ctx = CGContext(
+            data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let cgImg = ctx.makeImage()!
+        let rawJPEG = NSMutableData()
+        let dest = CGImageDestinationCreateWithData(rawJPEG, "public.jpeg" as CFString, 1, nil)!
+        CGImageDestinationAddImage(dest, cgImg, nil)
+        check(CGImageDestinationFinalize(dest), "Create baseline sRGB JPEG")
+        let sampleGeo = GeoSample(
+            latitude: -6.914744, longitude: 107.609810, altitudeMSL: 768.5,
+            horizontalAccuracy: 3.2, verticalAccuracy: 4.5, timestamp: baseDate)
+        let taggedJPEG = sampleGeo.embeddingEXIF(into: rawJPEG as Data)
+        let taggedSource = CGImageSourceCreateWithData(taggedJPEG as CFData, nil)!
+        let taggedProps = CGImageSourceCopyPropertiesAtIndex(taggedSource, 0, nil) as? [String: Any]
+        let gpsDict = taggedProps?[kCGImagePropertyGPSDictionary as String] as? [String: Any]
+        check(
+            (gpsDict?[kCGImagePropertyGPSLatitudeRef as String] as? String) == "S"
+                && (gpsDict?[kCGImagePropertyGPSLongitudeRef as String] as? String) == "E"
+                && abs(((gpsDict?[kCGImagePropertyGPSLatitude as String] as? NSNumber)?.doubleValue ?? 0) - 6.914744) < 0.0001
+                && abs(((gpsDict?[kCGImagePropertyGPSHPositioningError as String] as? NSNumber)?.doubleValue ?? 0) - 3.2) < 0.0001,
+            "Lossless EXIF GPS embedding writes latitude, longitude, hemisphere refs, and horizontal positioning error"
+        )
         assertions += WorkflowPressureTests.run()
         assertions += try DatasetLayoutTests.run()
         print("PASS: \(assertions) core assertions")
