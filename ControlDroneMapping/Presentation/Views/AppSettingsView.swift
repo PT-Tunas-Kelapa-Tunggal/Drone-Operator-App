@@ -2,7 +2,28 @@ import SwiftUI
 
 struct AppSettingsView: View {
     @ObservedObject var model: ControlViewModel
+    @ObservedObject private var qgcEngine = QGCEngineManager.shared
     @AppStorage("dashboardAppearance") private var appearance = "light"
+
+    private var qgcStatusColor: Color {
+        switch qgcEngine.status {
+        case .healthy: return .green
+        case .starting: return .orange
+        case .skipped: return .secondary
+        case .stopped, .failed: return .red
+        }
+    }
+
+    private var qgcStatusText: String {
+        switch qgcEngine.status {
+        case .healthy(let port, _): return "Aktif (Port \(port))"
+        case .starting: return "Memulai…"
+        case .skipped: return "Dilewati (UI Mode)"
+        case .stopped: return "Berhenti"
+        case .failed: return "Gagal"
+        }
+    }
+
     var body: some View {
         Form {
             Section("Tampilan") {
@@ -26,6 +47,28 @@ struct AppSettingsView: View {
                 Button("Buka / pilih QGroundControl") { model.openQGroundControl() }
                 Text("Kontrol penerbangan tetap dilakukan melalui aplikasi QGroundControl.").font(.caption)
                     .foregroundStyle(.secondary)
+
+                Divider()
+
+                HStack {
+                    Circle()
+                        .fill(qgcStatusColor)
+                        .frame(width: 8, height: 8)
+                    Text("Companion Engine: \(qgcStatusText)")
+                    Spacer()
+                    if let pid = qgcEngine.pid {
+                        Text("PID: \(pid)").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+
+                if case .failed(let reason) = qgcEngine.status {
+                    Text(reason).font(.caption).foregroundStyle(.red)
+                }
+
+                Button(qgcEngine.status == .stopped ? "Mulai Companion Engine" : "Mulai ulang Companion Engine") {
+                    qgcEngine.restartEngine()
+                }
+                .disabled(qgcEngine.status == .starting)
             }
             Section("Kamera dan kalibrasi") {
                 Text("Tinggi, kecepatan, exposure, gray card, dan foto uji diatur pada halaman Misi.")
