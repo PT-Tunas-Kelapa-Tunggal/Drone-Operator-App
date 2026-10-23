@@ -65,9 +65,9 @@ struct BundledOrthomosaicEngine {
         at directory: URL, log: URL, progress: @escaping (EngineInstallationProgress) -> Void
     ) async throws {
         let fm = FileManager.default
-        progress(.init(message: "Memeriksa paket engine…"))
         let metadata = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: manifest))
-        guard metadata.formatVersion == 1, metadata.folder == "OpenSfM-engine",
+        guard metadata.formatVersion == 1,
+            (metadata.folder == "OpenSfM-engine" || metadata.folder == "OrthomosaicEngine"),
             metadata.architecture == "arm64",
             metadata.teamIdentifier.range(of: "^[A-Z0-9]{10}$", options: .regularExpression) != nil,
             metadata.pythonIdentifier == "com.hata.ControlDroneMapping.engine.python",
