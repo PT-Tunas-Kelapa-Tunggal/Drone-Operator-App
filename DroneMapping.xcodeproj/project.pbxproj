@@ -123,6 +123,7 @@
 				2F62F98F307A21EF00B1968B /* Frameworks */,
 				2F62F990307A21EF00B1968B /* Resources */,
 				ABC000000000000000000010 /* Embed orthomosaic engine */,
+				ABC000000000000000000020 /* Embed & Sign QGroundControl Engine */,
 			);
 			buildRules = (
 			);
@@ -186,6 +187,19 @@
 			);
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		ABC000000000000000000020 /* Embed & Sign QGroundControl Engine */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			name = "Embed & Sign QGroundControl Engine";
+			shellPath = /bin/bash;
+			shellScript = (
+				"bash \"$SRCROOT/Scripts/ensure-qgc-engine.sh\"",
+				"",
+			);
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		2F62F97C307A216600B1968B /* Sources */ = {
@@ -354,6 +368,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(DRONE_BUNDLE_PREFIX).DroneMapping";
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.hata.dronemapping;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -394,7 +409,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "$(DRONE_BUNDLE_PREFIX).DroneMapping";
+				PRODUCT_BUNDLE_IDENTIFIER = com.hata.dronemapping;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -422,6 +437,7 @@
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "$(SRCROOT)/Config/DroneControl-Info.plist";
@@ -465,6 +481,7 @@
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "$(SRCROOT)/Config/DroneControl-Info.plist";
