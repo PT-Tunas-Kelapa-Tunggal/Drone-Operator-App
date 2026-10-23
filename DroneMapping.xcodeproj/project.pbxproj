@@ -6,28 +6,9 @@
 	objectVersion = 110;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		ABC000000000000000000011 /* .build/OrthomosaicPython in Embed orthomosaic engine */ = {isa = PBXBuildFile; fileRef = ABC000000000000000000013 /* .build/OrthomosaicPython */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
-		ABC000000000000000000012 /* .build/OrthomosaicEngine in Resources */ = {isa = PBXBuildFile; fileRef = ABC000000000000000000014 /* .build/OrthomosaicEngine */; };
-/* End PBXBuildFile section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		ABC000000000000000000010 /* Embed orthomosaic engine */ = {
-			isa = PBXCopyFilesBuildPhase;
-			dstPath = "";
-			dstSubfolder = Executables;
-			files = (
-				ABC000000000000000000011 /* .build/OrthomosaicPython in Embed orthomosaic engine */,
-			);
-			name = "Embed orthomosaic engine";
-		};
-/* End PBXCopyFilesBuildPhase section */
-
 /* Begin PBXFileReference section */
 		2F62F980307A216600B1968B /* DroneMapping.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DroneMapping.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2F62F992307A21EF00B1968B /* ControlDroneMapping.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ControlDroneMapping.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		ABC000000000000000000013 /* .build/OrthomosaicPython */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; path = .build/OrthomosaicPython; sourceTree = SOURCE_ROOT; };
-		ABC000000000000000000014 /* .build/OrthomosaicEngine */ = {isa = PBXFileReference; lastKnownFileType = folder; path = .build/OrthomosaicEngine; sourceTree = SOURCE_ROOT; };
 		ABC000000000000000000015 /* Config/Developer.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Developer.xcconfig; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -71,7 +52,6 @@
 				2F62F982307A216600B1968B /* DroneMapping */,
 				2F62F993307A21EF00B1968B /* ControlDroneMapping */,
 				2F62F981307A216600B1968B /* Products */,
-				2F68B3AE30865F990039EDEC /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -82,15 +62,6 @@
 				2F62F992307A21EF00B1968B /* ControlDroneMapping.app */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		2F68B3AE30865F990039EDEC /* Recovered References */ = {
-			isa = PBXGroup;
-			children = (
-				ABC000000000000000000014 /* .build/OrthomosaicEngine */,
-				ABC000000000000000000013 /* .build/OrthomosaicPython */,
-			);
-			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -122,7 +93,8 @@
 				2F62F98E307A21EF00B1968B /* Sources */,
 				2F62F98F307A21EF00B1968B /* Frameworks */,
 				2F62F990307A21EF00B1968B /* Resources */,
-				ABC000000000000000000010 /* Embed orthomosaic engine */,
+				ABC000000000000000000021 /* Embed & Sign Orthomosaic Engine */,
+				ABC000000000000000000020 /* Embed & Sign QGroundControl Engine */,
 			);
 			buildRules = (
 			);
@@ -182,10 +154,32 @@
 		2F62F990307A21EF00B1968B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
-				ABC000000000000000000012 /* .build/OrthomosaicEngine in Resources */,
 			);
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		ABC000000000000000000020 /* Embed & Sign QGroundControl Engine */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			name = "Embed & Sign QGroundControl Engine";
+			shellPath = /bin/bash;
+			shellScript = (
+				"bash \"$SRCROOT/Scripts/ensure-qgc-engine.sh\"",
+				"",
+			);
+		};
+		ABC000000000000000000021 /* Embed & Sign Orthomosaic Engine */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			name = "Embed & Sign Orthomosaic Engine";
+			shellPath = /bin/bash;
+			shellScript = (
+				"bash \"$SRCROOT/Scripts/ensure-orthomosaic-engine.sh\"",
+				"",
+			);
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		2F62F97C307A216600B1968B /* Sources */ = {
@@ -354,6 +348,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(DRONE_BUNDLE_PREFIX).DroneMapping";
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.hata.dronemapping;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -394,7 +389,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "$(DRONE_BUNDLE_PREFIX).DroneMapping";
+				PRODUCT_BUNDLE_IDENTIFIER = com.hata.dronemapping;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -422,6 +417,7 @@
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "$(SRCROOT)/Config/DroneControl-Info.plist";
@@ -465,6 +461,7 @@
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "$(SRCROOT)/Config/DroneControl-Info.plist";

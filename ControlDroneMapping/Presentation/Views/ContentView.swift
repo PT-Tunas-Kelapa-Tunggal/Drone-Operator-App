@@ -236,6 +236,7 @@ struct ContentView: View {
             }
             Spacer()
             if model.isDemo { Text("DEMO").font(.caption.bold()).foregroundStyle(.orange) }
+            QGCEngineStatusBadge()
             if model.step == .dashboard || model.step == .datasets
                 || (model.step == .mission && !model.hasMissionDetail)
             {

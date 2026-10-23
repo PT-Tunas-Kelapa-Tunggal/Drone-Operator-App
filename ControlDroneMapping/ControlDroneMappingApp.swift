@@ -32,6 +32,16 @@ struct ControlDroneMappingApp: App {
                 exit(1)
             }
         }
+        if ProcessInfo.processInfo.arguments.contains("--check-qgc-engine") {
+            do {
+                let message = try BundledQGCEngine.check()
+                print(message)
+                exit(0)
+            } catch {
+                FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
+                exit(1)
+            }
+        }
         let demo =
             ProcessInfo.processInfo.arguments.contains("--demo")
             || Bundle.main.object(forInfoDictionaryKey: "DroneControlDemoMode") as? Bool == true
@@ -41,6 +51,20 @@ struct ControlDroneMappingApp: App {
         link = dependencies.link
         _farms = StateObject(wrappedValue: dependencies.farms)
         _model = StateObject(wrappedValue: dependencies.viewModel)
+
+        // Auto-start QGC companion engine on normal launch
+        QGCEngineManager.shared.startEngine()
+
+        // Clean teardown on app exit
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                QGCEngineManager.shared.stopEngine()
+            }
+        }
     }
     @AppStorage("dashboardAppearance") private var appearance = "light"
     var body: some Scene {

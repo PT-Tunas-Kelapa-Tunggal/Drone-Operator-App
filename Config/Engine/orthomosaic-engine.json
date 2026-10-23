@@ -1,0 +1,8 @@
+{
+  "version": "v1.1",
+  "url": "https://github.com/PT-Tunas-Kelapa-Tunggal/opensfm/releases/download/v1.1/OrthomosaicEngine-macOS-arm64.tar.gz",
+  "sha256": "deb761daf6c13d09d76ac1a302dfc32c5f27b0bb4328c2586676954e05198cec",
+  "opensfmCommit": "8b6b77efddebf4429044d3206c7dc21c4e767e08",
+  "architecture": "arm64",
+  "formatVersion": 1
+}
