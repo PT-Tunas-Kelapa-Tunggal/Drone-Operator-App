@@ -8,8 +8,11 @@ final class PhotoWriter: NSObject, AVCapturePhotoCaptureDelegate {
     private let queue = DispatchQueue(label: "mapping.photo-writer", qos: .utility)
     private let store: any DatasetRepository
     private let mission: MissionRecord
+    private let sequence: Int
     private let settings: CameraSettings
-    private let location: GeoSample?
+    private let validLocation: GeoSample?
+    private let validLocationAge: Double?
+    private let attitude: AttitudeSample?
     private let kind: String
     private let referenceCommandID: UUID?
     private let requestedAt = Date()
@@ -28,17 +31,33 @@ final class PhotoWriter: NSObject, AVCapturePhotoCaptureDelegate {
         store.directory(mission.id).appendingPathComponent(".\(id.uuidString).pending")
     }
     init(
-        mission: MissionRecord, settings: CameraSettings, location: GeoSample?, kind: String,
-        referenceCommandID: UUID?, store: any DatasetRepository,
+        mission: MissionRecord, sequence: Int, settings: CameraSettings, location: GeoSample?,
+        attitude: AttitudeSample? = nil, kind: String, referenceCommandID: UUID?,
+        store: any DatasetRepository,
         completion: @escaping (Result<CapturePreview?, Error>) -> Void
     ) {
         self.mission = mission
+        self.sequence = sequence
         self.settings = settings
-        self.location = location
+        self.attitude = attitude
         self.kind = kind
         self.referenceCommandID = referenceCommandID
         self.store = store
         self.completion = completion
+        let now = requestedAt
+        if let sample = location {
+            let age = GeoSample.normalizedAge(requestedAt: now, sampleTimestamp: sample.timestamp)
+            if sample.horizontalAccuracy >= 0, (0...10).contains(age) {
+                self.validLocation = sample
+                self.validLocationAge = age
+            } else {
+                self.validLocation = nil
+                self.validLocationAge = nil
+            }
+        } else {
+            self.validLocation = nil
+            self.validLocationAge = nil
+        }
     }
     func photoOutput(
         _ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?
@@ -46,18 +65,25 @@ final class PhotoWriter: NSObject, AVCapturePhotoCaptureDelegate {
         queue.async {
             do {
                 if let error { throw error }
-                guard let data = photo.fileDataRepresentation() else {
+                guard let rawData = photo.fileDataRepresentation() else {
                     throw MappingError.invalid("Data foto kosong")
                 }
+                let data =
+                    (!photo.isRawPhoto && self.validLocation != nil)
+                    ? self.validLocation!.embeddingEXIF(into: rawData) : rawData
                 try FileManager.default.createDirectory(at: self.staging, withIntermediateDirectories: true)
                 let name = photo.isRawPhoto ? "image.dng" : "image.jpg"
                 try data.write(to: self.staging.appendingPathComponent(name), options: .atomic)
+                var metaDict = photo.metadata
+                if let geo = self.validLocation {
+                    metaDict[kCGImagePropertyGPSDictionary as String] = geo.gpsMetadataDictionary
+                }
                 let metadata = try PropertyListSerialization.data(
-                    fromPropertyList: photo.metadata, format: .xml, options: 0)
+                    fromPropertyList: metaDict, format: .xml, options: 0)
                 try metadata.write(
                     to: self.staging.appendingPathComponent(name + ".metadata.plist"), options: .atomic)
                 self.storedBytes += Int64(data.count + metadata.count)
-                if !photo.isRawPhoto { self.capturedExposure = CapturedExposure(metadata: photo.metadata) }
+                if !photo.isRawPhoto { self.capturedExposure = CapturedExposure(metadata: metaDict) }
                 self.files.append(name)
                 self.hashes[name] = DatasetStore.hash(data)
                 self.hostTime = photo.timestamp.seconds
@@ -78,16 +104,12 @@ final class PhotoWriter: NSObject, AVCapturePhotoCaptureDelegate {
                 guard self.files.count == (self.settings.raw ? 2 : 1) else {
                     throw MappingError.invalid("Capture tidak lengkap")
                 }
-                let geo = self.location.flatMap { sample -> GeoSample? in
-                    let age = self.requestedAt.timeIntervalSince(sample.timestamp)
-                    return sample.horizontalAccuracy >= 0 && age >= -1 && age <= 10 ? sample : nil
-                }
                 let record = CaptureRecord(
                     id: self.id, missionID: self.mission.id,
-                    sequence: self.mission.saved + 1, kind: self.kind, requestedAt: self.requestedAt,
-                    photoHostTimeSeconds: self.hostTime, settings: self.settings, location: geo,
-                    locationAgeAtRequest: geo.map { self.requestedAt.timeIntervalSince($0.timestamp) },
-                    files: self.files, sha256: self.hashes)
+                    sequence: self.sequence, kind: self.kind, requestedAt: self.requestedAt,
+                    photoHostTimeSeconds: self.hostTime, settings: self.settings,
+                    location: self.validLocation, locationAgeAtRequest: self.validLocationAge,
+                    attitude: self.attitude, files: self.files, sha256: self.hashes)
                 try self.store.encode(record).write(
                     to: self.staging.appendingPathComponent("capture.json"), options: .atomic)
                 let committed = try self.store.commit(staging: self.staging, capture: record)

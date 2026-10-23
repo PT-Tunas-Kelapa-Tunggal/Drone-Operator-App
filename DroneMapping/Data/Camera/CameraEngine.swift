@@ -19,6 +19,7 @@ final class CameraEngine: NSObject, CameraService {
     private var pending: PhotoWriter?
     private var configuring = false
     private var location: GeoSample?
+    private var attitude: AttitudeSample?
     private var observers: [NSObjectProtocol] = []
     private var battery: Float = -1
     var onStatus: ((Telemetry) -> Void)?
@@ -43,6 +44,7 @@ final class CameraEngine: NSObject, CameraService {
         timer?.cancel()
     }
     func updateLocation(_ value: GeoSample?) { queue.async { self.location = value } }
+    func updateAttitude(_ value: AttitudeSample?) { queue.async { self.attitude = value } }
     func health(battery: Float) {
         queue.async {
             self.battery = battery
@@ -254,6 +256,9 @@ final class CameraEngine: NSObject, CameraService {
         let input = try AVCaptureDeviceInput(device: camera)
         session.beginConfiguration()
         session.sessionPreset = .photo
+        // Disable wide-gamut (Display P3) auto-configuration so JPEGs are captured in sRGB,
+        // enabling zero-copy APFS cloning during orthomosaic preparation on Mac.
+        session.automaticallyConfiguresCaptureDeviceForWideColor = false
         guard session.canAddInput(input) else {
             session.commitConfiguration()
             throw MappingError.invalid("Input kamera tidak tersedia")
@@ -271,8 +276,14 @@ final class CameraEngine: NSObject, CameraService {
             output.maxPhotoDimensions = dimensions
         }
         output.maxPhotoQualityPrioritization = .quality
-        if let connection = output.connection(with: .video), connection.isVideoStabilizationSupported {
-            connection.preferredVideoStabilizationMode = .off
+        if let connection = output.connection(with: .video) {
+            if connection.isVideoStabilizationSupported {
+                connection.preferredVideoStabilizationMode = .off
+            }
+            // Keep EXIF orientation consistent during flat nadir flight where gravity is along -Z.
+            if connection.isVideoRotationAngleSupported(0) {
+                connection.videoRotationAngle = 0
+            }
         }
         session.commitConfiguration()
         device = camera
@@ -611,13 +622,14 @@ final class CameraEngine: NSObject, CameraService {
             photoSettings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
         }
         photoSettings.maxPhotoDimensions = output.maxPhotoDimensions
-        // AVFoundation requires .speed for Bayer RAW, including RAW+JPEG.
-        photoSettings.photoQualityPrioritization = .speed
+        // AVFoundation requires .speed for Bayer RAW; JPEG-only mapping can use .balanced for cleaner detail.
+        photoSettings.photoQualityPrioritization = settings.raw ? .speed : .balanced
         photoSettings.isAutoContentAwareDistortionCorrectionEnabled = false
         if camera.hasFlash { photoSettings.flashMode = .off }
+        let sequence = kind == "mapping" ? (mission.saved + 1) : 0
         let writer = PhotoWriter(
-            mission: mission, settings: settings, location: location, kind: kind,
-            referenceCommandID: referenceCommandID, store: store
+            mission: mission, sequence: sequence, settings: settings, location: location,
+            attitude: attitude, kind: kind, referenceCommandID: referenceCommandID, store: store
         ) { result in
             self.queue.async {
                 self.pending = nil
@@ -689,7 +701,17 @@ final class CameraEngine: NSObject, CameraService {
         status.missed = record?.missed ?? 0
         status.battery = battery
         status.freeBytes = freeSpace()
-        status.updatedAt = Date()
+        let now = Date()
+        status.updatedAt = now
+        if let sample = location,
+            sample.horizontalAccuracy >= 0,
+            (0...10).contains(GeoSample.normalizedAge(requestedAt: now, sampleTimestamp: sample.timestamp))
+        {
+            status.gpsHorizontalAccuracy = sample.horizontalAccuracy
+        } else {
+            status.gpsHorizontalAccuracy = nil
+        }
+        status.attitude = attitude
         switch ProcessInfo.processInfo.thermalState {
         case .nominal: status.thermal = "Normal"
         case .fair: status.thermal = "Hangat"

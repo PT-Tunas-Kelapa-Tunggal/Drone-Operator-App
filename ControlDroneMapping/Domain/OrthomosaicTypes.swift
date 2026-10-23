@@ -24,6 +24,7 @@ struct OrthomosaicPhoto: Codable, Identifiable {
     var settings: CameraSettings?
     var location: GeoSample?
     var locationAge: Double?
+    var attitude: AttitudeSample? = nil
 }
 
 struct OrthomosaicOutput: Codable {
@@ -62,6 +63,9 @@ struct OrthomosaicProject: Codable, Identifiable {
     var mappingPhotos: [OrthomosaicPhoto] {
         let referenceHashes = Set(references.map(\.sha256))
         return photos.filter { !referenceHashes.contains($0.sha256) }
+    }
+    var obliqueMappingPhotos: [OrthomosaicPhoto] {
+        mappingPhotos.filter { $0.attitude?.isOblique == true }
     }
 }
 

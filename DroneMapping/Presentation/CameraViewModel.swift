@@ -7,6 +7,7 @@ final class CameraViewModel: ObservableObject {
     @Published private(set) var plan = MissionPlan()
     @Published private(set) var message = "Mulai dengan menyiapkan kamera"
     @Published private(set) var records: [MissionRecord] = []
+    @Published var savePowerInFlight = true
     private let engine: any CameraService
     var previewSession: AVCaptureSession { engine.session }
     let link: any LocalTransport
@@ -15,6 +16,7 @@ final class CameraViewModel: ObservableObject {
     private var lastPreview: CapturePreview?
     private var foreground = true
     private var didRequestPreparation = false
+
     init(
         engine: any CameraService, transport: any LocalTransport,
         locations: LocationService = LocationService()
@@ -24,6 +26,7 @@ final class CameraViewModel: ObservableObject {
         self.locations = locations
         UIDevice.current.isBatteryMonitoringEnabled = true
         locations.onSample = { [weak engine] in engine?.updateLocation($0) }
+        locations.onAttitude = { [weak engine] in engine?.updateAttitude($0) }
         do {
             try link.store.migrateLegacy()
             try link.store.recoverInterrupted()
@@ -63,9 +66,67 @@ final class CameraViewModel: ObservableObject {
             self?.engine.health(battery: UIDevice.current.batteryLevel)
         }
     }
+
+    var isPreviewActive: Bool {
+        !(telemetry.phase == .capturing && savePowerInFlight)
+    }
+
     var canTransfer: Bool {
         link.connected && !link.sending && !link.receiving && telemetry.captureBusy != true
             && ![.capturing, .countdown].contains(telemetry.phase)
+    }
+
+    var canPauseLocally: Bool {
+        telemetry.missionID != nil && [.capturing, .countdown].contains(telemetry.phase)
+    }
+
+    var canResumeLocally: Bool {
+        telemetry.missionID != nil && telemetry.phase == .paused && telemetry.captureBusy != true
+    }
+
+    var canFinishLocally: Bool {
+        telemetry.missionID != nil && [.capturing, .countdown, .paused].contains(telemetry.phase)
+            && telemetry.captureBusy != true
+    }
+
+    func canDeleteDataset(_ id: UUID) -> Bool {
+        guard !link.sending, !link.receiving, telemetry.captureBusy != true else { return false }
+        if telemetry.missionID == id && [.ready, .countdown, .capturing, .paused].contains(telemetry.phase) {
+            return false
+        }
+        return true
+    }
+
+    func pauseMissionLocally() {
+        guard let missionID = telemetry.missionID else { return }
+        router.execute(Command(action: .pause, missionID: missionID))
+    }
+
+    func resumeMissionLocally() {
+        guard let missionID = telemetry.missionID else { return }
+        router.execute(Command(action: .resume, missionID: missionID))
+    }
+
+    func finishMissionLocally() {
+        guard let missionID = telemetry.missionID else { return }
+        router.execute(Command(action: .finish, missionID: missionID))
+    }
+
+    func deleteDataset(_ id: UUID) {
+        guard canDeleteDataset(id) else {
+            message = "Selesaikan misi dan tunggu transfer selesai sebelum menghapus dataset."
+            return
+        }
+        do {
+            try link.store.removeLocalMissionFiles([id])
+            refreshDatasets()
+            message = "Dataset lokal dihapus dari iPhone."
+            if link.connected {
+                try? link.send(Packet(telemetry: telemetry, missions: records))
+            }
+        } catch {
+            message = "Gagal menghapus dataset: \(error.localizedDescription)"
+        }
     }
 
     func transferToMac(_ id: UUID) {
@@ -79,7 +140,7 @@ final class CameraViewModel: ObservableObject {
 
     func updateIdleTimer() {
         UIApplication.shared.isIdleTimerDisabled =
-            [.capturing, .countdown].contains(telemetry.phase) || link.sending
+            [.ready, .countdown, .capturing, .paused].contains(telemetry.phase) || link.sending
     }
 
     func refreshDatasets() {
@@ -100,6 +161,7 @@ final class CameraViewModel: ObservableObject {
             }
         }
     }
+
     func scene(_ phase: ScenePhase) {
         foreground = phase == .active
         if foreground {
@@ -113,13 +175,19 @@ final class CameraViewModel: ObservableObject {
             UIApplication.shared.isIdleTimerDisabled = false
         }
     }
-    deinit { heartbeat?.invalidate() }
+
+    deinit {
+        heartbeat?.invalidate()
+        locations.stop()
+    }
+
     private lazy var router = CameraCommandRouter(
         engine: engine, transport: link,
         state: { [weak self] in
             guard let self else { return (Telemetry(), MissionPlan(), false) }
             return (self.telemetry, self.plan, self.foreground)
         })
+
     private func applyResult(_ command: Command, reply: Reply) {
         message = reply.message
         if reply.accepted, [.createMission, .apply, .start].contains(command.action),

@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 
 struct CameraSettings: Codable, Equatable {
     var iso: Float = 100
@@ -62,6 +63,29 @@ struct CameraCapabilities: Codable {
     var nominalFieldOfView: Double? = nil
 }
 
+struct AttitudeSample: Codable, Equatable {
+    var rollDegrees: Double
+    var pitchDegrees: Double
+    var yawDegrees: Double
+    var tiltFromNadirDegrees: Double
+    var isOblique: Bool { tiltFromNadirDegrees > 12 }
+
+    static func fromGravity(
+        x: Double, y: Double, z: Double, roll: Double, pitch: Double, yaw: Double
+    ) -> AttitudeSample {
+        let magnitude = max(0.0001, (x * x + y * y + z * z).squareRoot())
+        // Back camera points along -Z in device coordinates; flat nadir flight has gravity (0, 0, -1).
+        let cosine = min(1.0, max(-1.0, (-z) / magnitude))
+        let tilt = acos(cosine) * 180 / .pi
+        return AttitudeSample(
+            rollDegrees: roll * 180 / .pi,
+            pitchDegrees: pitch * 180 / .pi,
+            yawDegrees: yaw * 180 / .pi,
+            tiltFromNadirDegrees: tilt
+        )
+    }
+}
+
 enum MissionPhase: String, Codable { case idle, ready, countdown, capturing, paused, completed, failed }
 struct Telemetry: Codable {
     var phase: MissionPhase = .idle
@@ -79,6 +103,8 @@ struct Telemetry: Codable {
     var settings: CameraSettings?
     var exposureCalibration: ExposureCalibration? = nil
     var focusCalibration: FocusCalibration? = nil
+    var gpsHorizontalAccuracy: Double? = nil
+    var attitude: AttitudeSample? = nil
 }
 
 struct MissionRecord: Codable, Identifiable {
@@ -91,14 +117,88 @@ struct MissionRecord: Codable, Identifiable {
     var note = ""
 }
 
-struct GeoSample: Codable {
+struct GeoSample: Codable, Equatable {
     var latitude: Double
     var longitude: Double
     var altitudeMSL: Double
     var horizontalAccuracy: Double
     var verticalAccuracy: Double
     var timestamp: Date
+
+    /// Clamps sub-second negative clock jitter between CLLocation timestamp and capture request time.
+    static func normalizedAge(requestedAt: Date, sampleTimestamp: Date) -> Double {
+        let raw = requestedAt.timeIntervalSince(sampleTimestamp)
+        return (-1.0..<0.0).contains(raw) ? 0.0 : raw
+    }
+
+    var gpsMetadataDictionary: [String: Any] {
+        var gps: [String: Any] = [
+            kCGImagePropertyGPSLatitude as String: abs(latitude),
+            kCGImagePropertyGPSLatitudeRef as String: latitude >= 0 ? "N" : "S",
+            kCGImagePropertyGPSLongitude as String: abs(longitude),
+            kCGImagePropertyGPSLongitudeRef as String: longitude >= 0 ? "E" : "W",
+        ]
+        if altitudeMSL.isFinite {
+            gps[kCGImagePropertyGPSAltitude as String] = abs(altitudeMSL)
+            gps[kCGImagePropertyGPSAltitudeRef as String] = altitudeMSL < 0 ? 1 : 0
+        }
+        if horizontalAccuracy.isFinite, horizontalAccuracy >= 0 {
+            gps[kCGImagePropertyGPSHPositioningError as String] = horizontalAccuracy
+            gps[kCGImagePropertyGPSDOP as String] = max(1.0, horizontalAccuracy)
+        }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        let parts = calendar.dateComponents(
+            [.year, .month, .day, .hour, .minute, .second], from: timestamp)
+        if let year = parts.year, let month = parts.month, let day = parts.day,
+            let hour = parts.hour, let minute = parts.minute, let second = parts.second
+        {
+            gps[kCGImagePropertyGPSDateStamp as String] = String(
+                format: "%04d:%02d:%02d", year, month, day)
+            gps[kCGImagePropertyGPSTimeStamp as String] = String(
+                format: "%02d:%02d:%02d", hour, minute, second)
+        }
+        return gps
+    }
+
+    /// Embeds EXIF `{GPS}` tags into encoded image data while preserving existing metadata and color profile.
+    func embeddingEXIF(into imageData: Data) -> Data {
+        guard latitude.isFinite, longitude.isFinite,
+            (-90...90).contains(latitude), (-180...180).contains(longitude),
+            horizontalAccuracy.isFinite, horizontalAccuracy >= 0,
+            let source = CGImageSourceCreateWithData(imageData as CFData, nil),
+            let type = CGImageSourceGetType(source),
+            CGImageSourceGetCount(source) > 0
+        else { return imageData }
+        let copyOut = NSMutableData()
+        if let destination = CGImageDestinationCreateWithData(copyOut, type, 1, nil) {
+            let options: [CFString: Any] = [
+                kCGImageDestinationMergeMetadata: true,
+                kCGImagePropertyGPSDictionary: gpsMetadataDictionary,
+            ]
+            if CGImageDestinationCopyImageSource(destination, source, options as CFDictionary, nil),
+                copyOut.length > 0,
+                let verify = CGImageSourceCreateWithData(copyOut as CFData, nil),
+                let props = CGImageSourceCopyPropertiesAtIndex(verify, 0, nil) as? [String: Any],
+                props[kCGImagePropertyGPSDictionary as String] != nil
+            {
+                return copyOut as Data
+            }
+        }
+        let fallbackOut = NSMutableData()
+        guard let fallbackDest = CGImageDestinationCreateWithData(fallbackOut, type, 1, nil) else {
+            return imageData
+        }
+        var merged = (CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]) ?? [:]
+        merged[kCGImagePropertyGPSDictionary as String] = gpsMetadataDictionary
+        CGImageDestinationAddImageFromSource(fallbackDest, source, 0, merged as CFDictionary)
+        guard CGImageDestinationFinalize(fallbackDest), fallbackOut.length > 0 else {
+            return imageData
+        }
+        return fallbackOut as Data
+    }
 }
+
 struct CaptureRecord: Codable {
     var layoutVersion: Int? = nil
     var id: UUID
@@ -110,6 +210,7 @@ struct CaptureRecord: Codable {
     var settings: CameraSettings
     var location: GeoSample?
     var locationAgeAtRequest: Double?
+    var attitude: AttitudeSample? = nil
     var files: [String]
     var sha256: [String: String]
     var note =

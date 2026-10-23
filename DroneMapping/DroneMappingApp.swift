@@ -18,8 +18,9 @@ struct DroneMappingApp: App {
     }
     var body: some Scene {
         WindowGroup {
-            ContentView(model: model, link: link)
-                .preferredColorScheme(.dark)
+//            ContentView(model: model, link: link)
+//                .preferredColorScheme(.dark)
+            TestOrtoView()
         }
     }
 }
