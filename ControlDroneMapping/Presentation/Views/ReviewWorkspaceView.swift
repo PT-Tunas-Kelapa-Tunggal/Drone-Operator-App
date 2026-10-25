@@ -515,9 +515,15 @@ struct ReviewWorkspaceView: View {
                     Text(resultLayer.rawValue).font(.headline)
                     Spacer()
                     if resultLayer == .orthomosaic, let output {
-                        ShareLink(item: output.image) {
-                            Label("Kirim", systemImage: "paperplane")
+                        Button {
+                            Task {
+                                await model.dispatchReviewResult(for: mission, output: output)
+                            }
+                        } label: {
+                            Label(model.isDispatchingReview ? "Mengirim..." : "Kirim", systemImage: "paperplane")
                         }
+                        .disabled(model.isDispatchingReview || processing.busy)
+
                         Button("Simpan TIFF") {
                             OrthomosaicFilePanels.save(output: output, model: processing)
                         }.disabled(processing.busy)
@@ -577,6 +583,7 @@ struct ReviewWorkspaceView: View {
         }
     }
 }
+
 
 
 private struct ReviewWorkspacePreview: View {

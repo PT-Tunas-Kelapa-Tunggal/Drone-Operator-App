@@ -44,7 +44,11 @@ struct DashboardView: View {
             farms.importArea(result)
             if let error = farms.error { model.errorMessage = error }
         }
+        .task {
+            await model.syncReviewRequests()
+        }
     }
+
 
     private var summary: some View {
         HStack(spacing: 14) {
