@@ -62,6 +62,8 @@ final class ControlViewModel: ObservableObject {
     private let drafts: any MissionDraftRepository
     let link: any LocalTransport
     let isDemo: Bool
+    @Published var isDispatchingReview = false
+    private let reviewRepository: any OperatorReviewRepository
     private var expectedTestID: UUID?
     private var expectedReferenceID: UUID?
     private var demoHeartbeat: Timer?
@@ -69,8 +71,10 @@ final class ControlViewModel: ObservableObject {
     init(
         demo: Bool = false, draftURL: URL? = nil,
         transport: (any LocalTransport)? = nil, drafts: (any MissionDraftRepository)? = nil,
-        missions: (any MissionLibraryRepository)? = nil
+        missions: (any MissionLibraryRepository)? = nil,
+        reviewRepository: (any OperatorReviewRepository)? = nil
     ) {
+        self.reviewRepository = reviewRepository ?? CloudKitOperatorReviewRepository.shared
         self.drafts =
             drafts
             ?? FileMissionDraftRepository(
@@ -122,7 +126,11 @@ final class ControlViewModel: ObservableObject {
             do { try link.store.migrateLegacy() } catch {
                 errorMessage = "Migrasi dataset: " + error.localizedDescription
             }
+            Task { [weak self] in
+                await self?.syncCloudKitRequests()
+            }
         }
+
         records = link.store.records().filter { !missionLibrary.hiddenRemoteIDs.contains($0.id) }
         mergeSavedRecords()
         connectionObservation = link.connectionChanges.sink { [weak self] _ in self?.objectWillChange.send() }
@@ -264,6 +272,95 @@ final class ControlViewModel: ObservableObject {
         errorMessage = nil
         append("Misi tersimpan di Mac. Buka misi untuk mengatur area dan menyiapkan iPhone.")
     }
+
+    @MainActor
+    func syncCloudKitRequests() async {
+        await syncReviewRequests()
+    }
+
+    @MainActor
+    func syncReviewRequests() async {
+        guard let requests = try? await reviewRepository.fetchAllRequests() else { return }
+        var updated = missionLibrary
+        var hasChanges = false
+        for request in requests {
+            let existingIndex = updated.missions.firstIndex(where: { $0.id == request.id || $0.remoteID == request.id })
+            let areaPoints = request.boundary.map { FarmArea.Point(latitude: $0.latitude, longitude: $0.longitude) }
+            let area = FarmArea(id: request.garden.id, name: request.garden.name, points: areaPoints)
+            let phase: MissionPhase = request.status == .completed ? .completed : .idle
+            if let existingIndex {
+                if updated.missions[existingIndex].phase != phase || updated.missions[existingIndex].area?.points != areaPoints {
+                    updated.missions[existingIndex].area = area
+                    updated.missions[existingIndex].phase = phase
+                    hasChanges = true
+                }
+            } else {
+                var newPlan = MissionPlan()
+                newPlan.name = "\(request.garden.name) · \(request.farmer.name)"
+                newPlan.guidedMode = true
+                newPlan.durationSeconds = 600
+                let mission = SavedMission(
+                    id: request.id,
+                    createdAt: request.timeline.submittedAt,
+                    plan: newPlan,
+                    area: area,
+                    remoteID: request.id,
+                    phase: phase
+                )
+                updated.missions.insert(mission, at: 0)
+                hasChanges = true
+            }
+        }
+        if hasChanges {
+            _ = saveLibrary(updated)
+        }
+    }
+
+    @MainActor
+    func dispatchReviewResult(
+        for mission: SavedMission?,
+        output: OrthomosaicOutput
+    ) async {
+        guard !isDispatchingReview else { return }
+        isDispatchingReview = true
+        defer { isDispatchingReview = false }
+
+        do {
+            let allRequests = (try? await reviewRepository.fetchAllRequests()) ?? []
+            let targetRequest: PlantationReviewRequest?
+            if let missionID = mission?.id, let exact = allRequests.first(where: { $0.id == missionID }) {
+                targetRequest = exact
+            } else if let remoteID = mission?.remoteID, let exact = allRequests.first(where: { $0.id == remoteID }) {
+                targetRequest = exact
+            } else if let name = mission?.plan.name, let byName = allRequests.first(where: { name.contains($0.garden.name) || $0.garden.name.contains(name) }) {
+                targetRequest = byName
+            } else {
+                targetRequest = allRequests.first(where: { $0.status != .completed }) ?? allRequests.first
+            }
+
+            guard let request = targetRequest else {
+                errorMessage = "Tidak ada permintaan peninjauan dari petani yang ditemukan di CloudKit."
+                return
+            }
+
+            let previewURL = output.folder.appendingPathComponent("preview.png")
+            let assetURL = FileManager.default.fileExists(atPath: previewURL.path) ? previewURL : nil
+
+            let result = PlantationReviewResult.standardRecommendation(
+                completedAt: Date(),
+                orthomosaicImageURL: assetURL
+            )
+
+            try await reviewRepository.dispatchResult(
+                requestID: request.id,
+                result: result,
+                previewAssetURL: assetURL
+            )
+            markMissionCompleted(mission?.id ?? request.id)
+        } catch {
+            errorMessage = "Gagal mengirim hasil: \(error.localizedDescription)"
+        }
+    }
     var selectedMission: SavedMission? {
         missionLibrary.missions.first { $0.id == selectedMissionID }
     }
@@ -297,6 +394,14 @@ final class ControlViewModel: ObservableObject {
             return false
         }
     }
+
+    func markMissionCompleted(_ id: UUID) {
+        guard let index = missionLibrary.missions.firstIndex(where: { $0.id == id || $0.remoteID == id }) else { return }
+        var updated = missionLibrary
+        updated.missions[index].phase = .completed
+        _ = saveLibrary(updated)
+    }
+
     private func selectMission(_ mission: SavedMission) {
         switchingMission = true
         selectedMissionID = mission.id

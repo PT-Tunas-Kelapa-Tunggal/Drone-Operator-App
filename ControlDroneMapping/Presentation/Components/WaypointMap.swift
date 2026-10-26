@@ -186,7 +186,7 @@ struct WaypointMap: NSViewRepresentable {
             if let polygon = overlay as? MKPolygon {
                 let renderer = MKPolygonRenderer(polygon: polygon)
                 renderer.strokeColor = .systemGreen
-                renderer.fillColor = NSColor.systemGreen.withAlphaComponent(0.1)
+                renderer.fillColor = NSColor.systemGreen.withAlphaComponent(0.2)
                 renderer.lineWidth = 2
                 return renderer
             }
@@ -213,7 +213,9 @@ struct WaypointMap: NSViewRepresentable {
             case .waypoint:
                 view.markerTintColor = .systemOrange
                 view.glyphText = "\(marker.number)"
-                view.isDraggable = parent.editingEnabled && parent.mode == .inspect && !parent.drawingBoundary
+                view.isDraggable =
+                    parent.editingEnabled && (parent.mode == .inspect || parent.dragWhileAdding)
+                    && !parent.drawingBoundary
             case .boundary:
                 view.markerTintColor = .systemGreen
                 view.glyphText = "B\(marker.number)"
@@ -233,18 +235,27 @@ struct WaypointMap: NSViewRepresentable {
             _ map: MKMapView, annotationView view: MKAnnotationView,
             didChange newState: MKAnnotationView.DragState, fromOldState oldState: MKAnnotationView.DragState
         ) {
-            guard newState == .ending, parent.editingEnabled,
-                let marker = view.annotation as? RouteMarker
-            else { return }
-            let coordinate = MapCoordinate(
-                latitude: marker.coordinate.latitude, longitude: marker.coordinate.longitude)
-            switch marker.kind {
-            case .waypoint: parent.onMove(marker.id, coordinate)
-            case .boundary: parent.onBoundaryMove?(marker.number - 1, coordinate)
-            case .home: parent.onHomeMove?(coordinate)
-            case .operatorLocation: break
+            switch newState {
+            case .starting:
+                view.dragState = .dragging
+            case .ending:
+                view.dragState = .none
+                guard parent.editingEnabled,
+                    let marker = view.annotation as? RouteMarker
+                else { return }
+                let coordinate = MapCoordinate(
+                    latitude: marker.coordinate.latitude, longitude: marker.coordinate.longitude)
+                switch marker.kind {
+                case .waypoint: parent.onMove(marker.id, coordinate)
+                case .boundary: parent.onBoundaryMove?(marker.number - 1, coordinate)
+                case .home: parent.onHomeMove?(coordinate)
+                case .operatorLocation: break
+                }
+            case .canceling:
+                view.dragState = .none
+            default:
+                break
             }
-            view.dragState = .none
         }
     }
 }

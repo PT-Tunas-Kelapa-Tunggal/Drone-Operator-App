@@ -279,7 +279,7 @@ struct ContentView: View {
                 newMission = true
             } label: {
                 Label("Misi baru", systemImage: "plus")
-            }.kropsToolbarAction().disabled(model.editingLocked)
+            }.kropsToolbarAction().disabled(true)
         }.padding(.horizontal, 22).padding(.vertical, 14)
     }
     private var requestsPage: some View {
@@ -292,7 +292,7 @@ struct ContentView: View {
                 Button("Buat misi manual") {
                     missionName = ""
                     newMission = true
-                }.kropsPrimaryAction().disabled(model.editingLocked)
+                }.kropsPrimaryAction().disabled(true)
             }.frame(maxWidth: .infinity).padding(.vertical, 70)
         }
     }

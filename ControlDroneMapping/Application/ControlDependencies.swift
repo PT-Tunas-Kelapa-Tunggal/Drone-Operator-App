@@ -6,6 +6,7 @@ struct ControlDependencies {
     let farms: FarmAreaViewModel
     let location: OperatorLocationViewModel
     let planner: FlightPlannerViewModel
+    let reviews: any OperatorReviewRepository
 
     init(demo: Bool) {
         farms = FarmAreaViewModel(repository: FarmAreaStore())
@@ -18,11 +19,16 @@ struct ControlDependencies {
         let repository = DatasetStore()
         let link = LocalLink(camera: false, enabled: !demo, store: repository)
         self.link = link
+        let reviewRepository: any OperatorReviewRepository = demo
+            ? InMemoryOperatorReviewRepository()
+            : CloudKitOperatorReviewRepository.shared
+        self.reviews = reviewRepository
         viewModel = ControlViewModel(
             demo: demo, transport: link,
             drafts: FileMissionDraftRepository(url: demo ? nil : FileMissionDraftRepository.defaultURL),
             missions: FileMissionLibraryRepository(
-                url: support.appendingPathComponent(demo ? "demo-missions.json" : "missions.json")))
+                url: support.appendingPathComponent(demo ? "demo-missions.json" : "missions.json")),
+            reviewRepository: reviewRepository)
     }
     static func exportViewModel(record: MissionRecord, store: any DatasetRepository) -> WebODMExportViewModel
     {

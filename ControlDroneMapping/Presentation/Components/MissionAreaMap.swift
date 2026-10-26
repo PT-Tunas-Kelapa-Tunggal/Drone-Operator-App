@@ -120,11 +120,20 @@ struct MissionAreaMap: NSViewRepresentable {
             _ map: MKMapView, annotationView view: MKAnnotationView,
             didChange newState: MKAnnotationView.DragState, fromOldState oldState: MKAnnotationView.DragState
         ) {
-            guard newState == .ending, let vertex = view.annotation as? Vertex else { return }
-            parent.movePoint(
-                vertex.index,
-                MapCoordinate(latitude: vertex.coordinate.latitude, longitude: vertex.coordinate.longitude))
-            view.dragState = .none
+            switch newState {
+            case .starting:
+                view.dragState = .dragging
+            case .ending:
+                view.dragState = .none
+                guard let vertex = view.annotation as? Vertex else { return }
+                parent.movePoint(
+                    vertex.index,
+                    MapCoordinate(latitude: vertex.coordinate.latitude, longitude: vertex.coordinate.longitude))
+            case .canceling:
+                view.dragState = .none
+            default:
+                break
+            }
         }
     }
 }

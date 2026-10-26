@@ -60,7 +60,7 @@ struct MissionWorkspaceView: View {
                 mapToolbar
                 WaypointMap(
                     route: routeMatchesMission ? planner.draft : FlightRoute(),
-                    farm: nil, operatorLocation: location.sample, mode: mapMode,
+                    farm: model.selectedMission?.area, operatorLocation: location.sample, mode: mapMode,
                     fitRequest: planner.fitRequest, selectedWaypoint: $planner.selectedWaypointID,
                     onClick: addPoint,
                     onMove: { id, coordinate in
@@ -122,7 +122,7 @@ struct MissionWorkspaceView: View {
             }
             .help("Urungkan perubahan rute terakhir")
             .accessibilityLabel("Urungkan perubahan rute terakhir")
-            .disabled(!canEditRoute || planner.undoStack.isEmpty)
+            .disabled(!canEditRoute || !planner.canUndo)
             Spacer(minLength: 8)
             if routeMatchesMission && !planner.draft.waypoints.isEmpty {
                 Text(String(format: "%d titik · %.0f m",

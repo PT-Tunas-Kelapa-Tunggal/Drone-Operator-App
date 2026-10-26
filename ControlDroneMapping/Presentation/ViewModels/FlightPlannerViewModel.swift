@@ -51,15 +51,70 @@ final class FlightPlannerViewModel: ObservableObject {
         } catch { storageError = "Rute tersimpan belum dapat dibaca: " + error.localizedDescription }
     }
     private var missionScope: UUID?
+    @Published private(set) var currentFarm: FarmArea?
+
+    var baselineRoute: FlightRoute? {
+        guard let farm = currentFarm, farm.points.count >= 2 else { return nil }
+        var route = FlightRoute(
+            id: draft.id,
+            name: draft.name,
+            farmID: farm.id,
+            missionID: missionScope,
+            defaultAltitude: draft.defaultAltitude.isFinite && draft.defaultAltitude > 0 ? draft.defaultAltitude : 80,
+            speed: draft.speed.isFinite && draft.speed > 0 ? draft.speed : 5
+        )
+        let alt = route.defaultAltitude
+        route.home = MapCoordinate(latitude: farm.points[0].latitude, longitude: farm.points[0].longitude)
+        route.waypoints = farm.points.dropFirst().map {
+            FlightWaypoint(
+                coordinate: MapCoordinate(latitude: $0.latitude, longitude: $0.longitude),
+                altitude: alt
+            )
+        }
+        route.returnToHome = true
+        route.firmware = draft.firmware
+        route.homeAltitudeAMSL = draft.homeAltitudeAMSL
+        return route
+    }
+
+    var isAtBaseline: Bool {
+        guard let baseline = baselineRoute else { return true }
+        guard draft.home == baseline.home else { return false }
+        guard draft.waypoints.count == baseline.waypoints.count else { return false }
+        for (w1, w2) in zip(draft.waypoints, baseline.waypoints) {
+            if w1.coordinate != w2.coordinate { return false }
+        }
+        return true
+    }
+
+    var canUndo: Bool {
+        !undoStack.isEmpty || !isAtBaseline
+    }
+
     func open(
         farm: FarmArea?, name: String = "Rute baru", altitude: Double = 80, speed: Double = 5,
         missionID: UUID? = nil
     ) {
         missionScope = missionID
+        currentFarm = farm
         if let saved = routes.last(where: {
             $0.missionID == missionID && (missionID != nil || $0.farmID == farm?.id)
         }) {
-            select(saved.id)
+            if let farm, farm.points.count >= 2 {
+                let matchesFarmCount = saved.waypoints.count == (farm.points.count - 1)
+                let farmHome = MapCoordinate(latitude: farm.points[0].latitude, longitude: farm.points[0].longitude)
+                let isNearFarm = saved.home.map { $0.distance(to: farmHome) < 5_000 } ?? false
+
+                if matchesFarmCount && isNearFarm {
+                    select(saved.id)
+                } else {
+                    newRoute(
+                        farm: farm, name: farm.name.isEmpty ? name : "Rute " + farm.name,
+                        altitude: altitude, speed: speed)
+                }
+            } else {
+                select(saved.id)
+            }
         } else {
             newRoute(
                 farm: farm, name: farm.map { "Rute " + $0.name } ?? name, altitude: altitude, speed: speed)
@@ -70,14 +125,27 @@ final class FlightPlannerViewModel: ObservableObject {
             error = "Batas 256 draft rute telah tercapai."
             return
         }
+        currentFarm = farm
         switching = true
-        draft = FlightRoute(
+        var route = FlightRoute(
             name: name, farmID: farm?.id, missionID: missionScope,
             defaultAltitude: altitude.isFinite && altitude > 0 ? altitude : 80,
             speed: speed.isFinite && speed > 0 ? speed : 5)
+        if let farmPoints = farm?.points, farmPoints.count >= 2 {
+            let alt = altitude.isFinite && altitude > 0 ? altitude : 80
+            route.home = MapCoordinate(latitude: farmPoints[0].latitude, longitude: farmPoints[0].longitude)
+            route.waypoints = farmPoints.dropFirst().map {
+                FlightWaypoint(
+                    coordinate: MapCoordinate(latitude: $0.latitude, longitude: $0.longitude),
+                    altitude: alt
+                )
+            }
+            route.returnToHome = true
+        }
+        draft = route
         switching = false
         selectedWaypointID = nil
-        mode = .home
+        mode = draft.home == nil ? .home : .inspect
         reviewed = false
         exportedURL = nil
         undoStack = []
@@ -149,11 +217,17 @@ final class FlightPlannerViewModel: ObservableObject {
         }
     }
     func undo() {
-        guard let previous = undoStack.popLast() else { return }
-        undoing = true
-        draft = previous
-        undoing = false
-        if !draft.waypoints.contains(where: { $0.id == selectedWaypointID }) { selectedWaypointID = nil }
+        if let previous = undoStack.popLast() {
+            undoing = true
+            draft = previous
+            undoing = false
+            if !draft.waypoints.contains(where: { $0.id == selectedWaypointID }) { selectedWaypointID = nil }
+        } else if let baseline = baselineRoute, !isAtBaseline {
+            undoing = true
+            draft = baseline
+            undoing = false
+            selectedWaypointID = nil
+        }
     }
     func fitRoute() { fitRequest = UUID() }
     var exportBlocker: String? {
