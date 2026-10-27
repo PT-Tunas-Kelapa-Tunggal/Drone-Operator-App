@@ -80,7 +80,8 @@ struct MissionWorkspaceView: View {
             planner.open(
                 farm: mission.area, name: "Rute " + mission.plan.name,
                 altitude: model.geometry.heightAGL, speed: model.geometry.speed, missionID: mission.id)
-            planner.mode = .inspect
+            // Opening a plan starts ready to draw boundary points.
+            planner.mode = canEditRoute ? .waypoint : .inspect
             installKeyMonitor()
         }
         .onDisappear {
