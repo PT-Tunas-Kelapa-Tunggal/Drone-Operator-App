@@ -250,16 +250,9 @@ struct MissionWorkspaceView: View {
                     .help("Kembalikan ke batas kebun dari data petani")
                 }
             }
-            if planner.draft.waypoints.isEmpty {
-                Text("Tekan P (alat Titik), lalu klik peta untuk mulai menggambar batas.")
-                    .font(.callout).foregroundStyle(.secondary)
-            } else {
-                VStack(spacing: 2) {
-                    ForEach(Array(planner.draft.waypoints.enumerated()), id: \.element.id) { index, point in
-                        boundaryRow(index: index, point: point)
-                    }
-                }
-            }
+            Text(cornerSummary)
+                .font(.callout).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             if !boundaryReady {
                 Label("Minimal 3 titik untuk membentuk area survei.", systemImage: "exclamationmark.circle")
                     .font(.caption).foregroundStyle(.orange)
@@ -276,41 +269,15 @@ struct MissionWorkspaceView: View {
         .disabled(!boundaryReady)
     }
 
-    private func boundaryRow(index: Int, point: FlightWaypoint) -> some View {
-        let selected = planner.selectedWaypointID == point.id
-        let total = planner.draft.waypoints.count
-        return HStack(spacing: 10) {
-            Text("\(index + 1)")
-                .font(.caption.bold().monospacedDigit()).foregroundStyle(.white)
-                .frame(width: 22, height: 22)
-                .background(selected ? Color.blue : Color.orange, in: Circle())
-            Text(String(format: "%.5f, %.5f", point.coordinate.latitude, point.coordinate.longitude))
-                .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
-            Spacer(minLength: 4)
-            if selected {
-                HStack(spacing: 0) {
-                    Button { editRoute { planner.moveWaypointOrder(point.id, toIndex: index - 1) } } label: {
-                        Image(systemName: "chevron.up")
-                    }
-                    .help("Pindah ke urutan sebelumnya").disabled(index == 0)
-                    Button { editRoute { planner.moveWaypointOrder(point.id, toIndex: index + 1) } } label: {
-                        Image(systemName: "chevron.down")
-                    }
-                    .help("Pindah ke urutan berikutnya").disabled(index >= total - 1)
-                    Button(role: .destructive) { editRoute { planner.removeWaypoint(point.id) } } label: {
-                        Image(systemName: "trash")
-                    }
-                    .help("Hapus titik ini").disabled(total <= 3)
-                }
-                .buttonStyle(.borderless).controlSize(.small)
-            }
+    /// Points are edited on the map; the panel only says how.
+    private var cornerSummary: String {
+        if planner.draft.waypoints.isEmpty { return "Tekan P, lalu klik peta untuk mulai menggambar batas." }
+        if let id = planner.selectedWaypointID,
+            let index = planner.draft.waypoints.firstIndex(where: { $0.id == id })
+        {
+            return "Titik \(index + 1) terpilih · geser di peta · Delete untuk menghapus"
         }
-        .padding(.horizontal, 8).padding(.vertical, 6)
-        .background(
-            selected ? Color.accentColor.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 8)
-        )
-        .contentShape(Rectangle())
-        .onTapGesture { planner.selectedWaypointID = selected ? nil : point.id }
+        return "Klik pin di peta untuk memilih · P untuk menambah titik"
     }
 
     @ViewBuilder
