@@ -8,7 +8,11 @@ struct FileFlightRouteRepository: FlightRouteRepository {
     ) { self.url = url }
     func load() throws -> [FlightRoute] {
         guard let url, FileManager.default.fileExists(atPath: url.path) else { return [] }
-        return try JSONDecoder().decode([FlightRoute].self, from: Data(contentsOf: url))
+        do {
+            return try JSONDecoder().decode([FlightRoute].self, from: Data(contentsOf: url))
+        } catch {
+            return []
+        }
     }
     func save(_ routes: [FlightRoute]) throws {
         guard let url else { return }
