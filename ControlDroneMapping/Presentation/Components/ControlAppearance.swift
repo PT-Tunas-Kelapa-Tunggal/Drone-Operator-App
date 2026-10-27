@@ -52,12 +52,16 @@ private struct FloatingControlAppearance<S: Shape>: ViewModifier {
         }
     }
 }
-// Text-heavy panels over satellite imagery stay opaque for legibility.
+// Floating sidebars use system glass; grouped form sections keep their text legible.
 private struct FloatingPanelAppearance: ViewModifier {
-    func body(content: Content) -> some View {
-        content.background(KropsStyle.surface, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(KropsStyle.border))
-            .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22))
+        } else {
+            content.background(KropsStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(KropsStyle.border))
+                .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
+        }
     }
 }
 extension View {
