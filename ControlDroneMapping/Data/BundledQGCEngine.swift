@@ -1,7 +1,8 @@
 import Foundation
 
 public enum BundledQGCEngine {
-    public static let healthURL = URL(string: "http://127.0.0.1:18080/healthz")!
+    public static let baseURL = URL(string: "http://127.0.0.1:18080")!
+    public static let healthURL = baseURL.appendingPathComponent("healthz")
 
     /// Resolves the embedded QGroundControl.app bundle URL.
     public static var embeddedAppURL: URL? {

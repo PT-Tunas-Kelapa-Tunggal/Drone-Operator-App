@@ -165,7 +165,7 @@ struct ReviewWorkspaceView: View {
             if mission != nil && model.hasMissionDetail && model.step == .mission {
                 MissionWorkspaceView(
                     model: model, link: link, farms: farms, location: location,
-                    planner: planner, openPlanner: openPlanner)
+                    planner: planner)
                     .id(model.selectedMissionID)
                     .padding(16)
             } else {

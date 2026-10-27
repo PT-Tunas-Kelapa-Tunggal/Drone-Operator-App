@@ -13,9 +13,13 @@ struct ControlDependencies {
         location = OperatorLocationViewModel(service: MacLocationService())
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("DroneControl")
+        let waypointGenerator: any WaypointGenerator = demo
+            ? MockWaypointGenerator()
+            : QGCWaypointGenerator(baseURL: BundledQGCEngine.baseURL)
         planner = FlightPlannerViewModel(
-            repository: FileFlightRouteRepository(
-                url: support.appendingPathComponent(demo ? "demo-flight-routes.json" : "flight-routes.json")))
+            repository: InMemoryFlightRouteRepository(),
+            waypointGenerator: waypointGenerator
+        )
         let repository = DatasetStore()
         let link = LocalLink(camera: false, enabled: !demo, store: repository)
         self.link = link

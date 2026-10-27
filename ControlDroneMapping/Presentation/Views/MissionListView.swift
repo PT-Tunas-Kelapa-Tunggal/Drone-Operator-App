@@ -28,17 +28,13 @@ struct MissionListView: View {
                 Button("Coba bersihkan sisa misi lagi") {
                     model.cleanDeletedMissionFiles(legacyIDs: processing.legacyDeletedFileIDs(liveIDs: model.liveMissionFileIDs, hiddenIDs: model.missionLibrary.hiddenRemoteIDs)) { ids in
                         try processing.removeMissionFiles(ids)
-                        try planner.removeMissionRoutes(ids)
+                        planner.removeMissionRoutes(ids)
                     }
                 }.disabled(processing.busy)
             }
             if let error = model.missionStorageError {
                 Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                 Button("Coba simpan lagi") { model.retryMissionSaving() }
-            }
-            if let error = planner.storageError {
-                Text(error).font(.caption).foregroundStyle(.orange)
-                Button("Muat ulang rute") { planner.retrySaving() }
             }
             if missions.isEmpty {
                 ContentUnavailableView(
@@ -80,7 +76,7 @@ struct MissionListView: View {
                 if let deleting {
                     model.deleteMission(deleting.id) { ids in
                         try processing.removeMissionFiles(ids)
-                        try planner.removeMissionRoutes(ids)
+                        planner.removeMissionRoutes(ids)
                     }
                 }
                 deleting = nil
