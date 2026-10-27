@@ -39,9 +39,34 @@ private struct ToolbarActionAppearance: ViewModifier {
         }
     }
 }
+// Controls floating over the map use glass; earlier systems get a material chip.
+private struct FloatingControlAppearance<S: Shape>: ViewModifier {
+    var shape: S
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content.glassEffect(.regular, in: shape)
+        } else {
+            content.background(.regularMaterial, in: shape)
+                .overlay(shape.stroke(KropsStyle.border))
+                .shadow(color: .black.opacity(0.18), radius: 10, y: 3)
+        }
+    }
+}
+// Text-heavy panels over satellite imagery stay opaque for legibility.
+private struct FloatingPanelAppearance: ViewModifier {
+    func body(content: Content) -> some View {
+        content.background(KropsStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(KropsStyle.border))
+            .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
+    }
+}
 extension View {
     func kropsPrimaryAction(size: ControlSize = .regular) -> some View {
         modifier(PrimaryActionAppearance(size: size))
     }
     func kropsToolbarAction() -> some View { modifier(ToolbarActionAppearance()) }
+    func kropsFloatingControl<S: Shape>(in shape: S) -> some View {
+        modifier(FloatingControlAppearance(shape: shape))
+    }
+    func kropsFloatingPanel() -> some View { modifier(FloatingPanelAppearance()) }
 }

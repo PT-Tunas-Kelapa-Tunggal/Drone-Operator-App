@@ -167,7 +167,6 @@ struct ReviewWorkspaceView: View {
                     model: model, link: link, farms: farms, location: location,
                     planner: planner)
                     .id(model.selectedMissionID)
-                    .padding(16)
             } else {
                 missionList
             }
