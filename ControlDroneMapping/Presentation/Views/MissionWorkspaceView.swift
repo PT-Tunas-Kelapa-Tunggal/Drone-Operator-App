@@ -12,6 +12,7 @@ struct MissionWorkspaceView: View {
     @State private var focusOperator = false
     @State private var requestedLocation = false
     @State private var inspectorVisible = true
+    @State private var summaryVisible = true
     @State private var inspectorContentHeight: CGFloat = 400
     @State private var keyMonitor: Any?
     @State private var replanPending = false
@@ -58,8 +59,14 @@ struct MissionWorkspaceView: View {
         .overlay(alignment: .top) {
             VStack(alignment: .leading, spacing: 12) {
                 topBar
-                if inspectorVisible {
-                    inspector.transition(.move(edge: .leading).combined(with: .opacity))
+                HStack(alignment: .top, spacing: 12) {
+                    if inspectorVisible {
+                        inspector.transition(.move(edge: .leading).combined(with: .opacity))
+                    }
+                    Spacer(minLength: 0)
+                    if summaryVisible {
+                        summaryPanel.transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
                 }
             }
             .padding(14)
@@ -67,6 +74,7 @@ struct MissionWorkspaceView: View {
         }
         .overlay(alignment: .bottom) { hint.padding(.bottom, 18) }
         .animation(.snappy(duration: 0.22), value: inspectorVisible)
+        .animation(.snappy(duration: 0.22), value: summaryVisible)
         .onAppear {
             guard let mission = model.selectedMission else { return }
             planner.open(
@@ -120,6 +128,13 @@ struct MissionWorkspaceView: View {
                     planner.fitRoute()
                 }
             }
+            .padding(5)
+            .kropsFloatingControl(in: Capsule())
+
+            PlanIconButton(
+                systemImage: "sidebar.right", help: summaryVisible ? "Sembunyikan ringkasan" : "Tampilkan ringkasan",
+                selected: summaryVisible
+            ) { summaryVisible.toggle() }
             .padding(5)
             .kropsFloatingControl(in: Capsule())
         }
@@ -223,7 +238,7 @@ struct MissionWorkspaceView: View {
             Text(
                 planner.planningStep == .boundary
                     ? "Sesuaikan titik sudut agar sama dengan batas kebun di lapangan."
-                    : "Atur parameter, tentukan Home & Entry, lalu hitung jalur survei."
+                    : "Atur parameter lalu hitung jalur. Taruh Home (H) dan Entry (E) di peta."
             )
             .font(.caption).foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
@@ -232,12 +247,6 @@ struct MissionWorkspaceView: View {
 
     @ViewBuilder
     private var boundaryInspector: some View {
-        HStack(spacing: 8) {
-            PlanMetric("Luas", String(format: "%.2f ha", planner.boundaryAreaHectares))
-            PlanMetric("Keliling", String(format: "%.0f m", planner.boundaryPerimeterMeters))
-            PlanMetric("Titik", "\(planner.draft.waypoints.count)")
-        }
-
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 PlanSectionTitle("Titik sudut")
@@ -292,6 +301,8 @@ struct MissionWorkspaceView: View {
             ControlField("Jarak jalur") { NumberField($planner.draft.lineSpacing, unit: "m") }
                 .help("Jarak antar lintasan sejajar drone.")
             angleSlider
+            Toggle("Kembali ke Home setelah selesai (RTL)", isOn: $planner.draft.returnToHome)
+                .font(.callout)
             DisclosureGroup("Lanjutan") {
                 HStack(spacing: 10) {
                     ControlField("Jarak foto") { NumberField($planner.draft.triggerDistance, unit: "m") }
@@ -304,21 +315,6 @@ struct MissionWorkspaceView: View {
             .font(.callout)
         }
         .disabled(model.editingLocked)
-
-        VStack(alignment: .leading, spacing: 6) {
-            PlanSectionTitle("Lepas landas & masuk")
-            PlanPointRow(
-                title: "Home", detail: planner.draft.home == nil ? "Belum ditentukan · tekan H" : "Lepas landas & mendarat",
-                glyph: "H", color: .green, set: planner.draft.home != nil, active: planner.mode == .home
-            ) { selectTool(planner.mode == .home ? .inspect : .home) }
-            PlanPointRow(
-                title: "Entry",
-                detail: planner.draft.surveyEntry == nil ? "Otomatis dari jalur · tekan E" : "Titik masuk di garis batas",
-                glyph: "E", color: .cyan, set: planner.draft.surveyEntry != nil, active: planner.mode == .entry
-            ) { selectTool(planner.mode == .entry ? .inspect : .entry) }
-            Toggle("Kembali ke Home setelah selesai (RTL)", isOn: $planner.draft.returnToHome)
-                .font(.callout).padding(.top, 4)
-        }
 
         Button {
             Task { await generateSurvey() }
@@ -337,36 +333,6 @@ struct MissionWorkspaceView: View {
         }
         .kropsPrimaryAction(size: .large)
         .disabled(planner.isGeneratingWaypoints || !boundaryReady)
-
-        if let stats = planner.draft.surveyStatistics, stats.totalDistanceMeters > 0 {
-            VStack(alignment: .leading, spacing: 8) {
-                PlanSectionTitle("Hasil jalur")
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible())], spacing: 8) {
-                    PlanMetric("Foto", "\(stats.photoCount)")
-                    PlanMetric("Jarak", String(format: "%.0f m", stats.totalDistanceMeters))
-                    if stats.flightTimeSeconds > 0 {
-                        PlanMetric("Durasi", Self.formattedDuration(stats.flightTimeSeconds))
-                    }
-                    PlanMetric("Lintasan", "\(stats.transectCount)")
-                }
-            }
-
-            Toggle(isOn: $model.geometry.reviewed) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Rencana sudah diperiksa").font(.body.weight(.medium))
-                    Text("Home, Entry, dan jalur sesuai kondisi lapangan.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            .toggleStyle(.checkbox)
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                (model.geometry.reviewed ? Color.green : Color.primary).opacity(0.07),
-                in: RoundedRectangle(cornerRadius: 10)
-            )
-            .disabled(model.editingLocked)
-        }
     }
 
     /// Dragging re-plans the survey live; the whole drag is one undo step.
@@ -431,6 +397,68 @@ struct MissionWorkspaceView: View {
             entryLocation: planner.draft.entryLocation,
             fitsRoute: fitsRoute
         )
+    }
+
+    // MARK: - Summary
+
+    /// Read-only overview of the plan; the review checkbox is the last step before capture.
+    private var summaryPanel: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Ringkasan rencana").font(KropsTypography.sectionTitle)
+                Spacer()
+                if model.geometry.reviewed {
+                    Label("Diperiksa", systemImage: "checkmark.circle.fill")
+                        .font(.caption).foregroundStyle(.green)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                PlanSectionTitle("Area")
+                PlanSummaryRow("Luas", String(format: "%.2f ha", planner.boundaryAreaHectares))
+                PlanSummaryRow("Keliling", String(format: "%.0f m", planner.boundaryPerimeterMeters))
+                PlanSummaryRow("Titik batas", "\(planner.draft.waypoints.count)")
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                PlanSectionTitle("Lepas landas & masuk")
+                PlanStatusRow("Home", glyph: "H", color: .green, placed: planner.draft.home != nil,
+                              status: planner.draft.home == nil ? "Belum · tekan H" : "Sudah ditaruh")
+                PlanStatusRow("Entry", glyph: "E", color: .cyan, placed: planner.draft.surveyEntry != nil,
+                              status: planner.draft.surveyEntry == nil ? "Otomatis" : "Sudah ditaruh")
+                PlanSummaryRow("Kembali ke Home", planner.draft.returnToHome ? "Ya" : "Tidak")
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                PlanSectionTitle("Jalur")
+                if let stats = planner.draft.surveyStatistics, stats.totalDistanceMeters > 0 {
+                    PlanSummaryRow("Foto", "\(stats.photoCount)")
+                    PlanSummaryRow("Jarak terbang", String(format: "%.0f m", stats.totalDistanceMeters))
+                    if stats.flightTimeSeconds > 0 {
+                        PlanSummaryRow("Durasi", Self.formattedDuration(stats.flightTimeSeconds))
+                    }
+                    PlanSummaryRow("Lintasan", "\(stats.transectCount)")
+                } else {
+                    Text("Belum dihitung").font(.callout).foregroundStyle(.secondary)
+                }
+            }
+
+            if pathReady {
+                Divider()
+                Toggle(isOn: $model.geometry.reviewed) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Rencana sudah diperiksa").font(.body.weight(.medium))
+                        Text("Home, Entry, dan jalur sesuai kondisi lapangan.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.checkbox)
+                .disabled(model.editingLocked || !canEditRoute)
+            }
+        }
+        .padding(16)
+        .frame(width: 260)
+        .kropsFloatingPanel()
     }
 
     // MARK: - Hint
@@ -640,7 +668,7 @@ private struct PlanSectionTitle: View {
     }
 }
 
-private struct PlanMetric: View {
+private struct PlanSummaryRow: View {
     let title: String
     let value: String
     init(_ title: String, _ value: String) {
@@ -648,41 +676,38 @@ private struct PlanMetric: View {
         self.value = value
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.callout.weight(.semibold).monospacedDigit()).lineLimit(1).minimumScaleFactor(0.8)
+        HStack {
+            Text(title).foregroundStyle(.secondary)
+            Spacer()
+            Text(value).fontWeight(.semibold).monospacedDigit()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10).padding(.vertical, 8)
-        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+        .font(.callout)
     }
 }
 
-private struct PlanPointRow: View {
+private struct PlanStatusRow: View {
     let title: String
-    let detail: String
     let glyph: String
     let color: Color
-    let set: Bool
-    let active: Bool
-    let action: () -> Void
-
+    let placed: Bool
+    let status: String
+    init(_ title: String, glyph: String, color: Color, placed: Bool, status: String) {
+        self.title = title
+        self.glyph = glyph
+        self.color = color
+        self.placed = placed
+        self.status = status
+    }
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Text(glyph)
-                .font(.caption.bold()).foregroundStyle(.white)
-                .frame(width: 24, height: 24)
-                .background(set ? color : Color.secondary.opacity(0.4), in: Circle())
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.callout.weight(.medium))
-                Text(detail).font(.caption).foregroundStyle(.secondary)
-            }
+                .font(.caption2.bold()).foregroundStyle(.white)
+                .frame(width: 18, height: 18)
+                .background(placed ? color : Color.secondary.opacity(0.4), in: Circle())
+            Text(title).foregroundStyle(.secondary)
             Spacer()
+            Text(status).fontWeight(.semibold).foregroundStyle(placed ? Color.primary : Color.secondary)
         }
-        .padding(8)
-        .background(
-            active ? color.opacity(0.14) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10)
-        )
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(active ? color.opacity(0.6) : Color.clear))
+        .font(.callout)
     }
 }

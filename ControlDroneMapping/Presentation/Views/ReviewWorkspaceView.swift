@@ -112,7 +112,7 @@ struct ReviewWorkspaceView: View {
                     Spacer(minLength: 8)
                     if inMissionDetail { missionStatus }
                 }
-                .padding(.horizontal, 14).padding(.vertical, 8)
+                .padding(.horizontal, 16).padding(.vertical, 14)
                 Divider()
             }
             Group {
@@ -275,16 +275,12 @@ struct ReviewWorkspaceView: View {
 
     private var contextHeader: some View {
         HStack(spacing: 10) {
-            Button {
+            Button("Misi", systemImage: "chevron.left") {
                 model.showMissionList()
                 tab = .overview
-                } label: {
-                Label("Misi", systemImage: "chevron.left")
-                    .font(.callout).foregroundStyle(.secondary)
-                    .padding(.horizontal, 10).frame(height: 26)
-                    .background(KropsStyle.canvas, in: Capsule())
             }
-            .buttonStyle(.plain).help("Kembali ke semua misi").accessibilityLabel("Semua misi")
+            .kropsToolbarAction()
+            .help("Kembali ke semua misi").accessibilityLabel("Semua misi")
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.title3.weight(.semibold)).lineLimit(1)
