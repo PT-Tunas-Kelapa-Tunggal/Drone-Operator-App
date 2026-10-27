@@ -15,9 +15,11 @@ struct WaypointMap: NSViewRepresentable {
     var editingEnabled = true
     var dragWhileAdding = false
     var focusOperator = false
+    var planningStep: FlightPlanningStep = .flight
     var onBoundaryClick: ((MapCoordinate) -> Void)? = nil
     var onBoundaryMove: ((Int, MapCoordinate) -> Void)? = nil
     var onHomeMove: ((MapCoordinate) -> Void)? = nil
+    var onEntryMove: ((MapCoordinate) -> Void)? = nil
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeNSView(context: Context) -> MKMapView {
         let map = MKMapView()
@@ -39,44 +41,99 @@ struct WaypointMap: NSViewRepresentable {
         // A one-second dashboard heartbeat must not interrupt an annotation drag.
         let key = MapState(
             route: route, farm: farm, sample: operatorLocation, mode: mode,
-            drawingBoundary: drawingBoundary, editingEnabled: editingEnabled)
+            drawingBoundary: drawingBoundary, editingEnabled: editingEnabled,
+            planningStep: planningStep)
         if coordinator.lastState != key {
             coordinator.lastState = key
             map.removeAnnotations(map.annotations)
             map.removeOverlays(map.overlays)
-            if let farm {
-                if farm.points.count >= 3 {
-                    map.addOverlay(MKPolygon(coordinates: farm.coordinates, count: farm.coordinates.count))
-                } else if farm.points.count == 2 {
-                    map.addOverlay(MKPolyline(coordinates: farm.coordinates, count: farm.coordinates.count))
+            let boundaryCoords: [CLLocationCoordinate2D] = {
+                if route.waypoints.count >= 3 {
+                    return route.waypoints.filter { $0.coordinate.isValid }.map { $0.coordinate.clCoordinate }
+                } else if let farm = farm, farm.points.count >= 3 {
+                    return farm.coordinates
                 }
-                if drawingBoundary {
-                    for (index, coordinate) in farm.coordinates.enumerated() {
-                        let marker = RouteMarker()
-                        marker.kind = .boundary
-                        marker.number = index + 1
-                        marker.title = "Batas \(index + 1)"
-                        marker.coordinate = coordinate
-                        map.addAnnotation(marker)
+                return []
+            }()
+            if boundaryCoords.count >= 3 {
+                map.addOverlay(MKPolygon(coordinates: boundaryCoords, count: boundaryCoords.count))
+            } else if boundaryCoords.count == 2 {
+                map.addOverlay(MKPolyline(coordinates: boundaryCoords, count: boundaryCoords.count))
+            }
+            if let farm, drawingBoundary {
+                for (index, coordinate) in farm.coordinates.enumerated() {
+                    let marker = RouteMarker()
+                    marker.kind = .boundary
+                    marker.number = index + 1
+                    marker.title = "Batas \(index + 1)"
+                    marker.coordinate = coordinate
+                    map.addAnnotation(marker)
+                }
+            }
+
+            if planningStep == .boundary {
+                // In Step 1: Batas Area
+                // Only boundary vertex pins are shown and editable. Home, Entry, Exit, and transect lines are strictly hidden.
+                for (index, point) in route.waypoints.enumerated() where point.coordinate.isValid {
+                    let marker = RouteMarker()
+                    marker.id = point.id
+                    marker.kind = .waypoint
+                    marker.title = "Titik Batas \(index + 1)"
+                    marker.number = index + 1
+                    marker.coordinate = point.coordinate.clCoordinate
+                    map.addAnnotation(marker)
+                }
+            } else {
+                // In Step 2: Parameter & Jalur Terbang
+                // Boundary vertex markers are hidden so operator cannot alter or drag the boundary.
+                // Home (H) and Entry (E) pins, Exit marker, and QGC survey transect lines are shown.
+                if let home = route.home, home.isValid {
+                    let marker = RouteMarker()
+                    marker.kind = .home
+                    marker.title = "Home (Lepas Landas & Mendarat)"
+                    marker.coordinate = home.clCoordinate
+                    map.addAnnotation(marker)
+                }
+                let effectiveEntry = route.surveyEntry ?? route.visualTransects.first
+                if let entry = effectiveEntry, entry.isValid {
+                    let entryMarker = RouteMarker()
+                    entryMarker.kind = .surveyEntry
+                    entryMarker.title = "Titik Masuk Survei (Entry)"
+                    entryMarker.coordinate = entry.clCoordinate
+                    map.addAnnotation(entryMarker)
+                }
+                if !route.visualTransects.isEmpty {
+                    if let last = route.visualTransects.last, last.isValid, route.visualTransects.count > 1 {
+                        let exitMarker = RouteMarker()
+                        exitMarker.kind = .surveyExit
+                        exitMarker.title = "Titik Selesai Survei (Exit)"
+                        exitMarker.coordinate = last.clCoordinate
+                        map.addAnnotation(exitMarker)
                     }
+                    let transectCoords = route.visualTransects.map(\.clCoordinate)
+                    let transectLine = SurveyTransectPolyline(coordinates: transectCoords, count: transectCoords.count)
+                    map.addOverlay(transectLine)
+
+                    if let home = route.home, home.isValid {
+                        if let entry = effectiveEntry {
+                            let ingressCoords = [home.clCoordinate, entry.clCoordinate]
+                            map.addOverlay(SurveyTransitPolyline(coordinates: ingressCoords, count: 2))
+                            if let first = route.visualTransects.first, entry != first {
+                                let connectCoords = [entry.clCoordinate, first.clCoordinate]
+                                map.addOverlay(SurveyTransitPolyline(coordinates: connectCoords, count: 2))
+                            }
+                        }
+                        if let last = route.visualTransects.last, route.returnToHome {
+                            let egressCoords = [last.clCoordinate, home.clCoordinate]
+                            map.addOverlay(SurveyTransitPolyline(coordinates: egressCoords, count: 2))
+                        }
+                    }
+                } else if let home = route.home, home.isValid, let entry = effectiveEntry {
+                    let ingressCoords = [home.clCoordinate, entry.clCoordinate]
+                    map.addOverlay(SurveyTransitPolyline(coordinates: ingressCoords, count: 2))
                 }
             }
-            if let home = route.home, home.isValid {
-                let marker = RouteMarker()
-                marker.kind = .home
-                marker.title = "Home"
-                marker.coordinate = home.clCoordinate
-                map.addAnnotation(marker)
-            }
-            for (index, point) in route.waypoints.enumerated() where point.coordinate.isValid {
-                let marker = RouteMarker()
-                marker.id = point.id
-                marker.kind = .waypoint
-                marker.title = "WP \(index + 1)"
-                marker.number = index + 1
-                marker.coordinate = point.coordinate.clCoordinate
-                map.addAnnotation(marker)
-            }
+
             if let operatorLocation {
                 let marker = RouteMarker()
                 marker.kind = .operatorLocation
@@ -84,13 +141,6 @@ struct WaypointMap: NSViewRepresentable {
                 marker.coordinate = operatorLocation.coordinate.clCoordinate
                 map.addAnnotation(marker)
             }
-            var points =
-                (route.home.flatMap { $0.isValid ? [$0.clCoordinate] : nil } ?? [])
-                + route.waypoints.filter { $0.coordinate.isValid }.map { $0.coordinate.clCoordinate }
-            if route.returnToHome, let home = route.home, home.isValid, !route.waypoints.isEmpty {
-                points.append(home.clCoordinate)
-            }
-            if points.count >= 2 { map.addOverlay(MKPolyline(coordinates: points, count: points.count)) }
         }
         if dragWhileAdding {
             for case let marker as RouteMarker in map.annotations where marker.kind == .waypoint {
@@ -105,6 +155,7 @@ struct WaypointMap: NSViewRepresentable {
                 (route.home.flatMap { $0.isValid ? [$0.clCoordinate] : nil } ?? [])
                 + route.waypoints.filter { $0.coordinate.isValid }.map { $0.coordinate.clCoordinate }
                 + (farm?.coordinates ?? [])
+                + route.visualTransects.map(\.clCoordinate)
             if focusOperator, let operatorLocation {
                 map.setRegion(
                     MKCoordinateRegion(
@@ -140,9 +191,13 @@ struct WaypointMap: NSViewRepresentable {
         var mode: FlightMapEditMode
         var drawingBoundary: Bool
         var editingEnabled: Bool
+        var planningStep: FlightPlanningStep
     }
+final class SurveyTransectPolyline: MKPolyline {}
+final class SurveyTransitPolyline: MKPolyline {}
+
     final class RouteMarker: NSObject, MKAnnotation {
-        enum Kind { case home, waypoint, boundary, operatorLocation }
+        enum Kind { case home, waypoint, boundary, operatorLocation, surveyEntry, surveyExit }
         var kind = Kind.waypoint
         var id = UUID()
         var number = 0
@@ -172,7 +227,12 @@ struct WaypointMap: NSViewRepresentable {
                 map.selectAnnotation(marker, animated: false)
                 return
             }
-            guard parent.editingEnabled, parent.mode != .inspect || parent.drawingBoundary else { return }
+            guard parent.editingEnabled else { return }
+            if parent.planningStep == .boundary {
+                guard parent.mode == .waypoint || parent.drawingBoundary else { return }
+            } else {
+                guard parent.mode == .home || parent.mode == .entry else { return }
+            }
             var hit = map.hitTest(map.convert(position, to: map.superview))
             while let view = hit, view !== map {
                 if view is NSControl || view is MKAnnotationView { return }
@@ -183,6 +243,19 @@ struct WaypointMap: NSViewRepresentable {
             if parent.drawingBoundary { parent.onBoundaryClick?(point) } else { parent.onClick(point) }
         }
         func mapView(_ map: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if overlay is SurveyTransectPolyline {
+                let renderer = MKPolylineRenderer(overlay: overlay)
+                renderer.strokeColor = .systemCyan
+                renderer.lineWidth = 3
+                return renderer
+            }
+            if overlay is SurveyTransitPolyline {
+                let renderer = MKPolylineRenderer(overlay: overlay)
+                renderer.strokeColor = .systemCyan
+                renderer.lineWidth = 2
+                renderer.lineDashPattern = [6, 4]
+                return renderer
+            }
             if let polygon = overlay as? MKPolygon {
                 let renderer = MKPolygonRenderer(polygon: polygon)
                 renderer.strokeColor = .systemGreen
@@ -208,17 +281,29 @@ struct WaypointMap: NSViewRepresentable {
                 view.markerTintColor = .systemGreen
                 view.glyphText = "H"
                 view.isDraggable =
-                    parent.editingEnabled && (parent.mode == .inspect || parent.dragWhileAdding)
+                    parent.editingEnabled && parent.planningStep == .flight
+                    && (parent.mode == .inspect || parent.dragWhileAdding)
                     && !parent.drawingBoundary && parent.onHomeMove != nil
+            case .surveyEntry:
+                view.markerTintColor = .systemCyan
+                view.glyphText = "E"
+                view.isDraggable =
+                    parent.editingEnabled && parent.planningStep == .flight
+                    && !parent.drawingBoundary && parent.onEntryMove != nil
+            case .surveyExit:
+                view.markerTintColor = .systemCyan
+                view.glyphText = "X"
+                view.isDraggable = false
             case .waypoint:
                 view.markerTintColor = .systemOrange
                 view.glyphText = "\(marker.number)"
                 view.isDraggable =
-                    parent.editingEnabled && (parent.mode == .inspect || parent.dragWhileAdding)
+                    parent.editingEnabled && parent.planningStep == .boundary
+                    && (parent.mode == .inspect || parent.dragWhileAdding)
                     && !parent.drawingBoundary
             case .boundary:
                 view.markerTintColor = .systemGreen
-                view.glyphText = "B\(marker.number)"
+                view.glyphText = "\(marker.number)"
                 view.isDraggable = parent.editingEnabled && parent.drawingBoundary
             case .operatorLocation:
                 view.markerTintColor = .systemBlue
@@ -249,7 +334,8 @@ struct WaypointMap: NSViewRepresentable {
                 case .waypoint: parent.onMove(marker.id, coordinate)
                 case .boundary: parent.onBoundaryMove?(marker.number - 1, coordinate)
                 case .home: parent.onHomeMove?(coordinate)
-                case .operatorLocation: break
+                case .surveyEntry: parent.onEntryMove?(coordinate)
+                case .surveyExit, .operatorLocation: break
                 }
             case .canceling:
                 view.dragState = .none
