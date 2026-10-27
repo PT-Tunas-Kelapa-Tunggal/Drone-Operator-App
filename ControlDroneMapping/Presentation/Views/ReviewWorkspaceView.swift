@@ -275,11 +275,16 @@ struct ReviewWorkspaceView: View {
 
     private var contextHeader: some View {
         HStack(spacing: 10) {
-            Button("Misi", systemImage: "chevron.left") {
+            Button {
                 model.showMissionList()
                 tab = .overview
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 30, height: 30)
             }
             .kropsToolbarAction()
+            .buttonBorderShape(.circle)
             .help("Kembali ke semua misi").accessibilityLabel("Semua misi")
 
             VStack(alignment: .leading, spacing: 2) {
