@@ -146,7 +146,7 @@ struct ContentView: View {
                     hiddenIDs: model.missionLibrary.hiddenRemoteIDs)
             ) { ids in
                 try orthomosaic.removeMissionFiles(ids)
-                try planner.removeMissionRoutes(ids)
+                planner.removeMissionRoutes(ids)
             }
         }
         .onChange(of: link.receivedMissionID) { _, id in

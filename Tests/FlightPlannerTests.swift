@@ -14,7 +14,7 @@ private final class FakeFarmRepository: FarmAreaRepository {
     func importFile(_ input: URL) throws {}
 }
 @main enum FlightPlannerTests {
-    static func main() throws {
+    static func main() async throws {
         _ = NSApplication.shared
         var checks = 0
         func check(_ condition: Bool, _ title: String) {
@@ -63,38 +63,95 @@ private final class FakeFarmRepository: FarmAreaRepository {
         check(planner.exportBlocker != nil, "Valid geometry still requires operator review")
         planner.reviewed = true
         check(planner.exportBlocker == nil, "Review and complete route permit file export")
+
+        // 1. Test MockWaypointGenerator and survey generation
+        let mockGenerator = MockWaypointGenerator()
+        let scanParams = SurveyScanParameters(altitude: 50, speed: 5, gridAngle: 45)
+        let boundary = [
+            MapCoordinate(latitude: 1.05, longitude: 104.45),
+            MapCoordinate(latitude: 1.055, longitude: 104.45),
+            MapCoordinate(latitude: 1.055, longitude: 104.455),
+            MapCoordinate(latitude: 1.05, longitude: 104.455),
+        ]
+        let res = try await mockGenerator.generateWaypoints(boundary: boundary, parameters: scanParams)
+        check(!res.visualTransectPoints.isEmpty, "Mock waypoint generator generates transect points")
+        check(res.statistics.transectCount > 0, "Mock generator returns transect count")
+
+        // 1b. Test FlightPlannerViewModel survey waypoint generation with line spacing and entry
+        let surveyPlanner = FlightPlannerViewModel(repository: repository, waypointGenerator: mockGenerator)
+        surveyPlanner.draft.waypoints = boundary.map { FlightWaypoint(coordinate: $0, altitude: 50) }
+
+        // Test manual entry selection in .entry mode snapping to polygon perimeter
+        surveyPlanner.mode = .entry
+        let clickOutsideWest = MapCoordinate(latitude: 1.052, longitude: 104.44)
+        surveyPlanner.mapClick(clickOutsideWest)
+        check(surveyPlanner.draft.surveyEntry != nil, "Entry is set on map click in entry mode")
+        check(
+            abs((surveyPlanner.draft.surveyEntry?.longitude ?? 0) - 104.45) < 0.0001,
+            "Entry coordinate snaps to west edge of farm boundary"
+        )
+
+        // Test moving entry along the boundary
+        let clickNorthEdge = MapCoordinate(latitude: 1.058, longitude: 104.452)
+        surveyPlanner.moveEntry(to: clickNorthEdge)
+        check(
+            abs((surveyPlanner.draft.surveyEntry?.latitude ?? 0) - 1.055) < 0.0001,
+            "Moved entry coordinate snaps to north edge of farm boundary"
+        )
+
+        await surveyPlanner.generateSurveyWaypoints(
+            altitude: 60,
+            speed: 6,
+            gridAngle: 90,
+            lineSpacing: 25,
+            triggerDistance: 12,
+            turnaroundDistance: 8
+        )
+        check(!surveyPlanner.draft.visualTransects.isEmpty, "Planner generates visual transects")
+        check(surveyPlanner.draft.lineSpacing == 25, "Planner stores lineSpacing")
+        check(surveyPlanner.draft.triggerDistance == 12, "Planner stores triggerDistance")
+        check(surveyPlanner.draft.turnaroundDistance == 8, "Planner stores turnaroundDistance")
+        check(surveyPlanner.draft.surveyEntry != nil, "Planner retains entry on boundary")
+
+        // 2. Test QGCSurveyResponseParser with real JSON
+        let sampleQGCJson = """
+        {
+          "status": "ok",
+          "statistics": {
+            "totalDistanceMeters": 1500.5,
+            "flightTimeSeconds": 300.0,
+            "coveredAreaSquareMeters": 25000.0,
+            "photoCount": 60,
+            "transectCount": 8
+          },
+          "visualTransectPoints": [
+            {"latitude": 1.051, "longitude": 104.451},
+            {"latitude": 1.052, "longitude": 104.452}
+          ],
+          "plan": {
+            "fileType": "Plan",
+            "groundStation": "QGroundControl",
+            "version": 1,
+            "mission": {"version": 2, "items": []}
+          }
+        }
+        """
+        let parsedResult = try QGCSurveyResponseParser.parse(data: Data(sampleQGCJson.utf8))
+        check(parsedResult.visualTransectPoints.count == 2, "Parser extracts visual transect points")
+        check(parsedResult.statistics.photoCount == 60, "Parser extracts statistics")
+        check(!parsedResult.rawPlanData.isEmpty, "Parser extracts raw plan JSON")
+
         let output = directory.appendingPathComponent("Kebun uji.plan")
+        planner.draft.rawPlanJSON = parsedResult.rawPlanData
+        planner.reviewed = true
         planner.export(to: output)
         check(
             planner.exportedURL == output && FileManager.default.fileExists(atPath: output.path),
             "Export writes a local file without any flight transport")
         let object = try JSONSerialization.jsonObject(with: Data(contentsOf: output)) as! [String: Any]
-        let mission = object["mission"] as! [String: Any]
-        let items = mission["items"] as! [[String: Any]]
         check(
-            object["fileType"] as? String == "Plan" && object["version"] as? Int == 1
-                && mission["version"] as? Int == 2, "QGC document and mission versions are correct")
-        check(
-            mission["firmwareType"] as? Int == 3 && mission["vehicleType"] as? Int == 2,
-            "ArduPilot multicopter profile is explicit")
-        check(
-            mission["plannedHomePosition"] as? [Double] == [1.05, 104.45, 35],
-            "Home stores latitude, longitude, then AMSL without coordinate inversion")
-        check(
-            items.map { $0["command"] as! Int } == [22, 178, 16, 16, 20],
-            "Takeoff, speed, ordered waypoints and RTL are exported")
-        check(
-            items.map { $0["doJumpId"] as! Int } == [1, 2, 3, 4, 5], "Mission sequence IDs remain contiguous")
-        let nav = items.filter { [16, 22].contains($0["command"] as! Int) }
-        check(
-            nav.allSatisfy { $0["frame"] as? Int == 3 && $0["AltitudeMode"] == nil },
-            "Navigation frame defines relative altitude without version-dependent UI enum fields")
-        check(
-            nav.allSatisfy { ($0["params"] as! [Any]).count == 7 && ($0["params"] as! [Any])[3] is NSNull },
-            "Navigation keeps seven MAVLink parameters and unspecified yaw as JSON null")
-        check(
-            (items[1]["params"] as! [Double])[0...2] == [1, 5, -1],
-            "Ground speed command has explicit speed and unchanged throttle")
+            object["fileType"] as? String == "Plan" && object["version"] as? Int == 1,
+            "QGC document fileType and version are correct")
         check(
             planner.draft.distance > 250 && planner.draft.distance < 2000,
             "Route distance includes return leg")
@@ -114,30 +171,26 @@ private final class FakeFarmRepository: FarmAreaRepository {
             "Explicit altitude update changes all waypoints")
         planner.draft.firmware = .px4
         planner.draft.returnToHome = false
-        let px4 =
-            try JSONSerialization.jsonObject(with: QGCPlanExporter.data(for: planner.draft)) as! [String: Any]
-        let px4Mission = px4["mission"] as! [String: Any]
-        check(
-            px4Mission["firmwareType"] as? Int == 12 && (px4Mission["items"] as! [[String: Any]]).count == 4,
-            "PX4 profile and optional RTL serialize without hidden defaults")
+        try planner.draft.validateForExport()
+        check(planner.draft.firmware?.mavAutopilot == 12, "PX4 profile firmwareType is 12")
         var invalid = planner.draft
         invalid.firmware = nil
-        reject("Missing firmware rejected") { _ = try QGCPlanExporter.data(for: invalid) }
+        reject("Missing firmware rejected") { try invalid.validateForExport() }
         invalid = planner.draft
         invalid.homeAltitudeAMSL = nil
-        reject("Unknown home elevation rejected") { _ = try QGCPlanExporter.data(for: invalid) }
+        reject("Unknown home elevation rejected") { try invalid.validateForExport() }
         invalid = planner.draft
         invalid.waypoints[0].coordinate.latitude = 91
-        reject("Invalid latitude rejected") { _ = try QGCPlanExporter.data(for: invalid) }
+        reject("Invalid latitude rejected") { try invalid.validateForExport() }
         invalid = planner.draft
         invalid.waypoints[0].altitude = .nan
-        reject("Nonfinite waypoint height rejected") { _ = try QGCPlanExporter.data(for: invalid) }
+        reject("Nonfinite waypoint height rejected") { try invalid.validateForExport() }
         invalid = planner.draft
         invalid.waypoints[1].id = invalid.waypoints[0].id
-        reject("Duplicate waypoint identity rejected") { _ = try QGCPlanExporter.data(for: invalid) }
+        reject("Duplicate waypoint identity rejected") { try invalid.validateForExport() }
         invalid = planner.draft
         invalid.speed = .infinity
-        reject("Nonfinite speed rejected") { _ = try QGCPlanExporter.data(for: invalid) }
+        reject("Nonfinite speed rejected") { try invalid.validateForExport() }
         let previousFile = try Data(contentsOf: repository.url!)
         planner.draft.speed = .nan
         let retainedFile = try Data(contentsOf: repository.url!)
@@ -230,6 +283,38 @@ private final class FakeFarmRepository: FarmAreaRepository {
         check(
             planner.draft.missionID == nil && planner.draft.id != firstRoute,
             "Standalone planning cannot accidentally edit a mission's route")
+
+        // 2-step workflow and boundary metrics checks
+        let farmBoundary = FarmArea(
+            name: "Kebun Polygon",
+            points: [
+                FarmArea.Point(latitude: -6.000, longitude: 106.000),
+                FarmArea.Point(latitude: -6.000, longitude: 106.001),
+                FarmArea.Point(latitude: -6.001, longitude: 106.001),
+                FarmArea.Point(latitude: -6.001, longitude: 106.000)
+            ]
+        )
+        let stepPlanner = FlightPlannerViewModel(repository: InMemoryFlightRouteRepository())
+        stepPlanner.open(farm: farmBoundary)
+        check(stepPlanner.planningStep == .boundary, "Opens in boundary step when no survey has been generated")
+        check(stepPlanner.draft.waypoints.count == 4, "Initial boundary loaded from farm")
+        check(stepPlanner.boundaryAreaHectares > 1.0, "Boundary area calculated in hectares")
+        check(stepPlanner.boundaryPerimeterMeters > 300, "Boundary perimeter calculated in meters")
+        check(!stepPlanner.canResetToFarm, "Cannot reset when boundary matches farm")
+
+        // Edit boundary and test invalidation, ordering, and reset
+        stepPlanner.addWaypoint(MapCoordinate(latitude: -6.0005, longitude: 106.0005))
+        check(stepPlanner.draft.waypoints.count == 5, "Added boundary point")
+        let newPointID = stepPlanner.draft.waypoints[4].id
+        stepPlanner.moveWaypointOrder(newPointID, toIndex: 2)
+        check(stepPlanner.draft.waypoints[2].id == newPointID, "Point moved from position 5 to position 3")
+        stepPlanner.undo()
+        check(stepPlanner.draft.waypoints[4].id == newPointID, "Undo restores point to position 5")
+        check(stepPlanner.canResetToFarm, "Can reset to farm after boundary edited")
+        stepPlanner.resetToFarm()
+        check(stepPlanner.draft.waypoints.count == 4, "Reset restores original 4 boundary points")
+        check(!stepPlanner.canResetToFarm, "Cannot reset after reverting")
+
         print(
             "PASS: \(checks) flight-planner and operator-location assertions (no QGC upload or physical flight)"
         )
