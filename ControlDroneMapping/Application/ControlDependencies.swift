@@ -7,6 +7,7 @@ struct ControlDependencies {
     let location: OperatorLocationViewModel
     let planner: FlightPlannerViewModel
     let reviews: any OperatorReviewRepository
+    let variProcessor: any VariProcessing
 
     init(demo: Bool) {
         farms = FarmAreaViewModel(repository: FarmAreaStore())
@@ -33,11 +34,13 @@ struct ControlDependencies {
             missions: FileMissionLibraryRepository(
                 url: support.appendingPathComponent(demo ? "demo-missions.json" : "missions.json")),
             reviewRepository: reviewRepository)
+        self.variProcessor = demo ? MockVariProcessor() : LocalVariProcessor()
     }
-    static func exportViewModel(record: MissionRecord, store: any DatasetRepository) -> WebODMExportViewModel
-    {
+
+    static func exportViewModel(record: MissionRecord, store: any DatasetRepository) -> WebODMExportViewModel {
         WebODMExportViewModel(record: record, service: WebODMExporter(store: store))
     }
+
     static func orthomosaicViewModel(store: any DatasetRepository, demo: Bool) -> OrthomosaicViewModel {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("DroneControl")
@@ -50,5 +53,9 @@ struct ControlDependencies {
             datasets: store, runtimeAccess: OrthomosaicRuntimeAccess(defaults: .standard),
             installer: LocalOrthomosaicEngineInstaller(
                 directory: LocalOrthomosaicEngineInstaller.defaultDirectory))
+    }
+
+    static func variProcessor(demo: Bool) -> any VariProcessing {
+        demo ? MockVariProcessor() : LocalVariProcessor()
     }
 }
