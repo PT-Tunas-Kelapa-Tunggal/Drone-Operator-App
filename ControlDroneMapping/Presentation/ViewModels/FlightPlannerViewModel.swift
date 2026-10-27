@@ -30,6 +30,7 @@ final class FlightPlannerViewModel: ObservableObject {
             if !undoing && !continuousEdit {
                 undoStack.append(oldValue)
                 if undoStack.count > 50 { undoStack.removeFirst() }
+                redoStack = []
             }
             reviewed = false
             exportedURL = nil
@@ -45,6 +46,7 @@ final class FlightPlannerViewModel: ObservableObject {
     @Published private(set) var exportedURL: URL?
     @Published private(set) var fitRequest = UUID()
     @Published private(set) var undoStack: [FlightRoute] = []
+    @Published private(set) var redoStack: [FlightRoute] = []
     @Published public private(set) var isGeneratingWaypoints = false
     private let repository: any FlightRouteRepository
     private let waypointGenerator: any WaypointGenerator
@@ -200,6 +202,7 @@ final class FlightPlannerViewModel: ObservableObject {
         reviewed = false
         exportedURL = nil
         undoStack = []
+        redoStack = []
         error = nil
         persist()
         fitRequest = UUID()
@@ -214,6 +217,7 @@ final class FlightPlannerViewModel: ObservableObject {
         reviewed = false
         exportedURL = nil
         undoStack = []
+        redoStack = []
         error = nil
         fitRequest = UUID()
     }
@@ -320,18 +324,29 @@ final class FlightPlannerViewModel: ObservableObject {
             return point
         }
     }
+    var canRedo: Bool { !redoStack.isEmpty }
     func undo() {
         if let previous = undoStack.popLast() {
+            redoStack.append(draft)
             undoing = true
             draft = previous
             undoing = false
             if !draft.waypoints.contains(where: { $0.id == selectedWaypointID }) { selectedWaypointID = nil }
         } else if let baseline = baselineRoute, !isAtBaseline {
+            redoStack.append(draft)
             undoing = true
             draft = baseline
             undoing = false
             selectedWaypointID = nil
         }
+    }
+    func redo() {
+        guard let next = redoStack.popLast() else { return }
+        undoStack.append(draft)
+        undoing = true
+        draft = next
+        undoing = false
+        if !draft.waypoints.contains(where: { $0.id == selectedWaypointID }) { selectedWaypointID = nil }
     }
     func fitRoute() { fitRequest = UUID() }
     /// Groups a slider drag into one undo step and saves once when it ends.
@@ -339,6 +354,7 @@ final class FlightPlannerViewModel: ObservableObject {
         guard !continuousEdit else { return }
         undoStack.append(draft)
         if undoStack.count > 50 { undoStack.removeFirst() }
+        redoStack = []
         continuousEdit = true
     }
     func endContinuousEdit() {
@@ -377,6 +393,7 @@ final class FlightPlannerViewModel: ObservableObject {
             switching = false
             selectedWaypointID = nil
             undoStack = []
+        redoStack = []
         }
     }
 

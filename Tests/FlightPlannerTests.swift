@@ -53,6 +53,12 @@ private final class FakeFarmRepository: FarmAreaRepository {
         check(planner.draft.waypoints[1].id == firstID, "Reorder preserves stable waypoint identity")
         planner.undo()
         check(planner.draft.waypoints[0].id == firstID, "Undo restores waypoint order")
+        planner.redo()
+        check(planner.draft.waypoints[1].id == firstID, "Redo reapplies the undone reorder")
+        planner.undo()
+        planner.updateAltitude(firstID, to: 90)
+        check(!planner.canRedo, "A new edit clears redo history")
+        planner.undo()
         planner.removeWaypoint(firstID)
         planner.undo()
         check(

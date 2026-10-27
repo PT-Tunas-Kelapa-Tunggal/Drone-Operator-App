@@ -105,19 +105,16 @@ struct MissionWorkspaceView: View {
 
     // MARK: - Floating toolbar
 
+    /// Tools, history and view controls sit together in the middle; a hidden panel
+    /// leaves a reopen button in its corner.
     private var topBar: some View {
         HStack(alignment: .top, spacing: 10) {
-            PlanIconButton(
-                systemImage: "sidebar.left", help: inspectorVisible ? "Sembunyikan panel" : "Tampilkan panel",
-                selected: inspectorVisible
-            ) { inspectorVisible.toggle() }
-            .padding(5)
-            .kropsFloatingControl(in: Capsule())
-
+            if !inspectorVisible {
+                panelToggle(.leading).padding(5).kropsFloatingControl(in: Capsule())
+            }
             Spacer(minLength: 0)
             toolPalette
-            Spacer(minLength: 0)
-
+            historyIsland
             HStack(spacing: 2) {
                 PlanIconButton(systemImage: "location", help: "Ke lokasi saya") {
                     requestedLocation = true
@@ -130,14 +127,40 @@ struct MissionWorkspaceView: View {
             }
             .padding(5)
             .kropsFloatingControl(in: Capsule())
-
-            PlanIconButton(
-                systemImage: "sidebar.right", help: summaryVisible ? "Sembunyikan ringkasan" : "Tampilkan ringkasan",
-                selected: summaryVisible
-            ) { summaryVisible.toggle() }
-            .padding(5)
-            .kropsFloatingControl(in: Capsule())
+            Spacer(minLength: 0)
+            if !summaryVisible {
+                panelToggle(.trailing).padding(5).kropsFloatingControl(in: Capsule())
+            }
         }
+    }
+
+    private func panelToggle(_ edge: HorizontalEdge) -> some View {
+        let left = edge == .leading
+        let visible = left ? inspectorVisible : summaryVisible
+        return PlanIconButton(
+            systemImage: left ? "sidebar.left" : "sidebar.right",
+            help: (visible ? "Sembunyikan " : "Tampilkan ") + (left ? "panel pengaturan" : "ringkasan"),
+            selected: visible
+        ) {
+            if left { inspectorVisible.toggle() } else { summaryVisible.toggle() }
+        }
+    }
+
+    private var historyIsland: some View {
+        HStack(spacing: 2) {
+            PlanIconButton(systemImage: "arrow.uturn.backward", help: "Urungkan (⌘Z)") {
+                editRoute { planner.undo() }
+            }
+            .keyboardShortcut("z", modifiers: .command)
+            .disabled(!canEditRoute || !planner.canUndo)
+            PlanIconButton(systemImage: "arrow.uturn.forward", help: "Ulangi (⇧⌘Z)") {
+                editRoute { planner.redo() }
+            }
+            .keyboardShortcut("z", modifiers: [.command, .shift])
+            .disabled(!canEditRoute || !planner.canRedo)
+        }
+        .padding(5)
+        .kropsFloatingControl(in: Capsule())
     }
 
     private var toolPalette: some View {
@@ -164,14 +187,6 @@ struct MissionWorkspaceView: View {
                 .disabled(!boundaryReady)
             }
             .disabled(!canEditRoute)
-
-            Divider().frame(height: 22).padding(.horizontal, 6)
-
-            PlanIconButton(systemImage: "arrow.uturn.backward", help: "Urungkan (⌘Z)") {
-                editRoute { planner.undo() }
-            }
-            .keyboardShortcut("z", modifiers: .command)
-            .disabled(!canEditRoute || !planner.canUndo)
         }
         .padding(5)
         .kropsFloatingControl(in: Capsule())
@@ -216,15 +231,18 @@ struct MissionWorkspaceView: View {
 
     private var inspectorHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker("Lapisan", selection: Binding(get: { planner.planningStep }, set: { setLayer($0) })) {
-                Text("Area").tag(FlightPlanningStep.boundary)
-                Text("Jalur").tag(FlightPlanningStep.flight)
+            HStack(spacing: 8) {
+                panelToggle(.leading)
+                Picker("Lapisan", selection: Binding(get: { planner.planningStep }, set: { setLayer($0) })) {
+                    Text("Area").tag(FlightPlanningStep.boundary)
+                    Text("Jalur").tag(FlightPlanningStep.flight)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.extraLarge)
+                .frame(maxWidth: .infinity)
+                .help(boundaryReady ? "Pindah antara batas area dan jalur terbang" : "Jalur terbuka setelah ada minimal 3 titik batas")
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .controlSize(.extraLarge)
-            .frame(maxWidth: .infinity)
-            .help(boundaryReady ? "Pindah antara batas area dan jalur terbang" : "Jalur terbuka setelah ada minimal 3 titik batas")
             HStack {
                 Text(planner.planningStep == .boundary ? "Batas area" : "Jalur terbang")
                     .font(KropsTypography.sectionTitle)
@@ -411,6 +429,7 @@ struct MissionWorkspaceView: View {
                     Label("Diperiksa", systemImage: "checkmark.circle.fill")
                         .font(.caption).foregroundStyle(.green)
                 }
+                panelToggle(.trailing)
             }
 
             VStack(alignment: .leading, spacing: 6) {
