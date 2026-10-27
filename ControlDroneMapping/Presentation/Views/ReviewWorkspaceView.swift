@@ -104,8 +104,14 @@ struct ReviewWorkspaceView: View {
     var body: some View {
         VStack(spacing: 0) {
             if model.step != .mission || model.hasMissionDetail {
-                contextHeader
-                if mission != nil || record != nil || model.step == .datasets { tabs }
+                // One compact bar keeps the most vertical space for the map.
+                HStack(spacing: 16) {
+                    contextHeader
+                    Spacer(minLength: 8)
+                    if mission != nil || record != nil || model.step == .datasets { tabs }
+                    Spacer(minLength: 8)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
                 Divider()
             }
             Group {
@@ -116,7 +122,7 @@ struct ReviewWorkspaceView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            if model.step == .mission && model.hasMissionDetail && mission?.phase != .completed && [.mission, .camera, .capture].contains(tab) {
+            if model.step == .mission && model.hasMissionDetail && mission?.phase != .completed && [.camera, .capture].contains(tab) {
                 MissionFooterView(model: model, link: link, continueTitle: continueTitle) {
                     tab = nextTab
                 }
@@ -125,7 +131,7 @@ struct ReviewWorkspaceView: View {
         .background(KropsStyle.surface)
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(KropsStyle.border))
-        .padding(.horizontal, 22).padding(.bottom, 18)
+        .padding(.horizontal, 14).padding(.bottom, 14)
         .onAppear {
             tab = initialTab ?? landingTab
             resolveImportedProject()
@@ -255,54 +261,54 @@ struct ReviewWorkspaceView: View {
                     tab = item
                 } label: {
                     Text(item.rawValue)
-                        .font(.system(size: 15, weight: tab == item ? .semibold : .regular))
-                        .foregroundStyle(tab == item ? Color.primary : Color.secondary)
-                        .padding(.vertical, 18)
-                        .overlay(alignment: .bottom) {
-                            if tab == item {
-                                Capsule().fill(KropsStyle.accent).frame(height: 3)
-                            }
-                        }
+                        .font(.callout.weight(tab == item ? .semibold : .regular))
+                        .foregroundStyle(tab == item ? KropsStyle.accent : Color.secondary)
+                        .padding(.horizontal, 12).frame(height: 28)
+                        .background(tab == item ? KropsStyle.accent.opacity(0.12) : Color.clear, in: Capsule())
+                        .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .frame(maxWidth: .infinity)
                 .accessibilityAddTraits(tab == item ? .isSelected : [])
                 .disabled(mission == nil && [.mission, .camera, .capture].contains(item))
             }
         }
-        .padding(.horizontal, 24)
-        .overlay(alignment: .bottom) { Divider() }
     }
 
     private var contextHeader: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 10) {
             Button {
                 model.showMissionList()
                 tab = .overview
                 } label: {
                 Image(systemName: "chevron.left")
-                    .frame(width: 30, height: 30)
+                    .frame(width: 26, height: 26)
                     .background(KropsStyle.canvas, in: Circle())
             }
             .buttonStyle(.plain).help("Semua misi").accessibilityLabel("Semua misi")
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.title3.weight(.semibold)).lineLimit(1)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.headline).lineLimit(1)
                 if let mission {
-                    Text("ID misi · " + mission.id.uuidString)
-                        .font(.caption.monospaced()).foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                    Text(model.missionStorageError == nil ? mission.phase.dashboardTitle : "Perubahan belum tersimpan")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text(
+                        [
+                            model.missionStorageError == nil ? mission.phase.dashboardTitle : "Perubahan belum tersimpan",
+                            mission.area?.name,
+                        ].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                    )
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
-            Spacer()
-            if let area = mission?.area {
-                Label(area.name, systemImage: "mappin")
-                    .font(.callout).foregroundStyle(.secondary).lineLimit(1)
+            .help(mission.map { "ID misi · " + $0.id.uuidString } ?? "")
+            .contextMenu {
+                if let mission {
+                    Button("Salin ID misi") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(mission.id.uuidString, forType: .string)
+                    }
+                }
             }
         }
-        .padding(.horizontal, 24).padding(.vertical, 16)
+        .frame(maxWidth: 280, alignment: .leading)
     }
 
     private var missionList: some View {
