@@ -27,13 +27,13 @@ final class FlightPlannerViewModel: ObservableObject {
     @Published var draft = FlightRoute() {
         didSet {
             guard !switching, oldValue != draft else { return }
-            if !undoing {
+            if !undoing && !continuousEdit {
                 undoStack.append(oldValue)
                 if undoStack.count > 50 { undoStack.removeFirst() }
             }
             reviewed = false
             exportedURL = nil
-            persist()
+            if !continuousEdit { persist() }
         }
     }
     @Published var planningStep: FlightPlanningStep = .boundary
@@ -49,6 +49,7 @@ final class FlightPlannerViewModel: ObservableObject {
     private let repository: any FlightRouteRepository
     private let waypointGenerator: any WaypointGenerator
     private var switching = false
+    private var continuousEdit = false
     private var undoing = false
     private var storageReady = false
 
@@ -333,6 +334,18 @@ final class FlightPlannerViewModel: ObservableObject {
         }
     }
     func fitRoute() { fitRequest = UUID() }
+    /// Groups a slider drag into one undo step and saves once when it ends.
+    func beginContinuousEdit() {
+        guard !continuousEdit else { return }
+        undoStack.append(draft)
+        if undoStack.count > 50 { undoStack.removeFirst() }
+        continuousEdit = true
+    }
+    func endContinuousEdit() {
+        guard continuousEdit else { return }
+        continuousEdit = false
+        persist()
+    }
     var exportBlocker: String? {
         do { try draft.validateForExport() } catch { return error.localizedDescription }
         return reviewed
@@ -393,7 +406,8 @@ final class FlightPlannerViewModel: ObservableObject {
         lineSpacing: Double = 20.0,
         triggerDistance: Double = 15.0,
         turnaroundDistance: Double = 10.0,
-        entryLocation: Int = 0
+        entryLocation: Int = 0,
+        fitsRoute: Bool = true
     ) async {
         let activeBoundary = activeBoundaryCoordinates()
         guard activeBoundary.count >= 3 else {
@@ -457,7 +471,7 @@ final class FlightPlannerViewModel: ObservableObject {
                 draft.surveyEntry = first.closestPointOnPolygonPerimeter(activeBoundary)
             }
             reviewed = false
-            fitRoute()
+            if fitsRoute { fitRoute() }
         } catch {
             self.error = error.localizedDescription
         }

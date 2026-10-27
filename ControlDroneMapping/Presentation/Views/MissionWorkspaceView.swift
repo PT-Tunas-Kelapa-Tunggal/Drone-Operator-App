@@ -14,6 +14,7 @@ struct MissionWorkspaceView: View {
     @State private var inspectorVisible = true
     @State private var inspectorContentHeight: CGFloat = 400
     @State private var keyMonitor: Any?
+    @State private var replanPending = false
 
     private var routeMatchesMission: Bool {
         model.selectedMissionID != nil && planner.draft.missionID == model.selectedMissionID
@@ -321,12 +322,9 @@ struct MissionWorkspaceView: View {
                     .help("Tinggi kamera di atas tanah (AGL), bukan altitude GPS.")
                 ControlField("Kecepatan") { NumberField($model.geometry.speed, unit: "m/s") }
             }
-            HStack(spacing: 10) {
-                ControlField("Jarak jalur") { NumberField($planner.draft.lineSpacing, unit: "m") }
-                    .help("Jarak antar lintasan sejajar drone.")
-                ControlField("Sudut jalur") { NumberField($planner.draft.gridAngle, unit: "°") }
-                    .help("Arah lintasan terhadap utara (0°–360°).")
-            }
+            ControlField("Jarak jalur") { NumberField($planner.draft.lineSpacing, unit: "m") }
+                .help("Jarak antar lintasan sejajar drone.")
+            angleSlider
             DisclosureGroup("Lanjutan") {
                 HStack(spacing: 10) {
                     ControlField("Jarak foto") { NumberField($planner.draft.triggerDistance, unit: "m") }
@@ -343,12 +341,12 @@ struct MissionWorkspaceView: View {
         VStack(alignment: .leading, spacing: 6) {
             PlanSectionTitle("Lepas landas & masuk")
             PlanPointRow(
-                title: "Home", detail: planner.draft.home == nil ? "Belum ditentukan" : "Lepas landas & mendarat",
+                title: "Home", detail: planner.draft.home == nil ? "Belum ditentukan · tekan H" : "Lepas landas & mendarat",
                 glyph: "H", color: .green, set: planner.draft.home != nil, active: planner.mode == .home
             ) { selectTool(planner.mode == .home ? .inspect : .home) }
             PlanPointRow(
                 title: "Entry",
-                detail: planner.draft.surveyEntry == nil ? "Otomatis dari jalur" : "Titik masuk di garis batas",
+                detail: planner.draft.surveyEntry == nil ? "Otomatis dari jalur · tekan E" : "Titik masuk di garis batas",
                 glyph: "E", color: .cyan, set: planner.draft.surveyEntry != nil, active: planner.mode == .entry
             ) { selectTool(planner.mode == .entry ? .inspect : .entry) }
             Toggle("Kembali ke Home setelah selesai (RTL)", isOn: $planner.draft.returnToHome)
@@ -356,17 +354,7 @@ struct MissionWorkspaceView: View {
         }
 
         Button {
-            Task {
-                await planner.generateSurveyWaypoints(
-                    altitude: model.geometry.heightAGL,
-                    speed: model.geometry.speed,
-                    gridAngle: planner.draft.gridAngle,
-                    lineSpacing: planner.draft.lineSpacing,
-                    triggerDistance: planner.draft.triggerDistance,
-                    turnaroundDistance: planner.draft.turnaroundDistance,
-                    entryLocation: planner.draft.entryLocation
-                )
-            }
+            Task { await generateSurvey() }
         } label: {
             HStack {
                 if planner.isGeneratingWaypoints {
@@ -412,6 +400,70 @@ struct MissionWorkspaceView: View {
             )
             .disabled(model.editingLocked)
         }
+    }
+
+    /// Dragging re-plans the survey live; the whole drag is one undo step.
+    private var angleSlider: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Sudut jalur").font(KropsTypography.supporting).foregroundStyle(.secondary)
+                Spacer()
+                Image(systemName: "arrow.up")
+                    .rotationEffect(.degrees(planner.draft.gridAngle))
+                    .foregroundStyle(.secondary)
+                Text("\(Int(planner.draft.gridAngle.rounded()))°")
+                    .font(.callout.weight(.semibold).monospacedDigit())
+                    .frame(minWidth: 36, alignment: .trailing)
+            }
+            Slider(
+                value: Binding(
+                    get: { planner.draft.gridAngle },
+                    set: { angle in
+                        guard canEditRoute else { return }
+                        planner.draft.gridAngle = angle.rounded()
+                        model.geometry.reviewed = false
+                        replanLive()
+                    }),
+                in: 0...359
+            ) { editing in
+                if editing {
+                    planner.beginContinuousEdit()
+                } else {
+                    planner.endContinuousEdit()
+                    replanLive()
+                }
+            }
+            .help("Arah lintasan terhadap utara. Jalur dihitung ulang saat digeser.")
+        }
+    }
+
+    /// Runs one survey at a time; changes made while QGC is busy trigger one more run.
+    private func replanLive() {
+        guard canEditRoute, boundaryReady else { return }
+        if planner.isGeneratingWaypoints {
+            replanPending = true
+            return
+        }
+        Task {
+            await generateSurvey(fitsRoute: false)
+            if replanPending {
+                replanPending = false
+                replanLive()
+            }
+        }
+    }
+
+    private func generateSurvey(fitsRoute: Bool = true) async {
+        await planner.generateSurveyWaypoints(
+            altitude: model.geometry.heightAGL,
+            speed: model.geometry.speed,
+            gridAngle: planner.draft.gridAngle,
+            lineSpacing: planner.draft.lineSpacing,
+            triggerDistance: planner.draft.triggerDistance,
+            turnaroundDistance: planner.draft.turnaroundDistance,
+            entryLocation: planner.draft.entryLocation,
+            fitsRoute: fitsRoute
+        )
     }
 
     // MARK: - Hint
@@ -659,9 +711,6 @@ private struct PlanPointRow: View {
                 Text(detail).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button(active ? "Batal" : (set ? "Pindah" : "Taruh"), action: action)
-                .controlSize(.small)
-                .tint(active ? color : nil)
         }
         .padding(8)
         .background(
