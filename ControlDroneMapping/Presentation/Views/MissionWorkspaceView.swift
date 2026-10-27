@@ -206,6 +206,7 @@ struct MissionWorkspaceView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+            .controlSize(.extraLarge)
             .frame(maxWidth: .infinity)
             .help(boundaryReady ? "Pindah antara batas area dan jalur terbang" : "Jalur terbuka setelah ada minimal 3 titik batas")
             HStack {

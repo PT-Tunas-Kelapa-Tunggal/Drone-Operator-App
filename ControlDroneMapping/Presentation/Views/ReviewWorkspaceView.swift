@@ -252,28 +252,25 @@ struct ReviewWorkspaceView: View {
     }
 
     private var tabs: some View {
-        HStack(spacing: 0) {
+        Picker("Tahap misi", selection: Binding(get: { tab }, set: { selectTab($0) })) {
             ForEach(ReviewTab.allCases.filter { $0 != .overview }) { item in
-                Button {
-                    // Return to the existing mission context before showing its editor.
-                    if [.mission, .camera, .capture].contains(item), model.step == .datasets, let mission {
-                        model.openMission(mission.id)
-                    }
-                    guard ![.camera, .capture].contains(item) || model.hasMissionDetail else { return }
-                    tab = item
-                } label: {
-                    Text(item.rawValue)
-                        .font(.callout.weight(tab == item ? .semibold : .regular))
-                        .foregroundStyle(tab == item ? KropsStyle.accent : Color.secondary)
-                        .padding(.horizontal, 12).frame(height: 28)
-                        .background(tab == item ? KropsStyle.accent.opacity(0.12) : Color.clear, in: Capsule())
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(tab == item ? .isSelected : [])
-                .disabled(mission == nil && [.mission, .camera, .capture].contains(item))
+                Text(item.rawValue).tag(item)
             }
         }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.extraLarge)
+        .fixedSize()
+    }
+
+    private func selectTab(_ item: ReviewTab) {
+        if mission == nil && [.mission, .camera, .capture].contains(item) { return }
+        // Return to the existing mission context before showing its editor.
+        if [.mission, .camera, .capture].contains(item), model.step == .datasets, let mission {
+            model.openMission(mission.id)
+        }
+        guard ![.camera, .capture].contains(item) || model.hasMissionDetail else { return }
+        tab = item
     }
 
     private var contextHeader: some View {
@@ -289,16 +286,18 @@ struct ReviewWorkspaceView: View {
             }
             .buttonStyle(.plain).help("Kembali ke semua misi").accessibilityLabel("Semua misi")
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.headline).lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.title3.weight(.semibold)).lineLimit(1)
                 if let mission {
-                    Text(
-                        [
-                            model.missionStorageError == nil ? mission.phase.dashboardTitle : "Perubahan belum tersimpan",
-                            mission.area?.name,
-                        ].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-                    )
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    HStack(spacing: 6) {
+                        Label(farmName(mission), systemImage: "leaf.fill")
+                            .fontWeight(.semibold)
+                            .foregroundStyle(mission.area == nil ? Color.orange : KropsStyle.accent)
+                        Text("·").foregroundStyle(.tertiary)
+                        Text(model.missionStorageError == nil ? mission.phase.dashboardTitle : "Perubahan belum tersimpan")
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.callout).lineLimit(1)
                 }
             }
             .help(mission.map { "ID misi · " + $0.id.uuidString } ?? "")
@@ -311,7 +310,13 @@ struct ReviewWorkspaceView: View {
                 }
             }
         }
-        .frame(maxWidth: 280, alignment: .leading)
+        .frame(maxWidth: 340, alignment: .leading)
+    }
+
+    private func farmName(_ mission: SavedMission) -> String {
+        guard let area = mission.area else { return "Kebun belum diatur" }
+        let name = area.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "Kebun tanpa nama" : name
     }
 
     private var inMissionDetail: Bool { model.step == .mission && model.hasMissionDetail }
