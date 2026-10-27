@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Map-first planning canvas: the map fills the tab, tools float above it and a
@@ -12,6 +13,7 @@ struct MissionWorkspaceView: View {
     @State private var requestedLocation = false
     @State private var inspectorVisible = true
     @State private var inspectorContentHeight: CGFloat = 400
+    @State private var keyMonitor: Any?
 
     private var routeMatchesMission: Bool {
         model.selectedMissionID != nil && planner.draft.missionID == model.selectedMissionID
@@ -45,6 +47,10 @@ struct MissionWorkspaceView: View {
             },
             onEntryMove: { coordinate in
                 editRoute { planner.moveEntry(to: coordinate) }
+            },
+            canvas: true,
+            onInsertBoundary: { index, coordinate in
+                editRoute { planner.addWaypoint(coordinate, at: index) }
             }
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -65,7 +71,15 @@ struct MissionWorkspaceView: View {
             planner.open(
                 farm: mission.area, name: "Rute " + mission.plan.name,
                 altitude: model.geometry.heightAGL, speed: model.geometry.speed, missionID: mission.id)
-            normalizeTool(for: planner.planningStep)
+            planner.mode = .inspect
+            installKeyMonitor()
+        }
+        .onDisappear {
+            if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+            keyMonitor = nil
+        }
+        .onChange(of: planner.selectedWaypointID) { _, id in
+            if id != nil { planner.planningStep = .boundary }
         }
         .onChange(of: model.geometry.heightAGL) { _, altitude in
             if canEditRoute { planner.draft.defaultAltitude = altitude }
@@ -111,43 +125,27 @@ struct MissionWorkspaceView: View {
     }
 
     private var toolPalette: some View {
-        HStack(spacing: 4) {
-            HStack(spacing: 2) {
-                PlanLayerButton(
-                    title: "Area", systemImage: "square.dashed", done: boundaryReady,
-                    selected: planner.planningStep == .boundary
-                ) { setLayer(.boundary) }
-                PlanLayerButton(
-                    title: "Jalur", systemImage: "point.topleft.down.to.point.bottomright.curvepath",
-                    done: pathReady, selected: planner.planningStep == .flight
-                ) { setLayer(.flight) }
-                .disabled(!boundaryReady)
-            }
-            .padding(3)
-            .background(Color.primary.opacity(0.06), in: Capsule())
-
-            Divider().frame(height: 22).padding(.horizontal, 6)
-
+        HStack(spacing: 2) {
             Group {
                 PlanToolButton(
-                    title: "Pilih", systemImage: "cursorarrow", selected: planner.mode == .inspect,
-                    help: "Pilih dan geser pin di peta"
-                ) { planner.mode = .inspect }
-                if planner.planningStep == .boundary {
-                    PlanToolButton(
-                        title: "Titik", systemImage: "plus.circle", selected: planner.mode == .waypoint,
-                        help: "Klik peta untuk menambah titik sudut batas", tint: .orange
-                    ) { toggle(.waypoint) }
-                } else {
-                    PlanToolButton(
-                        title: "Home", systemImage: "house", selected: planner.mode == .home,
-                        help: "Klik peta untuk menentukan titik lepas landas & mendarat", tint: .green
-                    ) { toggle(.home) }
-                    PlanToolButton(
-                        title: "Entry", systemImage: "arrow.right.to.line", selected: planner.mode == .entry,
-                        help: "Klik garis batas untuk menentukan titik masuk survei", tint: .cyan
-                    ) { toggle(.entry) }
-                }
+                    title: "Pilih", systemImage: "cursorarrow", shortcut: "V", selected: planner.mode == .inspect,
+                    help: "Pilih & geser pin"
+                ) { selectTool(.inspect) }
+                PlanToolButton(
+                    title: "Titik", systemImage: "pencil.and.outline", shortcut: "P",
+                    selected: planner.mode == .waypoint, help: "Tambah titik batas (klik dekat garis untuk menyisipkan)",
+                    tint: .orange
+                ) { selectTool(.waypoint) }
+                PlanToolButton(
+                    title: "Home", systemImage: "house", shortcut: "H", selected: planner.mode == .home,
+                    help: "Taruh titik lepas landas & mendarat", tint: .green
+                ) { selectTool(.home) }
+                .disabled(!boundaryReady)
+                PlanToolButton(
+                    title: "Entry", systemImage: "arrow.right.to.line", shortcut: "E", selected: planner.mode == .entry,
+                    help: "Taruh titik masuk survei di garis batas", tint: .cyan
+                ) { selectTool(.entry) }
+                .disabled(!boundaryReady)
             }
             .disabled(!canEditRoute)
 
@@ -201,7 +199,21 @@ struct MissionWorkspaceView: View {
     }
 
     private var inspectorHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 2) {
+                PlanLayerButton(
+                    title: "Area", systemImage: "square.dashed", done: boundaryReady,
+                    selected: planner.planningStep == .boundary
+                ) { setLayer(.boundary) }
+                PlanLayerButton(
+                    title: "Jalur", systemImage: "point.topleft.down.to.point.bottomright.curvepath",
+                    done: pathReady, selected: planner.planningStep == .flight
+                ) { setLayer(.flight) }
+                .disabled(!boundaryReady)
+            }
+            .padding(3)
+            .frame(maxWidth: .infinity)
+            .background(Color.primary.opacity(0.06), in: Capsule())
             HStack {
                 Text(planner.planningStep == .boundary ? "Batas area" : "Jalur terbang")
                     .font(KropsTypography.sectionTitle)
@@ -243,7 +255,7 @@ struct MissionWorkspaceView: View {
                 }
             }
             if planner.draft.waypoints.isEmpty {
-                Text("Pilih alat Titik lalu klik peta untuk mulai menggambar batas.")
+                Text("Tekan P (alat Titik), lalu klik peta untuk mulai menggambar batas.")
                     .font(.callout).foregroundStyle(.secondary)
             } else {
                 VStack(spacing: 2) {
@@ -338,12 +350,12 @@ struct MissionWorkspaceView: View {
             PlanPointRow(
                 title: "Home", detail: planner.draft.home == nil ? "Belum ditentukan" : "Lepas landas & mendarat",
                 glyph: "H", color: .green, set: planner.draft.home != nil, active: planner.mode == .home
-            ) { toggle(.home) }
+            ) { selectTool(planner.mode == .home ? .inspect : .home) }
             PlanPointRow(
                 title: "Entry",
                 detail: planner.draft.surveyEntry == nil ? "Otomatis dari jalur" : "Titik masuk di garis batas",
                 glyph: "E", color: .cyan, set: planner.draft.surveyEntry != nil, active: planner.mode == .entry
-            ) { toggle(.entry) }
+            ) { selectTool(planner.mode == .entry ? .inspect : .entry) }
             Toggle("Kembali ke Home setelah selesai (RTL)", isOn: $planner.draft.returnToHome)
                 .font(.callout).padding(.top, 4)
         }
@@ -423,19 +435,21 @@ struct MissionWorkspaceView: View {
         if !canEditRoute {
             return ("lock.fill", "Rute hanya baca selama operasi misi atau setelah misi selesai.")
         }
-        switch (planner.planningStep, planner.mode) {
-        case (.boundary, .waypoint):
-            return ("plus.circle", "Klik peta untuk menambah titik sudut batas kebun.")
-        case (.boundary, _):
-            return ("hand.draw", "Geser pin angka untuk mengubah bentuk batas. Klik pin untuk memilihnya.")
-        case (.flight, .home):
-            return ("house", "Klik di mana saja pada peta untuk menaruh Home.")
-        case (.flight, .entry):
-            return ("arrow.right.to.line", "Klik pada garis batas kebun untuk menaruh Entry.")
-        case (.flight, _):
-            return pathReady
-                ? ("hand.draw", "Geser pin H atau E untuk menyesuaikan, lalu hitung ulang jalur.")
-                : ("point.topleft.down.to.point.bottomright.curvepath", "Klik Hitung jalur survei untuk membuat lintasan.")
+        switch planner.mode {
+        case .waypoint:
+            return ("pencil.and.outline", "Klik peta untuk menambah titik · klik dekat garis untuk menyisipkan · Esc selesai")
+        case .home:
+            return ("house", "Klik peta untuk menaruh Home · Esc batal")
+        case .entry:
+            return ("arrow.right.to.line", "Klik dekat garis batas untuk menaruh Entry · Esc batal")
+        case .inspect:
+            if let selected = planner.selectedWaypoint,
+                let index = planner.draft.waypoints.firstIndex(where: { $0.id == selected.id })
+            {
+                return ("cursorarrow", "Titik \(index + 1) terpilih · geser untuk memindah · Delete hapus · Esc batal pilih")
+            }
+            if !boundaryReady { return ("pencil.and.outline", "Tekan P lalu klik peta untuk menggambar batas kebun") }
+            return ("cursorarrow", "Geser pin untuk memindah · klik pin untuk memilih · seret peta untuk menggeser")
         }
     }
 
@@ -444,35 +458,76 @@ struct MissionWorkspaceView: View {
     private func setLayer(_ step: FlightPlanningStep) {
         guard planner.planningStep != step else { return }
         planner.planningStep = step
-        normalizeTool(for: step)
-        planner.selectedWaypointID = nil
+        if step == .flight { planner.selectedWaypointID = nil }
     }
 
-    private func normalizeTool(for step: FlightPlanningStep) {
-        switch (step, planner.mode) {
-        case (.boundary, .home), (.boundary, .entry), (.flight, .waypoint): planner.mode = .inspect
-        default: break
+    /// Tools behave like a design app: Titik stays active for repeated clicks,
+    /// Home and Entry place once and return to Pilih.
+    private func selectTool(_ mode: FlightMapEditMode) {
+        guard canEditRoute || mode == .inspect else { return }
+        if (mode == .home || mode == .entry) && !boundaryReady { return }
+        planner.mode = mode
+        switch mode {
+        case .waypoint: setLayer(.boundary)
+        case .home, .entry: setLayer(.flight)
+        case .inspect: break
         }
     }
 
-    private func toggle(_ mode: FlightMapEditMode) {
-        planner.mode = planner.mode == mode ? .inspect : mode
-    }
-
     private func addPoint(_ coordinate: MapCoordinate) {
-        guard canEditRoute, planner.mode != .inspect, coordinate.isValid else { return }
-        if planner.planningStep == .boundary {
-            guard planner.mode == .waypoint else { return }
-            editRoute {
-                planner.addWaypoint(coordinate)
-            }
-        } else {
-            guard planner.mode == .home || planner.mode == .entry else { return }
+        guard canEditRoute, coordinate.isValid else { return }
+        switch planner.mode {
+        case .waypoint:
+            editRoute { planner.addWaypoint(coordinate) }
+        case .home, .entry:
             editRoute {
                 planner.mapClick(coordinate)
                 planner.mode = .inspect
             }
+        case .inspect:
+            break
         }
+    }
+
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            handleKey(event) ? nil : event
+        }
+    }
+
+    /// Single-key tool shortcuts. Ignored while a text field is being edited.
+    private func handleKey(_ event: NSEvent) -> Bool {
+        guard event.window?.isKeyWindow == true, event.window?.attachedSheet == nil,
+            !(event.window?.firstResponder is NSText),
+            event.modifierFlags.intersection([.command, .control, .option]).isEmpty
+        else { return false }
+        switch event.keyCode {
+        case 53:  // Escape
+            if planner.mode != .inspect {
+                planner.mode = .inspect
+            } else if planner.selectedWaypointID != nil {
+                planner.selectedWaypointID = nil
+            } else {
+                return false
+            }
+            return true
+        case 51, 117:  // Delete, Forward delete
+            guard let id = planner.selectedWaypointID, canEditRoute, planner.draft.waypoints.count > 3
+            else { return false }
+            editRoute { planner.removeWaypoint(id) }
+            return true
+        default:
+            break
+        }
+        switch event.charactersIgnoringModifiers?.lowercased() {
+        case "v": selectTool(.inspect)
+        case "p", "b": selectTool(.waypoint)
+        case "h": selectTool(.home)
+        case "e": selectTool(.entry)
+        default: return false
+        }
+        return true
     }
 
     private func editRoute(_ change: () -> Void) {
@@ -531,6 +586,7 @@ private struct PlanIconButton: View {
 private struct PlanToolButton: View {
     let title: String
     let systemImage: String
+    let shortcut: String
     let selected: Bool
     let help: String
     var tint: Color = KropsStyle.selection
@@ -539,16 +595,25 @@ private struct PlanToolButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.callout.weight(selected ? .semibold : .regular))
-                .padding(.horizontal, 12).frame(height: 30)
-                .foregroundStyle(selected ? Color.white : Color.primary)
-                .background(selected ? tint : Color.clear, in: Capsule())
-                .opacity(enabled ? 1 : 0.35)
-                .contentShape(Capsule())
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                Text(title)
+                Text(shortcut)
+                    .font(.caption2.weight(.semibold).monospaced())
+                    .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary)
+                    .padding(.horizontal, 4).padding(.vertical, 1)
+                    .background(
+                        (selected ? Color.white : Color.primary).opacity(0.14), in: RoundedRectangle(cornerRadius: 4))
+            }
+            .font(.callout.weight(selected ? .semibold : .regular))
+            .padding(.horizontal, 10).frame(height: 30)
+            .foregroundStyle(selected ? Color.white : Color.primary)
+            .background(selected ? tint : Color.clear, in: Capsule())
+            .opacity(enabled ? 1 : 0.35)
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .help(help)
+        .help("\(help) (\(shortcut))")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

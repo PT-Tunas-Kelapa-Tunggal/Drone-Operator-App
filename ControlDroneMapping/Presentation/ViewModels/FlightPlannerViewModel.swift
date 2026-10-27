@@ -250,13 +250,13 @@ final class FlightPlannerViewModel: ObservableObject {
             draft.surveyEntry = coordinate
         }
     }
-    func addWaypoint(_ coordinate: MapCoordinate) {
+    func addWaypoint(_ coordinate: MapCoordinate, at index: Int? = nil) {
         guard coordinate.isValid, draft.waypoints.count < 500 else {
             error = "Koordinat tidak valid atau batas 500 waypoint tercapai."
             return
         }
         let point = FlightWaypoint(coordinate: coordinate, altitude: draft.defaultAltitude)
-        draft.waypoints.append(point)
+        draft.waypoints.insert(point, at: min(max(index ?? draft.waypoints.count, 0), draft.waypoints.count))
         selectedWaypointID = point.id
         if !draft.visualTransects.isEmpty {
             draft.visualTransects = []

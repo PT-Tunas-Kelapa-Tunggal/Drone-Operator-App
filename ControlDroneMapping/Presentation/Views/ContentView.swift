@@ -47,7 +47,8 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 sidebar
                 VStack(spacing: 0) {
-                    header
+                    // Inside a mission the workspace bar carries the title and status instead.
+                    if !inMissionDetail { header }
                     if selectedSection == .settings {
                         sectionNavigation
                     }

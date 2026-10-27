@@ -110,6 +110,7 @@ struct ReviewWorkspaceView: View {
                     Spacer(minLength: 8)
                     if mission != nil || record != nil || model.step == .datasets { tabs }
                     Spacer(minLength: 8)
+                    if inMissionDetail { missionStatus }
                 }
                 .padding(.horizontal, 14).padding(.vertical, 8)
                 Divider()
@@ -132,6 +133,7 @@ struct ReviewWorkspaceView: View {
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(KropsStyle.border))
         .padding(.horizontal, 14).padding(.bottom, 14)
+        .padding(.top, inMissionDetail ? 14 : 0)  // The page header is hidden inside a mission.
         .onAppear {
             tab = initialTab ?? landingTab
             resolveImportedProject()
@@ -280,11 +282,12 @@ struct ReviewWorkspaceView: View {
                 model.showMissionList()
                 tab = .overview
                 } label: {
-                Image(systemName: "chevron.left")
-                    .frame(width: 26, height: 26)
-                    .background(KropsStyle.canvas, in: Circle())
+                Label("Misi", systemImage: "chevron.left")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .padding(.horizontal, 10).frame(height: 26)
+                    .background(KropsStyle.canvas, in: Capsule())
             }
-            .buttonStyle(.plain).help("Semua misi").accessibilityLabel("Semua misi")
+            .buttonStyle(.plain).help("Kembali ke semua misi").accessibilityLabel("Semua misi")
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.headline).lineLimit(1)
@@ -309,6 +312,27 @@ struct ReviewWorkspaceView: View {
             }
         }
         .frame(maxWidth: 280, alignment: .leading)
+    }
+
+    private var inMissionDetail: Bool { model.step == .mission && model.hasMissionDetail }
+
+    /// Engine and iPhone state as quiet indicators; details live in their tooltips.
+    private var missionStatus: some View {
+        HStack(spacing: 10) {
+            QGCEngineStatusBadge(compact: true)
+            Button { tab = .camera } label: {
+                Image(systemName: model.iphoneReadyForCapture ? "iphone.gen3" : "iphone.gen3.slash")
+                    .foregroundStyle(model.iphoneReadyForCapture ? Color.green : Color.orange)
+                    .frame(width: 26, height: 26)
+            }
+            .buttonStyle(.plain)
+            .help(model.iphoneCaptureStatus + " · buka Kamera & uji")
+            .accessibilityLabel(model.iphoneCaptureStatus)
+            Button("Ekspor rute", systemImage: "square.and.arrow.up", action: openPlanner)
+                .kropsToolbarAction()
+                .disabled(model.editingLocked)
+                .help("Ekspor rute .plan untuk QGroundControl")
+        }
     }
 
     private var missionList: some View {
