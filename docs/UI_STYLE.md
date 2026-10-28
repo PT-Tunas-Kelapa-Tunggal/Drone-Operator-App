@@ -16,7 +16,7 @@ Updated 28 October 2026. Every primary action uses `kropsPrimaryAction(size:)`: 
 | `.regular` (default) | regular | Actions inside content sections, forms, sheets and dialogs, including sheet confirm buttons. |
 | `.compact` | small | Inside list or table rows; the row's secondary controls are small as well. |
 
-Secondary actions (back, Ekspor rute, map tools) use `kropsToolbarAction()`, neutral glass without the brand tint.
+Secondary actions (back, Ekspor rute) use `kropsToolbarAction(size:)` with the same variants, in neutral glass without the brand tint. The mission bar's Ekspor rute is `.large`, matching the side panel actions.
 
 Cancel and mission creation sheets use standard keyboard shortcuts. Starting image acquisition does not receive a default Return shortcut.
 

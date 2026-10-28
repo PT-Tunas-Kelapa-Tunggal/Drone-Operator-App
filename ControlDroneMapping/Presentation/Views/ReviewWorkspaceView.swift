@@ -335,7 +335,7 @@ struct ReviewWorkspaceView: View {
             .help(model.iphoneCaptureStatus + " · buka Kamera & uji")
             .accessibilityLabel(model.iphoneCaptureStatus)
             Button("Ekspor rute", systemImage: "square.and.arrow.up", action: openPlanner)
-                .kropsToolbarAction()
+                .kropsToolbarAction(size: .large)
                 .disabled(model.editingLocked)
                 .help("Ekspor rute .plan untuk QGroundControl")
         }

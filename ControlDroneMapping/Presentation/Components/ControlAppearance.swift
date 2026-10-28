@@ -53,13 +53,15 @@ private struct PrimaryActionAppearance: ViewModifier {
         }
     }
 }
+// Secondary actions use the same size variants as primary ones, in neutral glass.
 private struct ToolbarActionAppearance: ViewModifier {
+    var size: KropsButtonSize
     @ViewBuilder func body(content: Content) -> some View {
         if #available(macOS 26, *) {
             // Neutral glass: drop the brand tint inherited from the app root.
-            content.buttonStyle(.glass).controlSize(.regular).font(.body).tint(nil)
+            content.buttonStyle(.glass).controlSize(size.controlSize).tint(nil)
         } else {
-            content.buttonStyle(.bordered).controlSize(.regular).font(.body).tint(nil)
+            content.buttonStyle(.bordered).controlSize(size.controlSize).tint(nil)
         }
     }
 }
@@ -88,7 +90,9 @@ extension View {
     func kropsPrimaryAction(size: KropsButtonSize = .regular) -> some View {
         modifier(PrimaryActionAppearance(size: size))
     }
-    func kropsToolbarAction() -> some View { modifier(ToolbarActionAppearance()) }
+    func kropsToolbarAction(size: KropsButtonSize = .regular) -> some View {
+        modifier(ToolbarActionAppearance(size: size))
+    }
     func kropsFloatingControl<S: Shape>(in shape: S) -> some View {
         modifier(FloatingControlAppearance(shape: shape))
     }
