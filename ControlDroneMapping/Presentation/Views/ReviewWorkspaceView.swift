@@ -501,13 +501,9 @@ struct ReviewWorkspaceView: View {
             Divider()
             ReviewPhotoMap(photos: locatedPhotos)
                 .overlay(alignment: .topTrailing) {
-                    Button(action: prepareOrthomosaic) {
-                        Label("Olah foto", systemImage: "play.fill")
-                            .font(.body.weight(.semibold)).padding(.horizontal, 20).padding(.vertical, 12)
-                            .foregroundStyle(.white)
-                            .background(KropsStyle.selection, in: RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.plain).disabled(!canPrepare)
+                    Button("Olah foto", systemImage: "play.fill", action: prepareOrthomosaic)
+                        .kropsPrimaryAction(size: .large)
+                        .disabled(!canPrepare)
                     .help("Buka persiapan dan jalankan orthomosaic")
                     .padding(20)
                 }

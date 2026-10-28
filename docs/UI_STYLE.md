@@ -6,6 +6,18 @@ The Mac app uses semantic system fonts: title2 for page titles, headline for sec
 
 Regular native control sizes are the default. Acquisition start and WebODM export use large prominent buttons. Toolbar actions use the native glass button style on macOS 26 and later; prominent actions use glassProminent. Earlier versions retain bordered styles. Glass is applied to interactive controls rather than every data surface. Accent colors adapt to light and dark appearance; selected navigation retains a dark green background for white text.
 
+## Primary buttons
+
+Updated 28 October 2026. Every primary action uses `kropsPrimaryAction(size:)`: prominent glass on macOS 26 and later (bordered prominent before), capsule shape and the Krops accent tint, applied in one place. Call sites never add their own tint, font or shape. A view has at most one primary action, and buttons placed side by side share one size.
+
+| Variant | Control size | Use |
+| --- | --- | --- |
+| `.large` | large | The main action of a screen: mission footer, Rencana side panel, map overlays such as Olah foto. Full width inside side panels. |
+| `.regular` (default) | regular | Actions inside content sections, forms, sheets and dialogs, including sheet confirm buttons. |
+| `.compact` | small | Inside list or table rows; the row's secondary controls are small as well. |
+
+Secondary actions (back, Ekspor rute, map tools) use `kropsToolbarAction()`, neutral glass without the brand tint.
+
 Cancel and mission creation sheets use standard keyboard shortcuts. Starting image acquisition does not receive a default Return shortcut.
 
 References:

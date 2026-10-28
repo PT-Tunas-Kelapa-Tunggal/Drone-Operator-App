@@ -137,7 +137,7 @@ struct FlightPlannerView: View {
                     Text("Buka QGroundControl melalui panel Perangkat untuk setup drone.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Button("Ekspor .plan") { model.chooseExportDestination() }.kropsPrimaryAction(size: .large)
+                Button("Ekspor .plan") { model.chooseExportDestination() }.kropsPrimaryAction()
                     .disabled(model.exportBlocker != nil)
             }.padding(18).background(KropsStyle.surface)
         }.frame(width: 1180, height: 790).background(KropsStyle.canvas)

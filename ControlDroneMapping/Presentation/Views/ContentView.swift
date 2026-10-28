@@ -313,7 +313,7 @@ struct ContentView: View {
                     model.createMission(name: missionName)
                     if model.errorMessage == nil { newMission = false }
                 }
-                .keyboardShortcut(.defaultAction).kropsPrimaryAction().tint(KropsStyle.accent)
+                .keyboardShortcut(.defaultAction).kropsPrimaryAction()
                 .disabled(
                     missionName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         || missionName.count > 70 || model.editingLocked)

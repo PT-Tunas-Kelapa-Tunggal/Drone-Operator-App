@@ -20,22 +20,46 @@ struct KropsBrand: View {
     }
 }
 
+/// Size variants for primary buttons. Each view has at most one primary action, and
+/// buttons that sit side by side share one size.
+enum KropsButtonSize {
+    /// Inside list and table rows, next to small secondary controls.
+    case compact
+    /// Inside content sections, forms, sheets and dialogs.
+    case regular
+    /// The main action of a screen: footers, side panels and map overlays.
+    case large
+
+    var controlSize: ControlSize {
+        switch self {
+        case .compact: return .small
+        case .regular: return .regular
+        case .large: return .large
+        }
+    }
+}
+
+// One appearance for every primary action: prominent glass, capsule shape and the
+// brand tint, sized by variant. Text size follows the system control size.
 private struct PrimaryActionAppearance: ViewModifier {
-    var size: ControlSize
+    var size: KropsButtonSize
     @ViewBuilder func body(content: Content) -> some View {
         if #available(macOS 26, *) {
-            content.buttonStyle(.glassProminent).controlSize(size).font(.body)
+            content.buttonStyle(.glassProminent).buttonBorderShape(.capsule)
+                .controlSize(size.controlSize).tint(KropsStyle.accent)
         } else {
-            content.buttonStyle(.borderedProminent).controlSize(size).font(.body)
+            content.buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
+                .controlSize(size.controlSize).tint(KropsStyle.accent)
         }
     }
 }
 private struct ToolbarActionAppearance: ViewModifier {
     @ViewBuilder func body(content: Content) -> some View {
         if #available(macOS 26, *) {
-            content.buttonStyle(.glass).controlSize(.regular).font(.body)
+            // Neutral glass: drop the brand tint inherited from the app root.
+            content.buttonStyle(.glass).controlSize(.regular).font(.body).tint(nil)
         } else {
-            content.buttonStyle(.bordered).controlSize(.regular).font(.body)
+            content.buttonStyle(.bordered).controlSize(.regular).font(.body).tint(nil)
         }
     }
 }
@@ -61,7 +85,7 @@ private struct FloatingPanelAppearance: ViewModifier {
     }
 }
 extension View {
-    func kropsPrimaryAction(size: ControlSize = .regular) -> some View {
+    func kropsPrimaryAction(size: KropsButtonSize = .regular) -> some View {
         modifier(PrimaryActionAppearance(size: size))
     }
     func kropsToolbarAction() -> some View { modifier(ToolbarActionAppearance()) }
