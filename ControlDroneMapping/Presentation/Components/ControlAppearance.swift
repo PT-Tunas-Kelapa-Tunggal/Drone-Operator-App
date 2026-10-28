@@ -39,16 +39,16 @@ enum KropsButtonSize {
     }
 }
 
-// One appearance for every primary action: prominent glass, capsule shape and the
-// brand tint, sized by variant. Text size follows the system control size.
+// One appearance for every primary action: prominent glass and the brand tint, sized
+// by variant. The capsule shape comes from the app root like every other button.
 private struct PrimaryActionAppearance: ViewModifier {
     var size: KropsButtonSize
     @ViewBuilder func body(content: Content) -> some View {
         if #available(macOS 26, *) {
-            content.buttonStyle(.glassProminent).buttonBorderShape(.capsule)
+            content.buttonStyle(.glassProminent)
                 .controlSize(size.controlSize).tint(KropsStyle.accent)
         } else {
-            content.buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
+            content.buttonStyle(.borderedProminent)
                 .controlSize(size.controlSize).tint(KropsStyle.accent)
         }
     }

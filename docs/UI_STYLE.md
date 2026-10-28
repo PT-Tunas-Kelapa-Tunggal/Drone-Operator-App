@@ -8,7 +8,7 @@ Regular native control sizes are the default. Acquisition start and WebODM expor
 
 ## Primary buttons
 
-Updated 28 October 2026. Every primary action uses `kropsPrimaryAction(size:)`: prominent glass on macOS 26 and later (bordered prominent before), capsule shape and the Krops accent tint, applied in one place. Call sites never add their own tint, font or shape. A view has at most one primary action, and buttons placed side by side share one size.
+Updated 28 October 2026. Every primary action uses `kropsPrimaryAction(size:)`: prominent glass on macOS 26 and later (bordered prominent before) and the Krops accent tint, applied in one place. All buttons, primary or not, are capsules: the app root sets `buttonBorderShape(.capsule)`, and only icon-only buttons override it with `.circle`. Call sites never add their own tint, font or shape. A view has at most one primary action, and buttons placed side by side share one size.
 
 | Variant | Control size | Use |
 | --- | --- | --- |
