@@ -384,24 +384,55 @@ final class SurveyTransitPolyline: MKPolyline {}
 /// Shows the active tool's cursor, and an open hand over pins that can be dragged.
 final class PlanningMapView: MKMapView {
     var toolCursor: NSCursor = .arrow {
-        didSet { if oldValue != toolCursor { toolCursor.set() } }
+        didSet {
+            guard oldValue != toolCursor, let point = window?.mouseLocationOutsideOfEventStream,
+                isTopmost(at: point)
+            else { return }
+            applyCursor(at: point)
+        }
     }
     private var cursorArea: NSTrackingArea?
+    /// True while this view has set the cursor, so leaving the map hands it back once.
+    private var ownsCursor = false
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let cursorArea { removeTrackingArea(cursorArea) }
         let area = NSTrackingArea(
-            rect: .zero, options: [.mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+            rect: .zero,
+            options: [.mouseMoved, .cursorUpdate, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
             owner: self, userInfo: nil)
         addTrackingArea(area)
         cursorArea = area
     }
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
-        cursor(at: convert(event.locationInWindow, from: nil)).set()
+        updateCursor(at: event.locationInWindow)
     }
     override func cursorUpdate(with event: NSEvent) {
-        cursor(at: convert(event.locationInWindow, from: nil)).set()
+        if isTopmost(at: event.locationInWindow) { applyCursor(at: event.locationInWindow) }
+        else { super.cursorUpdate(with: event) }
+    }
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        releaseCursor()
+    }
+    private func updateCursor(at windowPoint: CGPoint) {
+        if isTopmost(at: windowPoint) { applyCursor(at: windowPoint) } else { releaseCursor() }
+    }
+    private func applyCursor(at windowPoint: CGPoint) {
+        cursor(at: convert(windowPoint, from: nil)).set()
+        ownsCursor = true
+    }
+    /// Floating panels and toolbars drawn over the map keep their own cursors.
+    private func releaseCursor() {
+        guard ownsCursor else { return }
+        ownsCursor = false
+        NSCursor.arrow.set()
+    }
+    private func isTopmost(at windowPoint: CGPoint) -> Bool {
+        // hitTest takes the content view's superview coordinates, which match the window's.
+        guard let hit = window?.contentView?.hitTest(windowPoint) else { return false }
+        return hit === self || hit.isDescendant(of: self)
     }
     private func cursor(at point: CGPoint) -> NSCursor {
         for annotation in annotations {

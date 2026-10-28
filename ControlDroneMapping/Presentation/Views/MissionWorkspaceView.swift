@@ -57,16 +57,24 @@ struct MissionWorkspaceView: View {
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .top) {
-            VStack(alignment: .leading, spacing: 12) {
-                topBar
-                HStack(alignment: .top, spacing: 12) {
-                    if inspectorVisible {
-                        inspector.transition(.move(edge: .leading).combined(with: .opacity))
-                    }
-                    Spacer(minLength: 0)
-                    if summaryVisible {
-                        summaryPanel.transition(.move(edge: .trailing).combined(with: .opacity))
-                    }
+            HStack(alignment: .top, spacing: 12) {
+                if inspectorVisible {
+                    inspector.transition(.move(edge: .leading).combined(with: .opacity))
+                } else {
+                    // Same spot as the toggle inside the panel header.
+                    panelToggle(.leading).padding(5).kropsFloatingControl(in: Capsule())
+                        .padding(.leading, 11).padding(.top, 9)
+                }
+                ViewThatFits(in: .horizontal) {
+                    centerIslands(compact: false)
+                    centerIslands(compact: true)
+                }
+                .frame(maxWidth: .infinity)
+                if summaryVisible {
+                    summaryPanel.transition(.move(edge: .trailing).combined(with: .opacity))
+                } else {
+                    panelToggle(.trailing).padding(5).kropsFloatingControl(in: Capsule())
+                        .padding(.trailing, 11).padding(.top, 11)
                 }
             }
             .padding(14)
@@ -106,15 +114,11 @@ struct MissionWorkspaceView: View {
 
     // MARK: - Floating toolbar
 
-    /// Tools, history and view controls sit together in the middle; a hidden panel
-    /// leaves a reopen button in its corner.
-    private var topBar: some View {
+    /// Tools, history and view controls sit together between the panels; tool labels
+    /// drop away when the map is too narrow for them.
+    private func centerIslands(compact: Bool) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            if !inspectorVisible {
-                panelToggle(.leading).padding(5).kropsFloatingControl(in: Capsule())
-            }
-            Spacer(minLength: 0)
-            toolPalette
+            toolPalette(compact: compact)
             historyIsland
             HStack(spacing: 2) {
                 PlanIconButton(systemImage: "location", help: "Ke lokasi saya") {
@@ -128,11 +132,8 @@ struct MissionWorkspaceView: View {
             }
             .padding(5)
             .kropsFloatingControl(in: Capsule())
-            Spacer(minLength: 0)
-            if !summaryVisible {
-                panelToggle(.trailing).padding(5).kropsFloatingControl(in: Capsule())
-            }
         }
+        .fixedSize()
     }
 
     private func panelToggle(_ edge: HorizontalEdge) -> some View {
@@ -164,25 +165,25 @@ struct MissionWorkspaceView: View {
         .kropsFloatingControl(in: Capsule())
     }
 
-    private var toolPalette: some View {
+    private func toolPalette(compact: Bool) -> some View {
         HStack(spacing: 2) {
             Group {
                 PlanToolButton(
-                    title: "Pilih", systemImage: "cursorarrow", shortcut: "V", selected: planner.mode == .inspect,
+                    title: "Pilih", compact: compact, systemImage: "cursorarrow", shortcut: "V", selected: planner.mode == .inspect,
                     help: "Pilih & geser pin"
                 ) { selectTool(.inspect) }
                 PlanToolButton(
-                    title: "Titik", systemImage: "pencil.and.outline", shortcut: "P",
+                    title: "Titik", compact: compact, systemImage: "pencil.and.outline", shortcut: "P",
                     selected: planner.mode == .waypoint, help: "Tambah titik batas (klik dekat garis untuk menyisipkan)",
                     tint: .orange
                 ) { selectTool(.waypoint) }
                 PlanToolButton(
-                    title: "Home", systemImage: "house", shortcut: "H", selected: planner.mode == .home,
+                    title: "Home", compact: compact, systemImage: "house", shortcut: "H", selected: planner.mode == .home,
                     help: "Taruh titik lepas landas & mendarat", tint: .green
                 ) { selectTool(.home) }
                 .disabled(!boundaryReady)
                 PlanToolButton(
-                    title: "Entry", systemImage: "arrow.right.to.line", shortcut: "E", selected: planner.mode == .entry,
+                    title: "Entry", compact: compact, systemImage: "arrow.right.to.line", shortcut: "E", selected: planner.mode == .entry,
                     help: "Taruh titik masuk survei di garis batas", tint: .cyan
                 ) { selectTool(.entry) }
                 .disabled(!boundaryReady)
@@ -647,6 +648,7 @@ private struct PlanIconButton: View {
 
 private struct PlanToolButton: View {
     let title: String
+    var compact = false
     let systemImage: String
     let shortcut: String
     let selected: Bool
@@ -659,7 +661,7 @@ private struct PlanToolButton: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: systemImage)
-                Text(title)
+                if !compact { Text(title) }
                 Text(shortcut)
                     .font(.caption2.weight(.semibold).monospaced())
                     .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary)
@@ -676,6 +678,7 @@ private struct PlanToolButton: View {
         }
         .buttonStyle(.plain)
         .help("\(help) (\(shortcut))")
+        .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
