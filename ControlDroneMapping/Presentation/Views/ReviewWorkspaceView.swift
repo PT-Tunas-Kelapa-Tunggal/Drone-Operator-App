@@ -38,11 +38,17 @@ struct ReviewWorkspaceView: View {
     @State private var resultLayer = ReviewResultLayer.orthomosaic
     @State private var importedProjectID: UUID?
     @State private var mapFocus = UUID()
+    private let variProcessor: any VariProcessing
+    @State private var variResult: VariScanResult?
+    @State private var isProcessingVari = false
+    @State private var variError: String?
 
     init(
         model: ControlViewModel, link: LocalLink, farms: FarmAreaViewModel,
         location: OperatorLocationViewModel, planner: FlightPlannerViewModel,
-        processing: OrthomosaicViewModel, search: String,
+        processing: OrthomosaicViewModel,
+        variProcessor: (any VariProcessing)? = nil,
+        search: String,
         openPlanner: @escaping () -> Void, createMission: @escaping () -> Void,
         export: @escaping (MissionRecord) -> Void, tab: ReviewTab? = nil
     ) {
@@ -52,12 +58,28 @@ struct ReviewWorkspaceView: View {
         self.location = location
         self.planner = planner
         self.processing = processing
+        self.variProcessor = variProcessor ?? ControlDependencies.variProcessor(demo: model.isDemo)
         self.search = search
         self.openPlanner = openPlanner
         self.createMission = createMission
         self.export = export
         initialTab = tab
         _tab = State(initialValue: tab ?? .mission)
+    }
+
+    private var isOrthomosaicReady: Bool {
+        guard let output else { return false }
+        return FileManager.default.fileExists(atPath: output.image.path)
+    }
+
+    private func checkForCachedVariResult() {
+        guard let output, isOrthomosaicReady else {
+            variResult = nil
+            return
+        }
+        if variResult == nil {
+            variResult = try? variProcessor.loadCachedResult(from: output.folder)
+        }
     }
 
     private var mission: SavedMission? {
@@ -573,6 +595,8 @@ struct ReviewWorkspaceView: View {
                         Spacer()
                         Button("Buka hasil") { processing.showOutput(output) }
                     }.padding(16)
+                } else if resultLayer == .vari {
+                    variView
                 } else {
                     ContentUnavailableView(
                         resultLayer == .orthomosaic ? "Belum ada orthomosaic" : "Belum ada data " + resultLayer.rawValue,
@@ -584,6 +608,133 @@ struct ReviewWorkspaceView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .task(id: output?.folder) {
+            checkForCachedVariResult()
+        }
+        .onChange(of: resultLayer) { _, newLayer in
+            if newLayer == .vari {
+                checkForCachedVariResult()
+            }
+        }
+    }
+
+
+    @ViewBuilder
+    private var variView: some View {
+        if !isOrthomosaicReady {
+            ContentUnavailableView {
+                Label("Orthomosaic Belum Tersedia", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            } description: {
+                Text("Indeks VARI memerlukan hasil olah citra orthomosaic gabungan. Silakan selesaikan pengolahan foto pemetaan pada tab Orthomosaic terlebih dahulu.")
+            } actions: {
+                Button("Menuju Tab Orthomosaic") {
+                    resultLayer = .orthomosaic
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if isProcessingVari {
+            VStack(spacing: 16) {
+                ProgressView().controlSize(.large)
+                Text("Menjalankan Analisis Indeks VARI...").font(.headline)
+                Text("Mendeteksi tajuk pohon kelapa sawit dan menghitung indeks vegetasi VARI dari citra orthomosaic.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let result = variResult {
+            VStack(spacing: 20) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 48))
+                    .foregroundStyle(Color.green)
+                Text("Analisis VARI Selesai").font(.title2.weight(.bold))
+                HStack(spacing: 24) {
+                    VStack {
+                        Text("\(result.treeCount)").font(.title.weight(.semibold))
+                        Text("Pohon Terdeteksi").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Divider().frame(height: 40)
+                    VStack {
+                        Text("\(result.zoneCount)").font(.title.weight(.semibold))
+                        Text("Zona Dibuat").font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let mean = result.referenceMeanVari {
+                        Divider().frame(height: 40)
+                        VStack {
+                            Text(String(format: "%.2f", mean)).font(.title.weight(.semibold))
+                            Text("Rerata VARI").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding()
+                .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+
+                Text("Hasil tersimpan di: \(result.resultJSONURL.lastPathComponent)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 12) {
+                    Button {
+                        let missionName = mission?.plan.name ?? record?.plan.name ?? "hasil"
+                        let safeName = missionName.replacingOccurrences(of: " ", with: "_").lowercased()
+                        VariFilePanels.saveJSON(from: result.resultJSONURL, suggestedName: "vari_\(safeName).json")
+                    } label: {
+                        Label("Unduh Hasil JSON", systemImage: "arrow.down.doc")
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button("Buka di Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([result.resultJSONURL])
+                    }
+                    if let output {
+                        Button("Jalankan Ulang") {
+                            runVariScan(on: output.image, outputFolder: output.folder)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ContentUnavailableView {
+                Label("Analisis Indeks VARI", systemImage: "leaf.fill")
+            } description: {
+                if let variError {
+                    Text("Error: \(variError)").foregroundStyle(.red)
+                } else if let output {
+                    Text("Orthomosaic siap diolah (\(output.width) × \(output.height) px). Mulai proses deteksi tajuk pohon sawit dan penghitungan indeks vegetasi VARI.")
+                } else {
+                    Text("Belum ada citra orthomosaic yang tersedia untuk dianalisis.")
+                }
+            } actions: {
+                if let output {
+                    Button("Jalankan Analisis VARI") {
+                        runVariScan(on: output.image, outputFolder: output.folder)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func runVariScan(on imageURL: URL, outputFolder: URL) {
+        guard !isProcessingVari else { return }
+        isProcessingVari = true
+        variError = nil
+        Task {
+            do {
+                let result = try await variProcessor.process(photoURL: imageURL, plotID: nil, outputFolder: outputFolder)
+                await MainActor.run {
+                    self.variResult = result
+                    self.isProcessingVari = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.variError = error.localizedDescription
+                    self.isProcessingVari = false
+                }
+            }
         }
     }
 
@@ -637,6 +788,7 @@ private struct ReviewWorkspacePreview: View {
             planner: dependencies.planner,
             processing: ControlDependencies.orthomosaicViewModel(
                 store: dependencies.link.store, demo: true),
+            variProcessor: dependencies.variProcessor,
             search: "", openPlanner: {}, createMission: {}, export: { _ in }, tab: tab)
             .frame(width: 1280, height: 720)
             .preferredColorScheme(.light)

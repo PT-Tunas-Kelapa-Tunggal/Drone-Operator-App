@@ -7,6 +7,7 @@ cd "$repo_root"
 echo "=== Ensuring Engines are Provisioned ==="
 "$repo_root/Scripts/ensure-orthomosaic-engine.sh"
 "$repo_root/Scripts/ensure-qgc-engine.sh"
+"$repo_root/Scripts/ensure-vari-engine.sh"
 
 echo "=== Building ControlDroneMapping (Release) ==="
 xcodebuild -scheme ControlDroneMapping \
@@ -24,12 +25,17 @@ fi
 echo "=== Ensuring Engines are Embedded & Signed in Release App ==="
 TARGET_BUILD_DIR=".build/DerivedData/Build/Products/Release" CONTENTS_FOLDER_PATH="ControlDroneMapping.app/Contents" "$repo_root/Scripts/ensure-orthomosaic-engine.sh"
 TARGET_BUILD_DIR=".build/DerivedData/Build/Products/Release" CONTENTS_FOLDER_PATH="ControlDroneMapping.app/Contents" "$repo_root/Scripts/ensure-qgc-engine.sh"
+TARGET_BUILD_DIR=".build/DerivedData/Build/Products/Release" CONTENTS_FOLDER_PATH="ControlDroneMapping.app/Contents" "$repo_root/Scripts/ensure-vari-engine.sh"
+"$repo_root/Scripts/ensure-vari-engine.sh"
 
 echo "=== Verifying Embedded Orthomosaic Engine ==="
 "$app_path/Contents/MacOS/ControlDroneMapping" --check-orthomosaic-engine
 
 echo "=== Verifying Embedded QGC Engine ==="
 "$app_path/Contents/MacOS/ControlDroneMapping" --check-qgc-engine
+
+echo "=== Verifying Embedded Vari Engine ==="
+"$app_path/Contents/MacOS/ControlDroneMapping" --check-vari-engine
 
 echo "=== Preparing DMG Staging Directory ==="
 staging=".build/dmg-staging"
@@ -69,4 +75,5 @@ echo "To test the DMG, run:"
 echo "  diskutil image attach $output_dmg"
 echo "  /Volumes/ControlDroneMapping/ControlDroneMapping.app/Contents/MacOS/ControlDroneMapping --check-orthomosaic-engine"
 echo "  /Volumes/ControlDroneMapping/ControlDroneMapping.app/Contents/MacOS/ControlDroneMapping --check-qgc-engine"
+echo "  /Volumes/ControlDroneMapping/ControlDroneMapping.app/Contents/MacOS/ControlDroneMapping --check-vari-engine"
 echo "  diskutil eject /Volumes/ControlDroneMapping"
