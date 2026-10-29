@@ -95,6 +95,7 @@
 				2F62F990307A21EF00B1968B /* Resources */,
 				ABC000000000000000000021 /* Embed & Sign Orthomosaic Engine */,
 				ABC000000000000000000020 /* Embed & Sign QGroundControl Engine */,
+				ABC000000000000000000022 /* Embed & Sign Vari Engine */,
 			);
 			buildRules = (
 			);
@@ -176,6 +177,16 @@
 			shellPath = /bin/bash;
 			shellScript = (
 				"bash \"$SRCROOT/Scripts/ensure-orthomosaic-engine.sh\"",
+				"",
+			);
+		};
+		ABC000000000000000000022 /* Embed & Sign Vari Engine */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			name = "Embed & Sign Vari Engine";
+			shellPath = /bin/bash;
+			shellScript = (
+				"bash \"$SRCROOT/Scripts/ensure-vari-engine.sh\"",
 				"",
 			);
 		};

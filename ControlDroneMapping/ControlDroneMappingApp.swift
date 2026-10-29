@@ -42,6 +42,16 @@ struct ControlDroneMappingApp: App {
                 exit(1)
             }
         }
+        if ProcessInfo.processInfo.arguments.contains("--check-vari-engine") {
+            do {
+                let message = try BundledVariEngine.check()
+                print(message)
+                exit(0)
+            } catch {
+                FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
+                exit(1)
+            }
+        }
         let demo =
             ProcessInfo.processInfo.arguments.contains("--demo")
             || Bundle.main.object(forInfoDictionaryKey: "DroneControlDemoMode") as? Bool == true
