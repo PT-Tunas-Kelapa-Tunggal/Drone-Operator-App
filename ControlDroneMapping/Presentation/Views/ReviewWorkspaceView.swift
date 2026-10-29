@@ -104,8 +104,15 @@ struct ReviewWorkspaceView: View {
     var body: some View {
         VStack(spacing: 0) {
             if model.step != .mission || model.hasMissionDetail {
-                contextHeader
-                if mission != nil || record != nil || model.step == .datasets { tabs }
+                // One compact bar keeps the most vertical space for the map.
+                HStack(spacing: 16) {
+                    contextHeader
+                    Spacer(minLength: 8)
+                    if mission != nil || record != nil || model.step == .datasets { tabs }
+                    Spacer(minLength: 8)
+                    if inMissionDetail { missionStatus }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 14)
                 Divider()
             }
             Group {
@@ -116,7 +123,7 @@ struct ReviewWorkspaceView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            if model.step == .mission && model.hasMissionDetail && mission?.phase != .completed && [.mission, .camera, .capture].contains(tab) {
+            if model.step == .mission && model.hasMissionDetail && mission?.phase != .completed && [.camera, .capture].contains(tab) {
                 MissionFooterView(model: model, link: link, continueTitle: continueTitle) {
                     tab = nextTab
                 }
@@ -125,7 +132,8 @@ struct ReviewWorkspaceView: View {
         .background(KropsStyle.surface)
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(KropsStyle.border))
-        .padding(.horizontal, 22).padding(.bottom, 18)
+        .padding(.horizontal, 14).padding(.bottom, 14)
+        .padding(.top, inMissionDetail ? 14 : 0)  // The page header is hidden inside a mission.
         .onAppear {
             tab = initialTab ?? landingTab
             resolveImportedProject()
@@ -167,7 +175,6 @@ struct ReviewWorkspaceView: View {
                     model: model, link: link, farms: farms, location: location,
                     planner: planner)
                     .id(model.selectedMissionID)
-                    .padding(16)
             } else {
                 missionList
             }
@@ -245,65 +252,93 @@ struct ReviewWorkspaceView: View {
     }
 
     private var tabs: some View {
-        HStack(spacing: 0) {
+        Picker("Tahap misi", selection: Binding(get: { tab }, set: { selectTab($0) })) {
             ForEach(ReviewTab.allCases.filter { $0 != .overview }) { item in
-                Button {
-                    // Return to the existing mission context before showing its editor.
-                    if [.mission, .camera, .capture].contains(item), model.step == .datasets, let mission {
-                        model.openMission(mission.id)
-                    }
-                    guard ![.camera, .capture].contains(item) || model.hasMissionDetail else { return }
-                    tab = item
-                } label: {
-                    Text(item.rawValue)
-                        .font(.system(size: 15, weight: tab == item ? .semibold : .regular))
-                        .foregroundStyle(tab == item ? Color.primary : Color.secondary)
-                        .padding(.vertical, 18)
-                        .overlay(alignment: .bottom) {
-                            if tab == item {
-                                Capsule().fill(KropsStyle.accent).frame(height: 3)
-                            }
-                        }
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity)
-                .accessibilityAddTraits(tab == item ? .isSelected : [])
-                .disabled(mission == nil && [.mission, .camera, .capture].contains(item))
+                Text(item.rawValue).tag(item)
             }
         }
-        .padding(.horizontal, 24)
-        .overlay(alignment: .bottom) { Divider() }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.extraLarge)
+        .fixedSize()
+    }
+
+    private func selectTab(_ item: ReviewTab) {
+        if mission == nil && [.mission, .camera, .capture].contains(item) { return }
+        // Return to the existing mission context before showing its editor.
+        if [.mission, .camera, .capture].contains(item), model.step == .datasets, let mission {
+            model.openMission(mission.id)
+        }
+        guard ![.camera, .capture].contains(item) || model.hasMissionDetail else { return }
+        tab = item
     }
 
     private var contextHeader: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 10) {
             Button {
                 model.showMissionList()
                 tab = .overview
-                } label: {
+            } label: {
                 Image(systemName: "chevron.left")
+                    .font(.system(size: 15, weight: .semibold))
                     .frame(width: 30, height: 30)
-                    .background(KropsStyle.canvas, in: Circle())
             }
-            .buttonStyle(.plain).help("Semua misi").accessibilityLabel("Semua misi")
+            .kropsToolbarAction()
+            .buttonBorderShape(.circle)
+            .help("Kembali ke semua misi").accessibilityLabel("Semua misi")
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.title3.weight(.semibold)).lineLimit(1)
                 if let mission {
-                    Text("ID misi · " + mission.id.uuidString)
-                        .font(.caption.monospaced()).foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                    Text(model.missionStorageError == nil ? mission.phase.dashboardTitle : "Perubahan belum tersimpan")
-                        .font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        Label(farmName(mission), systemImage: "leaf.fill")
+                            .fontWeight(.semibold)
+                            .foregroundStyle(mission.area == nil ? Color.orange : KropsStyle.accent)
+                        Text("·").foregroundStyle(.tertiary)
+                        Text(model.missionStorageError == nil ? mission.phase.dashboardTitle : "Perubahan belum tersimpan")
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.callout).lineLimit(1)
                 }
             }
-            Spacer()
-            if let area = mission?.area {
-                Label(area.name, systemImage: "mappin")
-                    .font(.callout).foregroundStyle(.secondary).lineLimit(1)
+            .help(mission.map { "ID misi · " + $0.id.uuidString } ?? "")
+            .contextMenu {
+                if let mission {
+                    Button("Salin ID misi") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(mission.id.uuidString, forType: .string)
+                    }
+                }
             }
         }
-        .padding(.horizontal, 24).padding(.vertical, 16)
+        .frame(maxWidth: 340, alignment: .leading)
+    }
+
+    private func farmName(_ mission: SavedMission) -> String {
+        guard let area = mission.area else { return "Kebun belum diatur" }
+        let name = area.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "Kebun tanpa nama" : name
+    }
+
+    private var inMissionDetail: Bool { model.step == .mission && model.hasMissionDetail }
+
+    /// Engine and iPhone state as quiet indicators; details live in their tooltips.
+    private var missionStatus: some View {
+        HStack(spacing: 10) {
+            QGCEngineStatusBadge(compact: true)
+            Button { tab = .camera } label: {
+                Image(systemName: model.iphoneReadyForCapture ? "iphone.gen3" : "iphone.gen3.slash")
+                    .foregroundStyle(model.iphoneReadyForCapture ? Color.green : Color.orange)
+                    .frame(width: 26, height: 26)
+            }
+            .buttonStyle(.plain)
+            .help(model.iphoneCaptureStatus + " · buka Kamera & uji")
+            .accessibilityLabel(model.iphoneCaptureStatus)
+            Button("Ekspor rute", systemImage: "square.and.arrow.up", action: openPlanner)
+                .kropsToolbarAction(size: .large)
+                .disabled(model.editingLocked)
+                .help("Ekspor rute .plan untuk QGroundControl")
+        }
     }
 
     private var missionList: some View {
@@ -466,13 +501,9 @@ struct ReviewWorkspaceView: View {
             Divider()
             ReviewPhotoMap(photos: locatedPhotos)
                 .overlay(alignment: .topTrailing) {
-                    Button(action: prepareOrthomosaic) {
-                        Label("Olah foto", systemImage: "play.fill")
-                            .font(.body.weight(.semibold)).padding(.horizontal, 20).padding(.vertical, 12)
-                            .foregroundStyle(.white)
-                            .background(KropsStyle.selection, in: RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.plain).disabled(!canPrepare)
+                    Button("Olah foto", systemImage: "play.fill", action: prepareOrthomosaic)
+                        .kropsPrimaryAction(size: .large)
+                        .disabled(!canPrepare)
                     .help("Buka persiapan dan jalankan orthomosaic")
                     .padding(20)
                 }

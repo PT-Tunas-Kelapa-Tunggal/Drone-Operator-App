@@ -3,6 +3,7 @@ import SwiftUI
 struct QGCEngineStatusBadge: View {
     @ObservedObject var engineManager = QGCEngineManager.shared
     @State private var showingDetails = false
+    var compact = false
 
     private var statusColor: Color {
         switch engineManager.status {
@@ -41,7 +42,7 @@ struct QGCEngineStatusBadge: View {
                 Circle()
                     .fill(statusColor)
                     .frame(width: 8, height: 8)
-                Text("QGC Engine")
+                Text(compact ? "QGC" : "QGC Engine")
                     .font(.caption.weight(.medium))
             }
             .padding(.horizontal, 10)

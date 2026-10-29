@@ -157,8 +157,9 @@ struct DatasetListView: View {
                         Spacer()
                         Button("Buka folder") { processing.openFolder(project.id) }
                         Button("Olah foto") { processing.open(project.id) }
-                            .kropsPrimaryAction().tint(KropsStyle.accent)
+                            .kropsPrimaryAction(size: .compact)
                     }
+                    .controlSize(.small)
                     projectStatus(project)
                 }.padding(16).background(KropsStyle.surface, in: RoundedRectangle(cornerRadius: 12))
                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(KropsStyle.border))
@@ -210,11 +211,11 @@ struct DatasetListView: View {
                         OrthomosaicFilePanels.photos {
                             processing.importPhotos($0, mission: record, projectID: processingID(record))
                         }
-                    }.kropsPrimaryAction().tint(KropsStyle.accent).disabled(
+                    }.kropsPrimaryAction(size: .compact).disabled(
                         processing.busy || processing.storageError != nil)
                 } else {
                     Button("Olah foto") { processing.prepareMission(record, projectID: processingID(record)) }
-                        .kropsPrimaryAction().tint(KropsStyle.accent)
+                        .kropsPrimaryAction(size: .compact)
                         .disabled(
                             processing.storageError != nil
                                 || (processing.project(processingID(record)) == nil
@@ -224,6 +225,7 @@ struct DatasetListView: View {
                         )
                 }
             }
+            .controlSize(.small)
             if let project = processing.project(processingID(record)) {
                 projectStatus(project)
             } else {

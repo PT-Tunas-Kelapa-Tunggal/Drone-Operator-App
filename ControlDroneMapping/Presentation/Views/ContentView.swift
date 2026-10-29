@@ -47,7 +47,8 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 sidebar
                 VStack(spacing: 0) {
-                    header
+                    // Inside a mission the workspace bar carries the title and status instead.
+                    if !inMissionDetail { header }
                     if selectedSection == .settings {
                         sectionNavigation
                     }
@@ -228,11 +229,13 @@ struct ContentView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(model.step.title).font(KropsTypography.pageTitle)
-                Text(
-                    Date().formatted(
-                        .dateTime.weekday(.wide).day().month(.wide).year().locale(Locale(identifier: "id_ID"))
-                    )
-                ).font(.caption).foregroundStyle(.secondary)
+                if !inMissionDetail {
+                    Text(
+                        Date().formatted(
+                            .dateTime.weekday(.wide).day().month(.wide).year().locale(Locale(identifier: "id_ID"))
+                        )
+                    ).font(.caption).foregroundStyle(.secondary)
+                }
             }
             Spacer()
             if model.isDemo { Text("DEMO").font(.caption.bold()).foregroundStyle(.orange) }
@@ -280,8 +283,9 @@ struct ContentView: View {
             } label: {
                 Label("Misi baru", systemImage: "plus")
             }.kropsToolbarAction().disabled(true)
-        }.padding(.horizontal, 22).padding(.vertical, 14)
+        }.padding(.horizontal, 22).padding(.vertical, inMissionDetail ? 8 : 14)
     }
+    private var inMissionDetail: Bool { model.step == .mission && model.hasMissionDetail }
     private var requestsPage: some View {
         ControlPanel("Permintaan petani", state: nil) {
             VStack(spacing: 16) {
@@ -309,7 +313,7 @@ struct ContentView: View {
                     model.createMission(name: missionName)
                     if model.errorMessage == nil { newMission = false }
                 }
-                .keyboardShortcut(.defaultAction).kropsPrimaryAction().tint(KropsStyle.accent)
+                .keyboardShortcut(.defaultAction).kropsPrimaryAction()
                 .disabled(
                     missionName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         || missionName.count > 70 || model.editingLocked)

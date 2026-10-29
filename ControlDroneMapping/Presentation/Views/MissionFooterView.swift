@@ -48,11 +48,10 @@ struct MissionFooterView: View {
                     Button("Selesai") { model.send(.finish) }.disabled(!model.canOperate)
                 } else {
                     if !model.iphoneReadyForCapture, let continuePreparation {
-                        Button(continueTitle, action: continuePreparation).kropsPrimaryAction()
+                        Button(continueTitle, action: continuePreparation).kropsPrimaryAction(size: .large)
                     }
-                    Button("Mulai capture • 3–2–1") { model.send(.start) }.kropsPrimaryAction(
-                        size: .large
-                    ).tint(KropsStyle.accent).disabled(!readiness.canStart || !model.selectedMissionIsCurrent)
+                    Button("Mulai capture • 3–2–1") { model.send(.start) }.kropsPrimaryAction(size: .large)
+                        .disabled(!readiness.canStart || !model.selectedMissionIsCurrent)
                 }
             }
         }.padding(.horizontal, 22).padding(.vertical, 16).background(KropsStyle.surface)

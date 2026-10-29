@@ -27,13 +27,14 @@ final class FlightPlannerViewModel: ObservableObject {
     @Published var draft = FlightRoute() {
         didSet {
             guard !switching, oldValue != draft else { return }
-            if !undoing {
+            if !undoing && !continuousEdit {
                 undoStack.append(oldValue)
                 if undoStack.count > 50 { undoStack.removeFirst() }
+                redoStack = []
             }
             reviewed = false
             exportedURL = nil
-            persist()
+            if !continuousEdit { persist() }
         }
     }
     @Published var planningStep: FlightPlanningStep = .boundary
@@ -45,10 +46,12 @@ final class FlightPlannerViewModel: ObservableObject {
     @Published private(set) var exportedURL: URL?
     @Published private(set) var fitRequest = UUID()
     @Published private(set) var undoStack: [FlightRoute] = []
+    @Published private(set) var redoStack: [FlightRoute] = []
     @Published public private(set) var isGeneratingWaypoints = false
     private let repository: any FlightRouteRepository
     private let waypointGenerator: any WaypointGenerator
     private var switching = false
+    private var continuousEdit = false
     private var undoing = false
     private var storageReady = false
 
@@ -199,6 +202,7 @@ final class FlightPlannerViewModel: ObservableObject {
         reviewed = false
         exportedURL = nil
         undoStack = []
+        redoStack = []
         error = nil
         persist()
         fitRequest = UUID()
@@ -213,6 +217,7 @@ final class FlightPlannerViewModel: ObservableObject {
         reviewed = false
         exportedURL = nil
         undoStack = []
+        redoStack = []
         error = nil
         fitRequest = UUID()
     }
@@ -250,13 +255,13 @@ final class FlightPlannerViewModel: ObservableObject {
             draft.surveyEntry = coordinate
         }
     }
-    func addWaypoint(_ coordinate: MapCoordinate) {
+    func addWaypoint(_ coordinate: MapCoordinate, at index: Int? = nil) {
         guard coordinate.isValid, draft.waypoints.count < 500 else {
             error = "Koordinat tidak valid atau batas 500 waypoint tercapai."
             return
         }
         let point = FlightWaypoint(coordinate: coordinate, altitude: draft.defaultAltitude)
-        draft.waypoints.append(point)
+        draft.waypoints.insert(point, at: min(max(index ?? draft.waypoints.count, 0), draft.waypoints.count))
         selectedWaypointID = point.id
         if !draft.visualTransects.isEmpty {
             draft.visualTransects = []
@@ -319,20 +324,44 @@ final class FlightPlannerViewModel: ObservableObject {
             return point
         }
     }
+    var canRedo: Bool { !redoStack.isEmpty }
     func undo() {
         if let previous = undoStack.popLast() {
+            redoStack.append(draft)
             undoing = true
             draft = previous
             undoing = false
             if !draft.waypoints.contains(where: { $0.id == selectedWaypointID }) { selectedWaypointID = nil }
         } else if let baseline = baselineRoute, !isAtBaseline {
+            redoStack.append(draft)
             undoing = true
             draft = baseline
             undoing = false
             selectedWaypointID = nil
         }
     }
+    func redo() {
+        guard let next = redoStack.popLast() else { return }
+        undoStack.append(draft)
+        undoing = true
+        draft = next
+        undoing = false
+        if !draft.waypoints.contains(where: { $0.id == selectedWaypointID }) { selectedWaypointID = nil }
+    }
     func fitRoute() { fitRequest = UUID() }
+    /// Groups a slider drag into one undo step and saves once when it ends.
+    func beginContinuousEdit() {
+        guard !continuousEdit else { return }
+        undoStack.append(draft)
+        if undoStack.count > 50 { undoStack.removeFirst() }
+        redoStack = []
+        continuousEdit = true
+    }
+    func endContinuousEdit() {
+        guard continuousEdit else { return }
+        continuousEdit = false
+        persist()
+    }
     var exportBlocker: String? {
         do { try draft.validateForExport() } catch { return error.localizedDescription }
         return reviewed
@@ -364,6 +393,7 @@ final class FlightPlannerViewModel: ObservableObject {
             switching = false
             selectedWaypointID = nil
             undoStack = []
+        redoStack = []
         }
     }
 
@@ -393,7 +423,8 @@ final class FlightPlannerViewModel: ObservableObject {
         lineSpacing: Double = 20.0,
         triggerDistance: Double = 15.0,
         turnaroundDistance: Double = 10.0,
-        entryLocation: Int = 0
+        entryLocation: Int = 0,
+        fitsRoute: Bool = true
     ) async {
         let activeBoundary = activeBoundaryCoordinates()
         guard activeBoundary.count >= 3 else {
@@ -457,7 +488,7 @@ final class FlightPlannerViewModel: ObservableObject {
                 draft.surveyEntry = first.closestPointOnPolygonPerimeter(activeBoundary)
             }
             reviewed = false
-            fitRoute()
+            if fitsRoute { fitRoute() }
         } catch {
             self.error = error.localizedDescription
         }

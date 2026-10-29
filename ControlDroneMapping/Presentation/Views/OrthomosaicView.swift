@@ -57,7 +57,7 @@ struct OrthomosaicView: View {
                     Button("Hentikan") { model.cancel() }
                 } else {
                     Button("Buat orthomosaic") { model.start() }
-                        .kropsPrimaryAction(size: .large).tint(KropsStyle.accent).disabled(!model.canStart)
+                        .kropsPrimaryAction().disabled(!model.canStart)
                 }
             }
         }.padding(24).frame(width: 780, height: 780)

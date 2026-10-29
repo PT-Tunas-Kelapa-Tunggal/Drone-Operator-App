@@ -72,6 +72,8 @@ struct ControlDroneMappingApp: App {
             ContentView(model: model, link: link, farms: farms, location: location, planner: planner)
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
                 .tint(KropsStyle.accent)
+                // Every bordered and glass button is a capsule; icon-only buttons opt into a circle.
+                .buttonBorderShape(.capsule)
                 .font(.body)
                 .controlSize(.regular)
         }.defaultSize(width: 1440, height: 900)

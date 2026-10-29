@@ -20,9 +20,13 @@ struct WaypointMap: NSViewRepresentable {
     var onBoundaryMove: ((Int, MapCoordinate) -> Void)? = nil
     var onHomeMove: ((MapCoordinate) -> Void)? = nil
     var onEntryMove: ((MapCoordinate) -> Void)? = nil
+    /// Design-tool behaviour: every layer is visible and editable with the Pilih tool,
+    /// blank clicks clear the selection and the Titik tool inserts on nearby edges.
+    var canvas = false
+    var onInsertBoundary: ((Int, MapCoordinate) -> Void)? = nil
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeNSView(context: Context) -> MKMapView {
-        let map = MKMapView()
+        let map = PlanningMapView()
         map.mapType = .satellite
         map.showsZoomControls = true
         map.showsCompass = true
@@ -38,6 +42,8 @@ struct WaypointMap: NSViewRepresentable {
     func updateNSView(_ map: MKMapView, context: Context) {
         let coordinator = context.coordinator
         coordinator.parent = self
+        (map as? PlanningMapView)?.toolCursor =
+            editingEnabled && [.waypoint, .home, .entry].contains(mode) ? .crosshair : .arrow
         // A one-second dashboard heartbeat must not interrupt an annotation drag.
         let key = MapState(
             route: route, farm: farm, sample: operatorLocation, mode: mode,
@@ -71,7 +77,7 @@ struct WaypointMap: NSViewRepresentable {
                 }
             }
 
-            if planningStep == .boundary {
+            if canvas || planningStep == .boundary {
                 // In Step 1: Batas Area
                 // Only boundary vertex pins are shown and editable. Home, Entry, Exit, and transect lines are strictly hidden.
                 for (index, point) in route.waypoints.enumerated() where point.coordinate.isValid {
@@ -83,7 +89,8 @@ struct WaypointMap: NSViewRepresentable {
                     marker.coordinate = point.coordinate.clCoordinate
                     map.addAnnotation(marker)
                 }
-            } else {
+            }
+            if canvas || planningStep == .flight {
                 // In Step 2: Parameter & Jalur Terbang
                 // Boundary vertex markers are hidden so operator cannot alter or drag the boundary.
                 // Home (H) and Entry (E) pins, Exit marker, and QGC survey transect lines are shown.
@@ -227,8 +234,14 @@ final class SurveyTransitPolyline: MKPolyline {}
                 map.selectAnnotation(marker, animated: false)
                 return
             }
+            if parent.canvas, parent.mode == .inspect || !parent.editingEnabled {
+                parent.selectedWaypoint = nil
+                return
+            }
             guard parent.editingEnabled else { return }
-            if parent.planningStep == .boundary {
+            if parent.canvas {
+                // Any placing tool reaches the click handler.
+            } else if parent.planningStep == .boundary {
                 guard parent.mode == .waypoint || parent.drawingBoundary else { return }
             } else {
                 guard parent.mode == .home || parent.mode == .entry else { return }
@@ -240,7 +253,29 @@ final class SurveyTransitPolyline: MKPolyline {}
             }
             let coordinate = map.convert(position, toCoordinateFrom: map)
             let point = MapCoordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
-            if parent.drawingBoundary { parent.onBoundaryClick?(point) } else { parent.onClick(point) }
+            if parent.drawingBoundary {
+                parent.onBoundaryClick?(point)
+            } else if parent.canvas, parent.mode == .waypoint, let index = edgeIndex(near: position, in: map) {
+                parent.onInsertBoundary?(index, point)
+            } else {
+                parent.onClick(point)
+            }
+        }
+        /// Index to insert at when a click lands within a few points of a boundary edge.
+        private func edgeIndex(near position: CGPoint, in map: MKMapView) -> Int? {
+            let points = parent.route.waypoints.map { map.convert($0.coordinate.clCoordinate, toPointTo: map) }
+            guard points.count >= 2 else { return nil }
+            var best: (index: Int, distance: CGFloat)?
+            for i in points.indices {
+                let a = points[i], b = points[(i + 1) % points.count]
+                let dx = b.x - a.x, dy = b.y - a.y
+                let length = dx * dx + dy * dy
+                guard length > 0 else { continue }
+                let t = max(0, min(1, ((position.x - a.x) * dx + (position.y - a.y) * dy) / length))
+                let distance = hypot(position.x - (a.x + t * dx), position.y - (a.y + t * dy))
+                if distance < 10, distance < (best?.distance ?? .infinity) { best = (i + 1, distance) }
+            }
+            return best?.index
         }
         func mapView(_ map: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if overlay is SurveyTransectPolyline {
@@ -281,14 +316,14 @@ final class SurveyTransitPolyline: MKPolyline {}
                 view.markerTintColor = .systemGreen
                 view.glyphText = "H"
                 view.isDraggable =
-                    parent.editingEnabled && parent.planningStep == .flight
+                    parent.editingEnabled && (parent.canvas || parent.planningStep == .flight)
                     && (parent.mode == .inspect || parent.dragWhileAdding)
                     && !parent.drawingBoundary && parent.onHomeMove != nil
             case .surveyEntry:
                 view.markerTintColor = .systemCyan
                 view.glyphText = "E"
                 view.isDraggable =
-                    parent.editingEnabled && parent.planningStep == .flight
+                    parent.editingEnabled && (parent.canvas || parent.planningStep == .flight)
                     && !parent.drawingBoundary && parent.onEntryMove != nil
             case .surveyExit:
                 view.markerTintColor = .systemCyan
@@ -298,7 +333,7 @@ final class SurveyTransitPolyline: MKPolyline {}
                 view.markerTintColor = .systemOrange
                 view.glyphText = "\(marker.number)"
                 view.isDraggable =
-                    parent.editingEnabled && parent.planningStep == .boundary
+                    parent.editingEnabled && (parent.canvas || parent.planningStep == .boundary)
                     && (parent.mode == .inspect || parent.dragWhileAdding)
                     && !parent.drawingBoundary
             case .boundary:
@@ -343,6 +378,69 @@ final class SurveyTransitPolyline: MKPolyline {}
                 break
             }
         }
+    }
+}
+
+/// Shows the active tool's cursor, and an open hand over pins that can be dragged.
+final class PlanningMapView: MKMapView {
+    var toolCursor: NSCursor = .arrow {
+        didSet {
+            guard oldValue != toolCursor, let point = window?.mouseLocationOutsideOfEventStream,
+                isTopmost(at: point)
+            else { return }
+            applyCursor(at: point)
+        }
+    }
+    private var cursorArea: NSTrackingArea?
+    /// True while this view has set the cursor, so leaving the map hands it back once.
+    private var ownsCursor = false
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let cursorArea { removeTrackingArea(cursorArea) }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .cursorUpdate, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self, userInfo: nil)
+        addTrackingArea(area)
+        cursorArea = area
+    }
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        updateCursor(at: event.locationInWindow)
+    }
+    override func cursorUpdate(with event: NSEvent) {
+        if isTopmost(at: event.locationInWindow) { applyCursor(at: event.locationInWindow) }
+        else { super.cursorUpdate(with: event) }
+    }
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        releaseCursor()
+    }
+    private func updateCursor(at windowPoint: CGPoint) {
+        if isTopmost(at: windowPoint) { applyCursor(at: windowPoint) } else { releaseCursor() }
+    }
+    private func applyCursor(at windowPoint: CGPoint) {
+        cursor(at: convert(windowPoint, from: nil)).set()
+        ownsCursor = true
+    }
+    /// Floating panels and toolbars drawn over the map keep their own cursors.
+    private func releaseCursor() {
+        guard ownsCursor else { return }
+        ownsCursor = false
+        NSCursor.arrow.set()
+    }
+    private func isTopmost(at windowPoint: CGPoint) -> Bool {
+        // hitTest takes the content view's superview coordinates, which match the window's.
+        guard let hit = window?.contentView?.hitTest(windowPoint) else { return false }
+        return hit === self || hit.isDescendant(of: self)
+    }
+    private func cursor(at point: CGPoint) -> NSCursor {
+        for annotation in annotations {
+            guard let view = view(for: annotation), view.convert(view.bounds, to: self).contains(point)
+            else { continue }
+            return view.isDraggable ? .openHand : .pointingHand
+        }
+        return toolCursor
     }
 }
 

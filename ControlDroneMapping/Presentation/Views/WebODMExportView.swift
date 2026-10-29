@@ -97,9 +97,7 @@ struct WebODMExportView: View {
                 Button("Tutup") { dismiss() }.disabled(model.working)
                 Spacer()
                 if model.result != nil { Button("Buka Images") { model.openImages() } }
-                Button("Buat folder WebODM") { model.export() }.kropsPrimaryAction(size: .large).tint(
-                    KropsStyle.accent
-                )
+                Button("Buat folder WebODM") { model.export() }.kropsPrimaryAction()
                 .disabled(
                     model.working || (model.corrected && (!model.confirmed || model.referenceID == nil)))
             }
