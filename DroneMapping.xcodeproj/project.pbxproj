@@ -93,9 +93,7 @@
 				2F62F98E307A21EF00B1968B /* Sources */,
 				2F62F98F307A21EF00B1968B /* Frameworks */,
 				2F62F990307A21EF00B1968B /* Resources */,
-				ABC000000000000000000021 /* Embed & Sign Orthomosaic Engine */,
-				ABC000000000000000000020 /* Embed & Sign QGroundControl Engine */,
-				ABC000000000000000000022 /* Embed & Sign Vari Engine */,
+				ABC000000000000000000020 /* Ensure All Deps Valid (Embed, Sign & Verify Engines) */,
 			);
 			buildRules = (
 			);
@@ -160,33 +158,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		ABC000000000000000000020 /* Embed & Sign QGroundControl Engine */ = {
+		ABC000000000000000000020 /* Ensure All Deps Valid (Embed, Sign & Verify Engines) */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
-			name = "Embed & Sign QGroundControl Engine";
+			name = "Ensure All Deps Valid (Embed, Sign & Verify Engines)";
 			shellPath = /bin/bash;
 			shellScript = (
-				"bash \"$SRCROOT/Scripts/ensure-qgc-engine.sh\"",
-				"",
-			);
-		};
-		ABC000000000000000000021 /* Embed & Sign Orthomosaic Engine */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			name = "Embed & Sign Orthomosaic Engine";
-			shellPath = /bin/bash;
-			shellScript = (
-				"bash \"$SRCROOT/Scripts/ensure-orthomosaic-engine.sh\"",
-				"",
-			);
-		};
-		ABC000000000000000000022 /* Embed & Sign Vari Engine */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			name = "Embed & Sign Vari Engine";
-			shellPath = /bin/bash;
-			shellScript = (
-				"bash \"$SRCROOT/Scripts/ensure-vari-engine.sh\"",
+				"bash \"$SRCROOT/Scripts/ensure-all-deps-valid.sh\"",
 				"",
 			);
 		};
