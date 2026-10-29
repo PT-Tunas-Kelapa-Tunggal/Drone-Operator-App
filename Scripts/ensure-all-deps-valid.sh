@@ -13,7 +13,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 SRCROOT="${SRCROOT:-$repo_root}"
 CACHE_DIR="$SRCROOT/.build"
-CONFIG_DIR="$SRCROOT/Config/Engine"
+CONFIG_FILE="$SRCROOT/Config/engines.json"
 STRICT="${ENGINES_STRICT:-0}"
 
 MODE="embed"
