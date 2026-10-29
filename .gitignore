@@ -3,10 +3,9 @@
 .DS_Store
 DerivedData/
 .build/
+dist/
 __pycache__/
 *.pyc
-ControlDroneMapping/Resources/orthomosaic-engine.zip
-ControlDroneMapping/Resources/orthomosaic-engine.json
 
 # Xcode user state
 xcuserdata/

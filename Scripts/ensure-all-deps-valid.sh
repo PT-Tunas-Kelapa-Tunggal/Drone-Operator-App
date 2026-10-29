@@ -70,7 +70,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ ${#ENGINES[@]} -eq 0 ]]; then
-    ENGINES=("orthomosaic" "qgc" "vari")
+    if [[ -f "$CONFIG_FILE" ]]; then
+        while IFS= read -r eng; do
+            [[ -n "$eng" ]] && ENGINES+=("$eng")
+        done < <(python3 -c "import json,sys; print('\n'.join(json.load(open(sys.argv[1])).get('engines', {}).keys()))" "$CONFIG_FILE" 2>/dev/null || true)
+    fi
+    if [[ ${#ENGINES[@]} -eq 0 ]]; then
+        ENGINES=("orthomosaic" "qgc" "vari")
+    fi
 fi
 
 # Global UI Preview / skip check (applies to default embed mode during Xcode builds)
@@ -272,50 +279,55 @@ is_engine_skipped() {
 
 validate_and_process_engine() {
     local name="$1"
-    local config_file="$CONFIG_DIR/${name}-engine.json"
 
     if [[ "$MODE" == "embed" ]] && is_engine_skipped "$name"; then
         echo "note: [$name Engine] Download and embedding skipped (UI Preview mode active)."
         return 0
     fi
 
-    if [[ ! -f "$config_file" ]]; then
-        echo "error: [$name Engine] Config file not found at $config_file" >&2
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        echo "error: Engines configuration file not found at $CONFIG_FILE" >&2
         exit 1
     fi
 
     # 1. Parse and validate configuration
     local parsed
-    parsed="$(python3 - "$config_file" "$STRICT" "$SRCROOT/Config" <<'PY'
+    parsed="$(python3 - "$CONFIG_FILE" "$name" "$STRICT" "$SRCROOT/Config" <<'PY'
 import json, pathlib, re, sys
 
 cfg_path = pathlib.Path(sys.argv[1])
-strict = sys.argv[2] == "1"
-config_dir = pathlib.Path(sys.argv[3])
+engine_name = sys.argv[2]
+strict = sys.argv[3] == "1"
+config_dir = pathlib.Path(sys.argv[4])
 
-data = json.loads(cfg_path.read_text())
+root_data = json.loads(cfg_path.read_text())
+engines = root_data.get("engines", {})
+if engine_name not in engines:
+    sys.exit(f"error: [{engine_name} Engine] Configuration not found in {cfg_path.name}")
+
+data = engines[engine_name]
 required = ["version", "url", "sha256", "layout", "folder", "helper", "entitlements"]
 missing = [k for k in required if not data.get(k)]
 if missing:
-    sys.exit(f"error: [{cfg_path.name}] Missing required keys: {', '.join(missing)}")
+    sys.exit(f"error: [{engine_name} Engine] Missing required keys: {', '.join(missing)}")
 
 sha = data["sha256"]
 if sha == "placeholder":
     if strict:
-        sys.exit(f"error: [{cfg_path.name}] Placeholder sha256 is not allowed when ENGINES_STRICT=1")
+        sys.exit(f"error: [{engine_name} Engine] Placeholder sha256 is not allowed when ENGINES_STRICT=1")
 elif not re.fullmatch(r"[0-9a-fA-F]{64}", sha):
-    sys.exit(f"error: [{cfg_path.name}] Invalid sha256 '{sha}' (expected 64 hex characters)")
+    sys.exit(f"error: [{engine_name} Engine] Invalid sha256 '{sha}' (expected 64 hex characters)")
 
 layout = data["layout"]
 if layout not in ("python-runtime", "helper-app"):
-    sys.exit(f"error: [{cfg_path.name}] Unsupported layout '{layout}'")
+    sys.exit(f"error: [{engine_name} Engine] Unsupported layout '{layout}'")
 
 if layout == "python-runtime" and not data.get("pythonIdentifier"):
-    sys.exit(f"error: [{cfg_path.name}] python-runtime requires 'pythonIdentifier'")
+    sys.exit(f"error: [{engine_name} Engine] python-runtime requires 'pythonIdentifier'")
 
 ent_file = config_dir / data["entitlements"]
 if not ent_file.is_file():
-    sys.exit(f"error: [{cfg_path.name}] Entitlements file not found: {ent_file}")
+    sys.exit(f"error: [{engine_name} Engine] Entitlements file not found: {ent_file}")
 
 print(data["version"])
 print(data["url"])
