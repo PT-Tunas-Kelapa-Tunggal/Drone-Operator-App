@@ -200,13 +200,22 @@ run_cached_engine_smoke_checks() {
 
     echo "=== Running Standalone Smoke Checks on Cached Engines (.build/) ==="
     echo "--- [1/3] Orthomosaic Engine Smoke Check ---"
+    # .build/OrthomosaicPython in the prebuilt archive carries com.apple.security.app-sandbox
+    # + com.apple.security.inherit, which causes macOS libsecinit to SIGTRAP (exit 133) if
+    # spawned directly by an unsandboxed shell instead of a sandboxed parent .app.
+    # Use a temporary ad-hoc copy (without inherit) inside environment/bin and remove it immediately.
+    local smoke_ortho_py="$ortho_dir/environment/bin/.smoke-orthomosaic-python"
+    cp -f "$ortho_py" "$smoke_ortho_py"
+    trap 'rm -f "$smoke_ortho_py"' RETURN
+    codesign --force --sign - "$smoke_ortho_py" >/dev/null 2>&1
     PYTHONHOME="$ortho_dir/environment" \
     CONDA_PREFIX="$ortho_dir/environment" \
     PYTHONNOUSERSITE=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PROJ_NETWORK=OFF \
-        "$ortho_py" -u "$repo_root/ControlDroneMapping/Resources/orthomosaic_worker.py" \
+        "$smoke_ortho_py" -u "$repo_root/ControlDroneMapping/Resources/orthomosaic_worker.py" \
         --runtime "$ortho_dir" --check
+    rm -f "$smoke_ortho_py"
 
     echo "--- [2/3] QGroundControl Headless Health Check ---"
     python3 - "$qgc_bin" <<'PY'
