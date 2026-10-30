@@ -340,7 +340,7 @@ cmd_archive() {
         DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
         PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
         PRODUCT_BUNDLE_IDENTIFIER="${bundle_prefix}.ControlDroneMapping" \
-        CODE_SIGN_ENTITLEMENTS="Config/DroneControl-DeveloperID.entitlements" \
+        CODE_SIGN_ENTITLEMENTS="Config/App-DeveloperID.entitlements" \
         OTHER_CODE_SIGN_FLAGS="--timestamp" \
         MARKETING_VERSION="$marketing_version" \
         CURRENT_PROJECT_VERSION="$build_number"
