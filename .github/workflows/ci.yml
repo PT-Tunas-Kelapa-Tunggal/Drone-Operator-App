@@ -28,6 +28,9 @@ jobs:
       - name: Select Xcode
         run: Scripts/release.sh select-xcode "${{ vars.XCODE_VERSION || '27.1' }}"
 
+      - name: Seed developer config template
+        run: cp Config/Developer.xcconfig.example Config/Developer.xcconfig
+
       - name: Cache precompiled engines
         uses: actions/cache@v4
         with:
@@ -59,7 +62,8 @@ jobs:
       contents: write
     env:
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
-      DRONE_BUNDLE_PREFIX: ${{ vars.DRONE_BUNDLE_PREFIX || 'com.hata' }}
+      APP_BUNDLE_PREFIX: ${{ vars.APP_BUNDLE_PREFIX }}
+      ICLOUD_CONTAINER_NAME: ${{ vars.ICLOUD_CONTAINER_NAME }}
       ENGINES_STRICT: '1'
       NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_API_KEY_P8_BASE64 }}
       NOTARY_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
