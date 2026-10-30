@@ -407,6 +407,7 @@
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "$(SRCROOT)/Config/App-Info.plist";
+				INFOPLIST_KEY_AppEnvironment = "$(APP_ENVIRONMENT)";
 				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_NAME)";
 				INFOPLIST_KEY_ICloudContainerIdentifier = "$(ICLOUD_CONTAINER_NAME)";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -452,6 +453,7 @@
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "$(SRCROOT)/Config/App-Info.plist";
+				INFOPLIST_KEY_AppEnvironment = "$(APP_ENVIRONMENT)";
 				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_NAME)";
 				INFOPLIST_KEY_ICloudContainerIdentifier = "$(ICLOUD_CONTAINER_NAME)";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
