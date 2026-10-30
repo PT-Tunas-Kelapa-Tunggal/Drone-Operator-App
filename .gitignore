@@ -9,6 +9,7 @@ __pycache__/
 
 # Xcode user state
 xcuserdata/
+Config/Developer.xcconfig
 Config/Developer.local.xcconfig
 
 # Developer environments and signing secrets
