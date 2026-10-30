@@ -6,9 +6,11 @@
 #
 # Subcommands:
 #   dmg                        Build (if APP_PATH unset), verify, and package ControlDroneMapping.dmg
-#   version [TAG]              Derive marketing_version, build_number, prerelease, dmg_name from v* tag
+#   version [TAG]              Derive marketing_version, build_number, prerelease, app_environment, dmg_name
 #   select-xcode [VER]         Select Xcode version on CI runner and export DEVELOPER_DIR
-#   build-check                Run fast unsigned Release compilation check (CI PR/dev gate)
+#   build-check                Run static config/schema audit, unsigned macOS + iOS builds, and engine smoke checks
+#   export-cloudkit-schema     Export live CloudKit container schema to Config/CloudKit/schema.ckdb
+#   sync-cloudkit-schema       Import Config/CloudKit/schema.ckdb to Development & verify Production schema
 #   setup-signing              Create temp keychain, import Developer ID .p12 & provisioning profile
 #   cleanup-signing            Remove temp keychain, provisioning profile, and CI xcconfig
 #   archive                    Build Developer ID signed .xcarchive and extract .app to dist/
@@ -26,7 +28,19 @@ cd "$repo_root"
 STATE_FILE="$repo_root/.build/.ci-signing-state"
 
 usage() {
-    sed -n '3,19p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '3,21p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+read_xcconfig_var() {
+    local key="$1"
+    local file="${2:-$repo_root/Config/Developer.xcconfig}"
+    [[ -f "$file" ]] || return 0
+    awk -F'=[[:space:]]*' -v k="$key" '
+        $0 !~ /^[[:space:]]*\/\// && $1 ~ "^[[:space:]]*" k "[[:space:]]*$" {
+            gsub(/[[:space:]]+$/, "", $2)
+            print $2
+        }
+    ' "$file" | tail -n 1 | tr -d '\r'
 }
 
 cmd_version() {
@@ -34,28 +48,30 @@ cmd_version() {
     local build_number="${GITHUB_RUN_NUMBER:-1}"
     local marketing_version="0.0.0"
     local prerelease="true"
+    local app_environment="staging"
     local version_label=""
 
-    local re='^v([0-9]+)\.([0-9]+)(\.([0-9]+))?(-([0-9A-Za-z.-]+))?$'
-    if [[ "$tag" =~ $re ]]; then
-        local major="${BASH_REMATCH[1]}"
-        local minor="${BASH_REMATCH[2]}"
-        local patch_part="${BASH_REMATCH[3]:-}"
-        local suffix="${BASH_REMATCH[6]:-}"
-        marketing_version="${major}.${minor}${patch_part}"
-        if [[ -n "$suffix" ]]; then
-            prerelease="true"
-            version_label="${marketing_version}-${suffix}"
-        else
-            prerelease="false"
-            version_label="${marketing_version}"
-        fi
+    local strict_prod_re='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+    local prerelease_semver_re='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-([0-9A-Za-z.-]+)$'
+
+    if [[ "$tag" =~ $strict_prod_re ]]; then
+        marketing_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+        prerelease="false"
+        app_environment="production"
+        version_label="${marketing_version}"
+    elif [[ "$tag" =~ $prerelease_semver_re ]]; then
+        marketing_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+        local suffix="${BASH_REMATCH[4]}"
+        prerelease="true"
+        app_environment="staging"
+        version_label="${marketing_version}-${suffix}"
     else
         local clean_tag="${tag#v}"
         clean_tag="$(echo "$clean_tag" | sed -E 's/[^0-9A-Za-z._-]+/-/g; s/^-+//; s/-+$//')"
         [[ -z "$clean_tag" ]] && clean_tag="0.0.0"
         marketing_version="0.0.0"
         prerelease="true"
+        app_environment="staging"
         version_label="$clean_tag"
     fi
 
@@ -65,6 +81,7 @@ cmd_version() {
     echo "marketing_version=$marketing_version"
     echo "build_number=$build_number"
     echo "prerelease=$prerelease"
+    echo "app_environment=$app_environment"
     echo "dmg_name=$dmg_name"
 
     if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
@@ -73,6 +90,7 @@ cmd_version() {
             echo "marketing_version=$marketing_version"
             echo "build_number=$build_number"
             echo "prerelease=$prerelease"
+            echo "app_environment=$app_environment"
             echo "dmg_name=$dmg_name"
         } >> "$GITHUB_OUTPUT"
     fi
@@ -137,8 +155,151 @@ cmd_select_xcode() {
     xcodebuild -version
 }
 
+run_cached_engine_smoke_checks() {
+    local cache_dir="$repo_root/.build"
+    local ortho_py="$cache_dir/OrthomosaicPython"
+    local ortho_dir="$cache_dir/OrthomosaicEngine"
+    local qgc_bin="$cache_dir/QGroundControl.app/Contents/MacOS/QGroundControl"
+    local vari_py="$cache_dir/VariPython"
+    local vari_dir="$cache_dir/VariEngine"
+
+    if [[ ! -x "$ortho_py" || ! -d "$ortho_dir" || ! -x "$qgc_bin" || ! -x "$vari_py" || ! -d "$vari_dir" ]]; then
+        echo "note: Cached engines not fully present in .build/; skipping standalone engine smoke checks."
+        return 0
+    fi
+
+    echo "=== Running Standalone Smoke Checks on Cached Engines (.build/) ==="
+    echo "--- [1/3] Orthomosaic Engine Smoke Check ---"
+    PYTHONHOME="$ortho_dir/environment" \
+    CONDA_PREFIX="$ortho_dir/environment" \
+    PYTHONNOUSERSITE=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PROJ_NETWORK=OFF \
+        "$ortho_py" -u "$repo_root/ControlDroneMapping/Resources/orthomosaic_worker.py" \
+        --runtime "$ortho_dir" --check
+
+    echo "--- [2/3] QGroundControl Headless Health Check ---"
+    python3 - "$qgc_bin" <<'PY'
+import json, subprocess, sys, time, urllib.request
+
+qgc_bin = sys.argv[1]
+proc = subprocess.Popen(
+    [qgc_bin],
+    env={"QGC_HEADLESS": "1", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"},
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+)
+try:
+    deadline = time.time() + 12.0
+    healthy = False
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            sys.exit(f"error: QGroundControl exited prematurely with code {proc.returncode}")
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:18080/healthz", timeout=1.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if data.get("status") == "ok":
+                    healthy = True
+                    break
+        except Exception:
+            pass
+        time.sleep(0.25)
+    if not healthy:
+        sys.exit("error: QGroundControl headless healthz check timed out")
+    print("QGC cached engine healthy (127.0.0.1:18080/healthz).")
+finally:
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=2.0)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+PY
+
+    echo "--- [3/3] VARI Engine Smoke Check ---"
+    PYTHONHOME="$vari_dir/environment" \
+    CONDA_PREFIX="$vari_dir/environment" \
+    PYTHONNOUSERSITE=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+        "$vari_py" -m krops_vari.main --check
+
+    echo "=== All 3 Cached Engine Smoke Checks Passed ==="
+}
+
 cmd_build_check() {
-    echo "=== Running Unsigned Release Build Check (ControlDroneMapping) ==="
+    echo "=== [1/4] Auditing Entitlements, Version Routing & CloudKit Schema ==="
+    python3 - "$repo_root" <<'PY'
+import pathlib, plistlib, re, subprocess, sys
+
+repo = pathlib.Path(sys.argv[1])
+
+# 1. Verify Config/App.entitlements enforces Development environment
+dev_ent = plistlib.loads((repo / "Config/App.entitlements").read_bytes())
+if dev_ent.get("com.apple.developer.icloud-container-environment") != "Development":
+    sys.exit("error: Config/App.entitlements must set com.apple.developer.icloud-container-environment=Development")
+
+# 2. Verify Config/App-DeveloperID.entitlements enforces Production environment
+prod_ent = plistlib.loads((repo / "Config/App-DeveloperID.entitlements").read_bytes())
+if prod_ent.get("com.apple.developer.icloud-container-environment") != "Production":
+    sys.exit("error: Config/App-DeveloperID.entitlements must set com.apple.developer.icloud-container-environment=Production")
+
+# 3. Verify Config/App-Info.plist declares AppEnvironment and ICloudContainerIdentifier
+info_plist = plistlib.loads((repo / "Config/App-Info.plist").read_bytes())
+if info_plist.get("AppEnvironment") != "$(APP_ENVIRONMENT)":
+    sys.exit("error: Config/App-Info.plist must map AppEnvironment to $(APP_ENVIRONMENT)")
+if info_plist.get("ICloudContainerIdentifier") != "$(ICLOUD_CONTAINER_NAME)":
+    sys.exit("error: Config/App-Info.plist must map ICloudContainerIdentifier to $(ICLOUD_CONTAINER_NAME)")
+
+# 4. Verify CloudKit schema file Config/CloudKit/schema.ckdb
+schema_path = repo / "Config/CloudKit/schema.ckdb"
+if not schema_path.is_file():
+    sys.exit("error: Config/CloudKit/schema.ckdb is missing")
+schema_text = schema_path.read_text()
+for required_token in (
+    'CREATE ROLE "Drone Operator"',
+    "RECORD TYPE PlantationScanRequest",
+    "RECORD TYPE Users",
+    '"___createTime"',
+    '"___recordID"',
+    "agronomicJSON",
+    "areaHectares",
+    "boundaryJSON",
+    "completedAt",
+    "farmerAddress",
+    "farmerName",
+    "farmerPhone",
+    "gardenID",
+    "gardenName",
+    "locationName",
+    "orthomosaicAsset",
+    "resultJSON",
+    "statusCode",
+    "submittedAt",
+):
+    if required_token not in schema_text:
+        sys.exit(f"error: Config/CloudKit/schema.ckdb is missing required definition: {required_token}")
+
+# 5. Self-test version & environment routing in release.sh
+cases = [
+    ("v1.0.0", "1.0.0", "false", "production"),
+    ("v0.2.15", "0.2.15", "false", "production"),
+    ("v1.0.0-rc1", "1.0.0", "true", "staging"),
+    ("v1.0.0-beta.2", "1.0.0", "true", "staging"),
+    ("v1.0", "0.0.0", "true", "staging"),
+    ("dev", "0.0.0", "true", "staging"),
+]
+for tag, exp_ver, exp_pre, exp_env in cases:
+    out = subprocess.check_output([str(repo / "Scripts/release.sh"), "version", tag], text=True)
+    kv = dict(line.split("=", 1) for line in out.strip().splitlines() if "=" in line)
+    if kv.get("marketing_version") != exp_ver or kv.get("prerelease") != exp_pre or kv.get("app_environment") != exp_env:
+        sys.exit(
+            f"error: release.sh version {tag} failed routing check: got {kv}, "
+            f"expected marketing_version={exp_ver}, prerelease={exp_pre}, app_environment={exp_env}"
+        )
+
+print("Static entitlements, CloudKit schema.ckdb, and SemVer environment routing checks passed.")
+PY
+
     if [[ ! -f "$repo_root/Config/Developer.xcconfig" ]]; then
         if [[ -n "${CI:-}" && -f "$repo_root/Config/Developer.xcconfig.example" ]]; then
             echo "CI environment detected: seeding Config/Developer.xcconfig from template"
@@ -148,8 +309,11 @@ cmd_build_check() {
             exit 1
         fi
     fi
+
     local check_dd="$repo_root/.build/DerivedDataCheck"
     rm -rf "$check_dd"
+
+    echo "=== [2/4] Running Unsigned Release Build Check: ControlDroneMapping (macOS) ==="
     SKIP_ALL_ENGINES=1 xcodebuild build \
         -project DroneMapping.xcodeproj \
         -scheme ControlDroneMapping \
@@ -161,8 +325,160 @@ cmd_build_check() {
         CODE_SIGNING_ALLOWED=NO \
         CODE_SIGNING_REQUIRED=NO \
         CODE_SIGN_IDENTITY=""
+
+    echo "=== [3/4] Running Unsigned Release Build Check: DroneMapping (iOS) ==="
+    xcodebuild build \
+        -project DroneMapping.xcodeproj \
+        -scheme DroneMapping \
+        -configuration Release \
+        -destination 'generic/platform=iOS' \
+        -derivedDataPath "$check_dd" \
+        ONLY_ACTIVE_ARCH=NO \
+        CODE_SIGNING_ALLOWED=NO \
+        CODE_SIGNING_REQUIRED=NO \
+        CODE_SIGN_IDENTITY=""
+
     rm -rf "$check_dd"
-    echo "=== Unsigned Release Build Check Passed ==="
+
+    echo "=== [4/4] Running Engine Smoke Checks ==="
+    if [[ "${SKIP_ENGINE_SELF_CHECKS:-0}" != "1" ]]; then
+        run_cached_engine_smoke_checks
+    else
+        echo "Engine smoke checks skipped (SKIP_ENGINE_SELF_CHECKS=1)."
+    fi
+
+    echo "=== All Build & Validation Checks Passed ==="
+}
+
+cmd_export_cloudkit_schema() {
+    local ck_env="${1:-development}"
+    local team_id="${APPLE_TEAM_ID:-$(read_xcconfig_var DEVELOPMENT_TEAM)}"
+    local container_id="${ICLOUD_CONTAINER_NAME:-$(read_xcconfig_var ICLOUD_CONTAINER_NAME)}"
+    local schema_file="$repo_root/Config/CloudKit/schema.ckdb"
+
+    if [[ -z "$team_id" ]]; then
+        echo "error: APPLE_TEAM_ID (or DEVELOPMENT_TEAM in Config/Developer.xcconfig) is required" >&2
+        exit 1
+    fi
+    if [[ -z "$container_id" ]]; then
+        echo "error: ICLOUD_CONTAINER_NAME (in env or Config/Developer.xcconfig) is required" >&2
+        exit 1
+    fi
+
+    mkdir -p "$(dirname "$schema_file")"
+    local token_args=()
+    if [[ -n "${CLOUDKIT_MANAGEMENT_TOKEN:-}" ]]; then
+        token_args=(--token "$CLOUDKIT_MANAGEMENT_TOKEN")
+    fi
+
+    echo "=== Exporting CloudKit Schema ($container_id [$ck_env]) -> $schema_file ==="
+    xcrun cktool export-schema \
+        "${token_args[@]}" \
+        --team-id "$team_id" \
+        --container-id "$container_id" \
+        --environment "$ck_env" \
+        --output-file "$schema_file"
+    echo "=== Schema exported successfully to $schema_file ==="
+}
+
+cmd_sync_cloudkit_schema() {
+    local team_id="${APPLE_TEAM_ID:-$(read_xcconfig_var DEVELOPMENT_TEAM)}"
+    local container_id="${ICLOUD_CONTAINER_NAME:-$(read_xcconfig_var ICLOUD_CONTAINER_NAME)}"
+    local schema_file="$repo_root/Config/CloudKit/schema.ckdb"
+
+    if [[ -z "$team_id" ]]; then
+        echo "error: APPLE_TEAM_ID (or DEVELOPMENT_TEAM in Config/Developer.xcconfig) is required" >&2
+        exit 1
+    fi
+    if [[ -z "$container_id" ]]; then
+        echo "error: ICLOUD_CONTAINER_NAME (in env or Config/Developer.xcconfig) is required" >&2
+        exit 1
+    fi
+    if [[ ! -f "$schema_file" ]]; then
+        echo "error: Schema file not found at $schema_file" >&2
+        exit 1
+    fi
+
+    local token_args=()
+    if [[ -n "${CLOUDKIT_MANAGEMENT_TOKEN:-}" ]]; then
+        token_args=(--token "$CLOUDKIT_MANAGEMENT_TOKEN")
+    fi
+
+    echo "=== [1/2] Importing & Validating CloudKit Schema into $container_id (development) ==="
+    xcrun cktool import-schema \
+        "${token_args[@]}" \
+        --team-id "$team_id" \
+        --container-id "$container_id" \
+        --environment development \
+        --validate \
+        --file "$schema_file"
+
+    echo "=== [2/2] Verifying CloudKit Production Schema for $container_id ==="
+    local prod_schema_tmp="${RUNNER_TEMP:-/tmp}/ck-prod-schema-$$.ckdb"
+    trap 'rm -f "$prod_schema_tmp"' RETURN
+
+    if ! xcrun cktool export-schema \
+        "${token_args[@]}" \
+        --team-id "$team_id" \
+        --container-id "$container_id" \
+        --environment production \
+        --output-file "$prod_schema_tmp"; then
+        echo "error: Unable to export Production schema for container '$container_id'." >&2
+        echo "Note: The latest schema has been imported into '$container_id' (Development)." >&2
+        echo "Please open CloudKit Console (https://icloud.developer.apple.com/dashboard), select '$container_id', click 'Deploy Schema Changes…' to Production, and re-run." >&2
+        exit 1
+    fi
+
+    python3 - "$schema_file" "$prod_schema_tmp" "$container_id" <<'PY'
+import pathlib, re, sys
+
+expected_path = pathlib.Path(sys.argv[1])
+prod_path = pathlib.Path(sys.argv[2])
+container_id = sys.argv[3]
+
+def parse_ckdb(text: str):
+    roles = set(re.findall(r'CREATE\s+ROLE\s+"([^"]+)"', text))
+    records = {}
+    for m in re.finditer(r'RECORD\s+TYPE\s+([A-Za-z0-9_]+)\s*\((.*?)\)\s*;', text, re.DOTALL):
+        rec_name = m.group(1)
+        body = m.group(2)
+        items = set()
+        for raw_line in body.splitlines():
+            line = re.sub(r'\s+', ' ', raw_line.strip().rstrip(','))
+            if line:
+                items.add(line)
+        records[rec_name] = items
+    return roles, records
+
+exp_roles, exp_records = parse_ckdb(expected_path.read_text())
+prod_roles, prod_records = parse_ckdb(prod_path.read_text())
+
+missing = []
+for role in sorted(exp_roles - prod_roles):
+    missing.append(f'Missing ROLE: "{role}"')
+
+for rec_name, exp_items in sorted(exp_records.items()):
+    if rec_name not in prod_records:
+        missing.append(f"Missing RECORD TYPE: {rec_name}")
+        continue
+    prod_items = prod_records[rec_name]
+    for item in sorted(exp_items - prod_items):
+        missing.append(f"In RECORD TYPE {rec_name}, missing or mismatched definition: '{item}'")
+
+if missing:
+    print(f"error: CloudKit Production schema for '{container_id}' is out of sync with Config/CloudKit/schema.ckdb:", file=sys.stderr)
+    for m in missing:
+        print(f"  - {m}", file=sys.stderr)
+    print(
+        f"\nACTION REQUIRED: Config/CloudKit/schema.ckdb has already been automatically staged into '{container_id}' (Development).\n"
+        f"Open CloudKit Console (https://icloud.developer.apple.com/dashboard), select '{container_id}',\n"
+        f"click 'Deploy Schema Changes…' to promote Development -> Production, and re-run this job.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+print(f"Verified CloudKit Production schema for '{container_id}' matches Config/CloudKit/schema.ckdb.")
+PY
 }
 
 cmd_setup_signing() {
@@ -172,9 +488,18 @@ cmd_setup_signing() {
     : "${DEVELOPER_ID_PROFILE_BASE64:?Missing DEVELOPER_ID_PROFILE_BASE64}"
     : "${APPLE_TEAM_ID:?Missing APPLE_TEAM_ID}"
     : "${APP_BUNDLE_PREFIX:?Missing APP_BUNDLE_PREFIX}"
+    : "${ICLOUD_CONTAINER_NAME:?Missing ICLOUD_CONTAINER_NAME}"
+    : "${APP_ENVIRONMENT:?Missing APP_ENVIRONMENT}"
 
     local bundle_prefix="$APP_BUNDLE_PREFIX"
-    local icloud_container="${ICLOUD_CONTAINER_NAME:-iCloud.$bundle_prefix}"
+    local icloud_container="$ICLOUD_CONTAINER_NAME"
+    local app_env="$APP_ENVIRONMENT"
+
+    if [[ "$app_env" != "staging" && "$app_env" != "production" ]]; then
+        echo "error: APP_ENVIRONMENT for CI Developer ID signing must be 'staging' or 'production' (got: '$app_env')" >&2
+        exit 1
+    fi
+
     local temp_dir="${RUNNER_TEMP:-/tmp}"
     local keychain_path="$temp_dir/cdm-release-signing.keychain-db"
     local keychain_pass
@@ -222,16 +547,18 @@ cmd_setup_signing() {
     fi
     echo "Verified signing identity: $found_identity"
 
-    # Parse and validate provisioning profile
+    # Parse and validate provisioning profile (including CloudKit container authorization)
     local profile_info
-    profile_info="$(security cms -D -i "$profile_temp" | python3 - "$APPLE_TEAM_ID" <<'PY'
+    profile_info="$(security cms -D -i "$profile_temp" | python3 - "$APPLE_TEAM_ID" "$icloud_container" <<'PY'
 import plistlib, sys
-expected_team = sys.argv[1]
+expected_team, expected_container = sys.argv[1:3]
 plist = plistlib.loads(sys.stdin.buffer.read())
 uuid = plist.get("UUID", "")
 name = plist.get("Name", "")
 teams = plist.get("TeamIdentifier", [])
 provisions_all = plist.get("ProvisionsAllDevices", False)
+ent = plist.get("Entitlements", {})
+allowed_containers = ent.get("com.apple.developer.icloud-container-identifiers", [])
 
 if not uuid:
     sys.exit("error: Provisioning profile is missing UUID")
@@ -239,6 +566,11 @@ if expected_team not in teams:
     sys.exit(f"error: Profile TeamIdentifier {teams} does not match APPLE_TEAM_ID={expected_team}")
 if not provisions_all:
     sys.exit("error: Provisioning profile is not a Developer ID profile (ProvisionsAllDevices is not true)")
+if expected_container not in allowed_containers:
+    sys.exit(
+        f"error: Provisioning profile '{name}' ({uuid}) authorizes CloudKit containers {allowed_containers}, "
+        f"which does not include ICLOUD_CONTAINER_NAME='{expected_container}'."
+    )
 
 print(uuid)
 print(name)
@@ -266,6 +598,7 @@ PY
 DEVELOPMENT_TEAM = $APPLE_TEAM_ID
 APP_BUNDLE_PREFIX = $bundle_prefix
 ICLOUD_CONTAINER_NAME = $icloud_container
+APP_ENVIRONMENT = $app_env
 EOF
 
     cat > "$STATE_FILE" <<EOF
@@ -275,7 +608,7 @@ PROFILE_FILE_2=$profile_dir2/${profile_uuid}.provisionprofile
 HAD_CONFIG=$had_config
 EOF
 
-    echo "Installed Developer ID provisioning profile: $profile_name ($profile_uuid)"
+    echo "Installed Developer ID provisioning profile: $profile_name ($profile_uuid) for container $icloud_container ($app_env)"
     if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
         {
             echo "profile_uuid=$profile_uuid"
@@ -308,21 +641,33 @@ cmd_cleanup_signing() {
 cmd_archive() {
     : "${APPLE_TEAM_ID:?Missing APPLE_TEAM_ID}"
     : "${PROFILE_UUID:?Missing PROFILE_UUID}"
-    local marketing_version="${MARKETING_VERSION:-1.0}"
-    local build_number="${BUILD_NUMBER:-1}"
-    local bundle_prefix="${APP_BUNDLE_PREFIX:-}"
-    if [[ -z "$bundle_prefix" && -f "$repo_root/Config/Developer.xcconfig" ]]; then
-        bundle_prefix="$(awk -F'=[[:space:]]*' '/^[[:space:]]*APP_BUNDLE_PREFIX/{gsub(/[[:space:]]+$/, "", $2); print $2}' "$repo_root/Config/Developer.xcconfig" | tr -d '\r')"
-    fi
+    : "${MARKETING_VERSION:?Missing MARKETING_VERSION}"
+    : "${BUILD_NUMBER:?Missing BUILD_NUMBER}"
+
+    local marketing_version="$MARKETING_VERSION"
+    local build_number="$BUILD_NUMBER"
+    local bundle_prefix="${APP_BUNDLE_PREFIX:-$(read_xcconfig_var APP_BUNDLE_PREFIX)}"
+    local icloud_container="${ICLOUD_CONTAINER_NAME:-$(read_xcconfig_var ICLOUD_CONTAINER_NAME)}"
+    local app_env="${APP_ENVIRONMENT:-$(read_xcconfig_var APP_ENVIRONMENT)}"
+
     if [[ -z "$bundle_prefix" ]]; then
         echo "error: APP_BUNDLE_PREFIX not set in env or Config/Developer.xcconfig" >&2
         exit 1
     fi
+    if [[ -z "$icloud_container" ]]; then
+        echo "error: ICLOUD_CONTAINER_NAME not set in env or Config/Developer.xcconfig" >&2
+        exit 1
+    fi
+    if [[ -z "$app_env" ]]; then
+        echo "error: APP_ENVIRONMENT not set in env or Config/Developer.xcconfig" >&2
+        exit 1
+    fi
+
     local archive_path="$repo_root/.build/ControlDroneMapping.xcarchive"
     local archive_dd="$repo_root/.build/DerivedDataArchive"
     local dist_app="$repo_root/dist/ControlDroneMapping.app"
 
-    echo "=== Archiving ControlDroneMapping ($marketing_version build $build_number) ==="
+    echo "=== Archiving ControlDroneMapping ($marketing_version build $build_number, env=$app_env, container=$icloud_container) ==="
     rm -rf "$archive_path" "$archive_dd" "$dist_app"
     mkdir -p "$repo_root/dist"
 
@@ -340,6 +685,8 @@ cmd_archive() {
         DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
         PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
         PRODUCT_BUNDLE_IDENTIFIER="${bundle_prefix}.ControlDroneMapping" \
+        ICLOUD_CONTAINER_NAME="$icloud_container" \
+        APP_ENVIRONMENT="$app_env" \
         CODE_SIGN_ENTITLEMENTS="Config/App-DeveloperID.entitlements" \
         OTHER_CODE_SIGN_FLAGS="--timestamp" \
         MARKETING_VERSION="$marketing_version" \
@@ -404,8 +751,10 @@ cmd_verify_app() {
     if [[ -z "$expected_team" ]]; then
         expected_team="$(codesign -dvv "$app_path" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2}' || true)"
     fi
+    local expected_env="${APP_ENVIRONMENT:-}"
+    local expected_container="${ICLOUD_CONTAINER_NAME:-}"
 
-    python3 - "$app_path" "$expected_team" "$allow_dev" "${MARKETING_VERSION:-}" "$repo_root/Config/engines.json" <<'PY'
+    python3 - "$app_path" "$expected_team" "$allow_dev" "${MARKETING_VERSION:-}" "$repo_root/Config/engines.json" "$expected_env" "$expected_container" <<'PY'
 import concurrent.futures
 import json
 import os
@@ -414,7 +763,7 @@ import struct
 import subprocess
 import sys
 
-app_path, expected_team, allow_dev_str, expected_version, engines_json_path = sys.argv[1:6]
+app_path, expected_team, allow_dev_str, expected_version, engines_json_path, expected_env, expected_container = sys.argv[1:8]
 allow_dev = allow_dev_str == "1"
 
 if not expected_team or expected_team == "not set":
@@ -432,7 +781,7 @@ stray_pyc = [f for f in os.listdir(resources_dir) if f.endswith((".pyc", ".pyo")
 if stray_pyc:
     sys.exit(f"error: Stray compiled Python files in Contents/Resources: {stray_pyc}")
 
-# 2. Check Info.plist version and bundle identifier
+# 2. Check Info.plist version, bundle identifier, CloudKit container, and AppEnvironment
 info_plist_path = os.path.join(app_path, "Contents", "Info.plist")
 with open(info_plist_path, "rb") as f:
     info_plist = plistlib.load(f)
@@ -449,6 +798,14 @@ if expected_version:
 icloud_container_id = info_plist.get("ICloudContainerIdentifier", "")
 if not icloud_container_id or "$(" in icloud_container_id:
     sys.exit(f"error: ICloudContainerIdentifier in Info.plist is invalid or unexpanded: '{icloud_container_id}'")
+if expected_container and icloud_container_id != expected_container:
+    sys.exit(f"error: Info.plist ICloudContainerIdentifier='{icloud_container_id}' does not match expected '{expected_container}'")
+
+app_env = info_plist.get("AppEnvironment", "")
+if app_env not in ("development", "staging", "production"):
+    sys.exit(f"error: AppEnvironment in Info.plist is invalid or unexpanded: '{app_env}'")
+if expected_env and app_env != expected_env:
+    sys.exit(f"error: Info.plist AppEnvironment='{app_env}' does not match expected '{expected_env}'")
 
 # 3. Check main app and helper entitlements
 def read_entitlements(target: str) -> dict:
@@ -467,11 +824,18 @@ main_ent = read_entitlements(app_path)
 if main_ent.get("com.apple.security.app-sandbox") is not True:
     sys.exit("error: Main app is missing com.apple.security.app-sandbox=true")
 
-if not allow_dev:
+if allow_dev:
+    if main_ent.get("com.apple.developer.icloud-container-environment") != "Development":
+        sys.exit("error: Local development build must have com.apple.developer.icloud-container-environment=Development")
+    if app_env != "development":
+        sys.exit(f"error: Local development build must have AppEnvironment=development (got '{app_env}')")
+else:
     if main_ent.get("com.apple.security.get-task-allow") is True:
         sys.exit("error: Main app has com.apple.security.get-task-allow=true (rejected by notarization)")
     if main_ent.get("com.apple.developer.icloud-container-environment") != "Production":
         sys.exit("error: Main app must have com.apple.developer.icloud-container-environment=Production for Developer ID")
+    if app_env not in ("staging", "production"):
+        sys.exit(f"error: Developer ID release build must have AppEnvironment in ('staging', 'production'), got '{app_env}'")
     profile_path = os.path.join(app_path, "Contents", "embedded.provisionprofile")
     if not os.path.isfile(profile_path):
         sys.exit("error: Contents/embedded.provisionprofile is missing (required for CloudKit with Developer ID)")
@@ -479,6 +843,9 @@ if not allow_dev:
     prof = plistlib.loads(cms.stdout)
     if expected_team not in prof.get("TeamIdentifier", []):
         sys.exit(f"error: Embedded profile TeamIdentifier {prof.get('TeamIdentifier')} != {expected_team}")
+    prof_containers = prof.get("Entitlements", {}).get("com.apple.developer.icloud-container-identifiers", [])
+    if icloud_container_id not in prof_containers:
+        sys.exit(f"error: Embedded profile containers {prof_containers} do not authorize '{icloud_container_id}'")
 
 # Validate CloudKit container in entitlements
 containers = main_ent.get("com.apple.developer.icloud-container-identifiers", [])
@@ -594,7 +961,10 @@ if failures:
         print(f"  - {msg}", file=sys.stderr)
     sys.exit(1)
 
-print(f"Verified all {len(macho_list)} Mach-O binaries (TeamIdentifier={expected_team}, allow_dev={allow_dev}).")
+print(
+    f"Verified all {len(macho_list)} Mach-O binaries "
+    f"(TeamIdentifier={expected_team}, AppEnvironment={app_env}, Container={icloud_container_id}, allow_dev={allow_dev})."
+)
 PY
 
     if [[ "${SKIP_ENGINE_SELF_CHECKS:-0}" != "1" ]]; then
@@ -788,18 +1158,20 @@ subcmd="${1:-}"
 shift || true
 
 case "$subcmd" in
-    dmg)             cmd_dmg "$@" ;;
-    version)         cmd_version "$@" ;;
-    select-xcode)    cmd_select_xcode "$@" ;;
-    build-check)     cmd_build_check "$@" ;;
-    setup-signing)   cmd_setup_signing "$@" ;;
-    cleanup-signing) cmd_cleanup_signing "$@" ;;
-    archive)         cmd_archive "$@" ;;
-    verify-app)      cmd_verify_app "$@" ;;
-    sign-dmg)        cmd_sign_dmg "$@" ;;
-    notarize)        cmd_notarize "$@" ;;
-    verify-dmg)      cmd_verify_dmg "$@" ;;
-    -h|--help|help)  usage ;;
+    dmg)                    cmd_dmg "$@" ;;
+    version)                cmd_version "$@" ;;
+    select-xcode)           cmd_select_xcode "$@" ;;
+    build-check)            cmd_build_check "$@" ;;
+    export-cloudkit-schema) cmd_export_cloudkit_schema "$@" ;;
+    sync-cloudkit-schema)   cmd_sync_cloudkit_schema "$@" ;;
+    setup-signing)          cmd_setup_signing "$@" ;;
+    cleanup-signing)        cmd_cleanup_signing "$@" ;;
+    archive)                cmd_archive "$@" ;;
+    verify-app)             cmd_verify_app "$@" ;;
+    sign-dmg)               cmd_sign_dmg "$@" ;;
+    notarize)               cmd_notarize "$@" ;;
+    verify-dmg)             cmd_verify_dmg "$@" ;;
+    -h|--help|help)         usage ;;
     *)
         echo "error: Unknown subcommand '$subcmd'" >&2
         usage >&2

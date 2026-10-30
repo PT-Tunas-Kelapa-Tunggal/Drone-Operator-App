@@ -4,8 +4,9 @@ on:
   pull_request:
     branches: [dev, main]
   push:
-    branches: [dev]
+    branches: [dev, main]
     tags: ['v*']
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -16,14 +17,25 @@ permissions:
 
 jobs:
   validate:
-    name: Validate Deps & Build
+    name: Validate Deps, Schema & Build
     runs-on: ${{ vars.MACOS_RUNNER || 'macos-26' }}
     timeout-minutes: 45
+    outputs:
+      tag_name: ${{ steps.v.outputs.tag_name }}
+      marketing_version: ${{ steps.v.outputs.marketing_version }}
+      build_number: ${{ steps.v.outputs.build_number }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+      app_environment: ${{ steps.v.outputs.app_environment }}
+      dmg_name: ${{ steps.v.outputs.dmg_name }}
     env:
       ENGINES_STRICT: '1'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Derive version and target environment
+        id: v
+        run: Scripts/release.sh version
 
       - name: Select Xcode
         run: Scripts/release.sh select-xcode "${{ vars.XCODE_VERSION || '27.1' }}"
@@ -48,15 +60,15 @@ jobs:
       - name: Ensure all dependencies are valid
         run: Scripts/ensure-all-deps-valid.sh --download-only
 
-      - name: Unsigned Release build check
+      - name: Audit config, compile macOS + iOS & smoke-check engines
         run: Scripts/release.sh build-check
 
   release:
-    name: Release Signed & Notarized DMG
-    if: startsWith(github.ref, 'refs/tags/v')
+    name: Release Signed & Notarized DMG (${{ needs.validate.outputs.app_environment }})
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: validate
     runs-on: ${{ vars.MACOS_RUNNER || 'macos-26' }}
-    environment: release
+    environment: ${{ needs.validate.outputs.app_environment }}
     timeout-minutes: 150
     permissions:
       contents: write
@@ -64,7 +76,9 @@ jobs:
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
       APP_BUNDLE_PREFIX: ${{ vars.APP_BUNDLE_PREFIX }}
       ICLOUD_CONTAINER_NAME: ${{ vars.ICLOUD_CONTAINER_NAME }}
+      APP_ENVIRONMENT: ${{ needs.validate.outputs.app_environment }}
       ENGINES_STRICT: '1'
+      CLOUDKIT_MANAGEMENT_TOKEN: ${{ secrets.CLOUDKIT_MANAGEMENT_TOKEN }}
       NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_API_KEY_P8_BASE64 }}
       NOTARY_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
       NOTARY_ISSUER_ID: ${{ secrets.NOTARY_API_ISSUER_ID }}
@@ -72,12 +86,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Derive version from tag
-        id: v
-        run: Scripts/release.sh version
-
       - name: Select Xcode
         run: Scripts/release.sh select-xcode "${{ vars.XCODE_VERSION || '27.1' }}"
+
+      - name: Sync & verify CloudKit container schema
+        run: Scripts/release.sh sync-cloudkit-schema
 
       - name: Cache precompiled engines
         uses: actions/cache@v4
@@ -106,14 +119,14 @@ jobs:
 
       - name: Archive with Developer ID signing
         env:
-          MARKETING_VERSION: ${{ steps.v.outputs.marketing_version }}
-          BUILD_NUMBER: ${{ steps.v.outputs.build_number }}
+          MARKETING_VERSION: ${{ needs.validate.outputs.marketing_version }}
+          BUILD_NUMBER: ${{ needs.validate.outputs.build_number }}
           PROFILE_UUID: ${{ steps.signing.outputs.profile_uuid }}
         run: Scripts/release.sh archive
 
       - name: Verify app signatures, entitlements & engine self-checks
         env:
-          MARKETING_VERSION: ${{ steps.v.outputs.marketing_version }}
+          MARKETING_VERSION: ${{ needs.validate.outputs.marketing_version }}
         run: Scripts/release.sh verify-app dist/ControlDroneMapping.app
 
       - name: Notarize & staple app bundle
@@ -122,7 +135,7 @@ jobs:
       - name: Package, sign, notarize & verify DMG
         env:
           APP_PATH: dist/ControlDroneMapping.app
-          DMG_PATH: dist/${{ steps.v.outputs.dmg_name }}
+          DMG_PATH: dist/${{ needs.validate.outputs.dmg_name }}
           SKIP_ENGINE_SELF_CHECKS: '1'
         run: |
           Scripts/release.sh dmg
@@ -133,23 +146,24 @@ jobs:
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.v.outputs.dmg_name }}
+          name: ${{ needs.validate.outputs.dmg_name }}
           path: |
-            dist/${{ steps.v.outputs.dmg_name }}
-            dist/${{ steps.v.outputs.dmg_name }}.sha256
+            dist/${{ needs.validate.outputs.dmg_name }}
+            dist/${{ needs.validate.outputs.dmg_name }}.sha256
           retention-days: 14
 
       - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           prerelease_flag=()
-          if [[ "${{ steps.v.outputs.prerelease }}" == "true" ]]; then
+          if [[ "${{ needs.validate.outputs.prerelease }}" == "true" ]]; then
             prerelease_flag=(--prerelease)
           fi
           gh release create "$GITHUB_REF_NAME" \
-            "dist/${{ steps.v.outputs.dmg_name }}" \
-            "dist/${{ steps.v.outputs.dmg_name }}.sha256" \
+            "dist/${{ needs.validate.outputs.dmg_name }}" \
+            "dist/${{ needs.validate.outputs.dmg_name }}.sha256" \
             --title "ControlDroneMapping $GITHUB_REF_NAME" \
             --generate-notes \
             "${prerelease_flag[@]}"
