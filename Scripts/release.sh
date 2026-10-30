@@ -213,6 +213,7 @@ run_cached_engine_smoke_checks() {
     PYTHONNOUSERSITE=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PROJ_NETWORK=OFF \
+    DRONEMAP_ALLOW_NO_GPU=1 \
         "$smoke_ortho_py" -u "$repo_root/ControlDroneMapping/Resources/orthomosaic_worker.py" \
         --runtime "$ortho_dir" --check
     rm -f "$smoke_ortho_py"
@@ -749,7 +750,7 @@ run_engine_self_checks() {
 
     echo "=== Running Embedded Engine Self-Checks on $app_path ==="
     echo "--- [1/3] --check-orthomosaic-engine ---"
-    "$app_bin" --check-orthomosaic-engine
+    DRONEMAP_ALLOW_NO_GPU=1 "$app_bin" --check-orthomosaic-engine
     echo "--- [2/3] --check-qgc-engine ---"
     "$app_bin" --check-qgc-engine
     echo "--- [3/3] --check-vari-engine ---"
