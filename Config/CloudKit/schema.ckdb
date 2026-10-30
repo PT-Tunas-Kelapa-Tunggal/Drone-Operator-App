@@ -1,0 +1,40 @@
+DEFINE SCHEMA
+
+    CREATE ROLE "Drone Operator";
+
+    RECORD TYPE PlantationScanRequest (
+        "___createTime"  TIMESTAMP SORTABLE,
+        "___createdBy"   REFERENCE QUERYABLE,
+        "___etag"        STRING,
+        "___modTime"     TIMESTAMP,
+        "___modifiedBy"  REFERENCE,
+        "___recordID"    REFERENCE QUERYABLE,
+        agronomicJSON    STRING QUERYABLE SEARCHABLE SORTABLE,
+        areaHectares     DOUBLE QUERYABLE SORTABLE,
+        boundaryJSON     STRING QUERYABLE SEARCHABLE SORTABLE,
+        completedAt      TIMESTAMP QUERYABLE SORTABLE,
+        farmerAddress    STRING QUERYABLE SEARCHABLE SORTABLE,
+        farmerName       STRING QUERYABLE SEARCHABLE SORTABLE,
+        farmerPhone      STRING QUERYABLE SEARCHABLE SORTABLE,
+        gardenID         STRING QUERYABLE SEARCHABLE SORTABLE,
+        gardenName       STRING QUERYABLE SEARCHABLE SORTABLE,
+        locationName     STRING QUERYABLE SEARCHABLE SORTABLE,
+        orthomosaicAsset ASSET,
+        resultJSON       STRING QUERYABLE SEARCHABLE SORTABLE,
+        statusCode       INT64 QUERYABLE SORTABLE,
+        submittedAt      TIMESTAMP QUERYABLE SORTABLE,
+        GRANT READ, WRITE TO "Drone Operator",
+        GRANT READ, WRITE TO "_creator",
+        GRANT CREATE TO "_icloud"
+    );
+
+    RECORD TYPE Users (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        roles           LIST<INT64>,
+        GRANT WRITE TO "_creator"
+    );
