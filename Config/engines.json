@@ -8,7 +8,7 @@
       "layout": "python-runtime",
       "folder": "OrthomosaicEngine",
       "helper": "OrthomosaicPython",
-      "pythonIdentifier": "com.hata.ControlDroneMapping.engine.python",
+      "helperIdentifierSuffix": "engine.python",
       "entitlements": "python-engine-helper.entitlements",
       "opensfmCommit": "8b6b77efddebf4429044d3206c7dc21c4e767e08",
       "architecture": "arm64"
@@ -30,7 +30,7 @@
       "layout": "python-runtime",
       "folder": "VariEngine",
       "helper": "VariPython",
-      "pythonIdentifier": "com.hata.ControlDroneMapping.engine.vari",
+      "helperIdentifierSuffix": "engine.vari",
       "entitlements": "python-engine-helper.entitlements",
       "architecture": "arm64"
     }
