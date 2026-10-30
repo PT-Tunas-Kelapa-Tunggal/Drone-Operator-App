@@ -1,0 +1,12 @@
+// Configuration template for ControlDroneMapping and DroneMapping.
+// Copy this file to Config/Developer.xcconfig (which is gitignored).
+//
+// 1. Your 10-character Apple Developer Team ID:
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
+
+// 2. Your reverse-domain bundle prefix:
+APP_BUNDLE_PREFIX = app.bundle.example
+
+// 3. Your CloudKit container identifier:
+ICLOUD_CONTAINER_NAME = iCloud.$(APP_BUNDLE_PREFIX)
+
