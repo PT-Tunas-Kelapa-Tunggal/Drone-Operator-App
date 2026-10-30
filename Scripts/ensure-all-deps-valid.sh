@@ -440,7 +440,21 @@ PY
     fi
 
     # 3. Check cache validity or download & extract
+    local cache_valid=0
     if [[ -d "$engine_cache_dir" && -f "$cached_helper" && -f "$tag_file" && "$(cat "$tag_file")" == "$version" ]]; then
+        cache_valid=1
+        if [[ "$layout" == "python-runtime" ]]; then
+            if ! compgen -G "$engine_cache_dir/environment/lib/python*/encodings/__init__.py" >/dev/null; then
+                echo "note: [$name Engine] Cached runtime is missing Python standard library (encodings); re-provisioning..."
+                cache_valid=0
+            elif [[ -L "$engine_cache_dir/environment/bin/python3" && ! -e "$engine_cache_dir/environment/bin/python3" ]]; then
+                echo "note: [$name Engine] Cached runtime has broken python3 symlink; re-provisioning..."
+                cache_valid=0
+            fi
+        fi
+    fi
+
+    if [[ "$cache_valid" == "1" ]]; then
         echo "[$name Engine] Cache is up to date (Version: $version)."
     else
         mkdir -p "$CACHE_DIR"
@@ -505,6 +519,16 @@ PY
         echo "error: [$name Engine] Helper binary $cached_helper is not an arm64 Mach-O executable" >&2
         exit 1
     fi
+    if [[ "$layout" == "python-runtime" ]]; then
+        if ! compgen -G "$engine_cache_dir/environment/lib/python*/encodings/__init__.py" >/dev/null; then
+            echo "error: [$name Engine] Archive is missing Python standard library (environment/lib/python*/encodings/__init__.py). Build the engine from a standalone Conda environment, not a symlink-only venv." >&2
+            exit 1
+        fi
+        if [[ ! -e "$engine_cache_dir/environment/bin/python3" ]]; then
+            echo "error: [$name Engine] Archive has missing or dangling environment/bin/python3 interpreter." >&2
+            exit 1
+        fi
+    fi
 
     if [[ "$MODE" == "download-only" ]]; then
         echo "[$name Engine] Download, SHA-256, and layout validation passed ($version)."
@@ -542,6 +566,17 @@ PY
         if [[ -n "$identity" ]]; then
             echo "=== [$name Engine] Signing inside-out with identity: $identity ($ts_flag) ==="
             sign_nested_code "$dest_resources/$folder" "$identity" "$ts_flag"
+            if [[ -d "$dest_resources/$folder/environment/bin" ]]; then
+                for py_bin in "$dest_resources/$folder/environment/bin"/python*; do
+                    if [[ -f "$py_bin" && ! -L "$py_bin" ]] && lipo -archs "$py_bin" >/dev/null 2>&1; then
+                        codesign --force --sign "$identity" \
+                            --options runtime \
+                            --entitlements "$entitlements" \
+                            "$ts_flag" \
+                            "$py_bin"
+                    fi
+                done
+            fi
             codesign --force --sign "$identity" \
                 --options runtime \
                 --identifier "$python_id" \
