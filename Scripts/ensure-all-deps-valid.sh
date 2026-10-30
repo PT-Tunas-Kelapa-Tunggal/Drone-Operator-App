@@ -86,6 +86,10 @@ if [[ "$MODE" == "embed" ]]; then
         echo "note: [Engines] Download and embedding skipped (UI Preview / skip mode active)."
         exit 0
     fi
+    if [[ ! -f "$SRCROOT/Config/Developer.xcconfig" && -z "${APP_BUNDLE_PREFIX:-}" ]]; then
+        echo "error: [Config] Config/Developer.xcconfig not found! Please run: cp Config/Developer.xcconfig.example Config/Developer.xcconfig and configure your settings." >&2
+        exit 1
+    fi
 fi
 
 resolve_app_contents() {
@@ -322,8 +326,8 @@ layout = data["layout"]
 if layout not in ("python-runtime", "helper-app"):
     sys.exit(f"error: [{engine_name} Engine] Unsupported layout '{layout}'")
 
-if layout == "python-runtime" and not data.get("pythonIdentifier"):
-    sys.exit(f"error: [{engine_name} Engine] python-runtime requires 'pythonIdentifier'")
+if layout == "python-runtime" and not (data.get("helperIdentifierSuffix") or data.get("pythonIdentifier")):
+    sys.exit(f"error: [{engine_name} Engine] python-runtime requires 'helperIdentifierSuffix'")
 
 ent_file = config_dir / data["entitlements"]
 if not ent_file.is_file():
@@ -336,12 +340,12 @@ print(data["layout"])
 print(data["folder"])
 print(data["helper"])
 print(data["entitlements"])
-print(data.get("pythonIdentifier", ""))
+print(data.get("helperIdentifierSuffix", data.get("pythonIdentifier", "")))
 print(data.get("opensfmCommit", ""))
 PY
 )"
 
-    local version download_url expected_sha layout folder helper entitlements_rel python_id commit
+    local version download_url expected_sha layout folder helper entitlements_rel helper_suffix commit
     {
         IFS= read -r version
         IFS= read -r download_url
@@ -350,9 +354,42 @@ PY
         IFS= read -r folder
         IFS= read -r helper
         IFS= read -r entitlements_rel
-        IFS= read -r python_id || true
+        IFS= read -r helper_suffix || true
         IFS= read -r commit || true
     } <<< "$parsed"
+
+    local app_contents
+    app_contents="$(resolve_app_contents)"
+    local bundle_id=""
+    if [[ -f "$app_contents/Info.plist" ]]; then
+        bundle_id="$(defaults read "$app_contents/Info" CFBundleIdentifier 2>/dev/null || true)"
+    fi
+    if [[ -z "$bundle_id" ]]; then
+        bundle_id="${PRODUCT_BUNDLE_IDENTIFIER:-}"
+    fi
+    if [[ -z "$bundle_id" && -f "$SRCROOT/Config/Developer.xcconfig" ]]; then
+        local prefix
+        prefix="$(grep '^[[:space:]]*APP_BUNDLE_PREFIX' "$SRCROOT/Config/Developer.xcconfig" 2>/dev/null | cut -d= -f2- | tr -d ' ' || true)"
+        if [[ -n "$prefix" ]]; then
+            bundle_id="${prefix}.ControlDroneMapping"
+        fi
+    fi
+    if [[ -z "$bundle_id" && -n "${APP_BUNDLE_PREFIX:-}" ]]; then
+        bundle_id="${APP_BUNDLE_PREFIX}.ControlDroneMapping"
+    fi
+    if [[ -z "$bundle_id" ]]; then
+        echo "error: [Engines] Unable to determine Bundle Identifier. Please set APP_BUNDLE_PREFIX in Config/Developer.xcconfig or environment." >&2
+        exit 1
+    fi
+
+    local python_id=""
+    if [[ "$layout" == "python-runtime" ]]; then
+        if [[ "$helper_suffix" == *.*.* ]]; then
+            python_id="$helper_suffix"
+        else
+            python_id="${bundle_id}.${helper_suffix}"
+        fi
+    fi
 
     local entitlements="$SRCROOT/Config/$entitlements_rel"
     local engine_cache_dir="$CACHE_DIR/$folder"
@@ -491,6 +528,14 @@ PY
         mkdir -p "$dest_resources" "$dest_macos"
         rm -rf "$dest_resources/$folder"
         ditto "$engine_cache_dir" "$dest_resources/$folder"
+        # Relink any dangling python symlinks in environment/bin to the embedded helper binary
+        if [[ -d "$dest_resources/$folder/environment/bin" ]]; then
+            for py_link in "$dest_resources/$folder/environment/bin"/python*; do
+                if [[ -L "$py_link" && ! -e "$py_link" ]]; then
+                    ln -sf "../../../../MacOS/$helper" "$py_link"
+                fi
+            done
+        fi
         cp -f "$cached_helper" "$dest_macos/$helper"
         chmod +x "$dest_macos/$helper"
 

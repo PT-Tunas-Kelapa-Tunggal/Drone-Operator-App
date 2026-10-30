@@ -31,9 +31,10 @@ struct BundledOrthomosaicEngine {
             let manifest = Bundle.main.url(forResource: "orthomosaic-engine", withExtension: "json")
         else { throw MappingError.invalid("Build aplikasi belum menyertakan engine siap pakai.") }
         let metadata = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: manifest))
+        let expectedHelperID = AppConfiguration.current.orthomosaicHelperIdentifier
         guard metadata.formatVersion == 1, metadata.architecture == "arm64",
             metadata.teamIdentifier.range(of: "^[A-Z0-9]{10}$", options: .regularExpression) != nil,
-            metadata.pythonIdentifier == "com.hata.ControlDroneMapping.engine.python",
+            metadata.pythonIdentifier == expectedHelperID,
             signingInformation()?[kSecCodeInfoTeamIdentifier as String] as? String == metadata.teamIdentifier
         else { throw MappingError.invalid("Identitas paket engine tidak sesuai dengan aplikasi.") }
         let package = Self(archive: directory, manifest: manifest)
@@ -66,11 +67,12 @@ struct BundledOrthomosaicEngine {
     ) async throws {
         let fm = FileManager.default
         let metadata = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: manifest))
+        let expectedHelperID = AppConfiguration.current.orthomosaicHelperIdentifier
         guard metadata.formatVersion == 1,
             (metadata.folder == "OpenSfM-engine" || metadata.folder == "OrthomosaicEngine"),
             metadata.architecture == "arm64",
             metadata.teamIdentifier.range(of: "^[A-Z0-9]{10}$", options: .regularExpression) != nil,
-            metadata.pythonIdentifier == "com.hata.ControlDroneMapping.engine.python",
+            metadata.pythonIdentifier == expectedHelperID,
             try DatasetStore.hashFile(archive) == metadata.sha256
         else { throw MappingError.invalid("Paket engine tidak lolos pemeriksaan. Build ulang paket engine.") }
         guard Self.signingInformation()?[kSecCodeInfoTeamIdentifier as String] as? String
