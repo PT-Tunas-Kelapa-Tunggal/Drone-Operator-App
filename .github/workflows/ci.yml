@@ -166,7 +166,7 @@ jobs:
             "dist/${{ needs.validate.outputs.dmg_name }}.sha256" \
             --title "ControlDroneMapping $GITHUB_REF_NAME" \
             --generate-notes \
-            "${prerelease_flag[@]}"
+            ${prerelease_flag[@]+"${prerelease_flag[@]}"}
 
       - name: Clean up signing credentials
         if: always()

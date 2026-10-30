@@ -373,7 +373,7 @@ cmd_export_cloudkit_schema() {
 
     echo "=== Exporting CloudKit Schema ($container_id [$ck_env]) -> $schema_file ==="
     xcrun cktool export-schema \
-        "${token_args[@]}" \
+        ${token_args[@]+"${token_args[@]}"} \
         --team-id "$team_id" \
         --container-id "$container_id" \
         --environment "$ck_env" \
@@ -406,7 +406,7 @@ cmd_sync_cloudkit_schema() {
 
     echo "=== [1/2] Importing & Validating CloudKit Schema into $container_id (development) ==="
     xcrun cktool import-schema \
-        "${token_args[@]}" \
+        ${token_args[@]+"${token_args[@]}"} \
         --team-id "$team_id" \
         --container-id "$container_id" \
         --environment development \
@@ -418,7 +418,7 @@ cmd_sync_cloudkit_schema() {
     trap 'rm -f "$prod_schema_tmp"' RETURN
 
     if ! xcrun cktool export-schema \
-        "${token_args[@]}" \
+        ${token_args[@]+"${token_args[@]}"} \
         --team-id "$team_id" \
         --container-id "$container_id" \
         --environment production \
