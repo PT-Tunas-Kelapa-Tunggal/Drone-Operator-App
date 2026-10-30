@@ -206,7 +206,7 @@ run_cached_engine_smoke_checks() {
     # Use a temporary ad-hoc copy (without inherit) inside environment/bin and remove it immediately.
     local smoke_ortho_py="$ortho_dir/environment/bin/.smoke-orthomosaic-python"
     cp -f "$ortho_py" "$smoke_ortho_py"
-    trap 'rm -f "$smoke_ortho_py"' RETURN
+    trap 'rm -f "${smoke_ortho_py:-}"' RETURN
     codesign --force --sign - "$smoke_ortho_py" >/dev/null 2>&1
     PYTHONHOME="$ortho_dir/environment" \
     CONDA_PREFIX="$ortho_dir/environment" \
@@ -217,6 +217,7 @@ run_cached_engine_smoke_checks() {
         "$smoke_ortho_py" -u "$repo_root/ControlDroneMapping/Resources/orthomosaic_worker.py" \
         --runtime "$ortho_dir" --check
     rm -f "$smoke_ortho_py"
+    trap - RETURN
 
     echo "--- [2/3] QGroundControl Headless Health Check ---"
     python3 - "$qgc_bin" <<'PY'
@@ -455,7 +456,7 @@ cmd_sync_cloudkit_schema() {
 
     echo "=== [2/2] Verifying CloudKit Production Schema for $container_id ==="
     local prod_schema_tmp="${RUNNER_TEMP:-/tmp}/ck-prod-schema-$$.ckdb"
-    trap 'rm -f "$prod_schema_tmp"' RETURN
+    trap 'rm -f "${prod_schema_tmp:-}"' RETURN
 
     if ! xcrun cktool export-schema \
         ${token_args[@]+"${token_args[@]}"} \
@@ -519,6 +520,8 @@ if missing:
 
 print(f"Verified CloudKit Production schema for '{container_id}' matches Config/CloudKit/schema.ckdb.")
 PY
+    rm -f "$prod_schema_tmp"
+    trap - RETURN
 }
 
 cmd_setup_signing() {
@@ -1103,7 +1106,7 @@ cmd_notarize() {
     local cleanup_zip=""
 
     echo "$NOTARY_KEY_P8_BASE64" | base64 --decode > "$key_file"
-    trap 'rm -f "$key_file" ${cleanup_zip:+"$cleanup_zip"}' RETURN
+    trap 'rm -f "${key_file:-}" ${cleanup_zip:+"$cleanup_zip"}' RETURN
 
     if [[ -d "$target" && "$target" == *.app ]]; then
         cleanup_zip="$temp_dir/$(basename "$target").notarize.zip"
@@ -1143,6 +1146,8 @@ cmd_notarize() {
     echo "=== Stapling & Validating Notarization Ticket on $target ==="
     xcrun stapler staple "$target"
     xcrun stapler validate "$target"
+    rm -f "$key_file" ${cleanup_zip:+"$cleanup_zip"}
+    trap - RETURN
 }
 
 cmd_verify_dmg() {
@@ -1166,8 +1171,8 @@ cmd_verify_dmg() {
     mkdir -p "$mnt" "$work_dir/Applications"
 
     cleanup_verify_dmg() {
-        hdiutil detach "$mnt" -force >/dev/null 2>&1 || true
-        rm -rf "$work_dir"
+        [[ -n "${mnt:-}" ]] && hdiutil detach "$mnt" -force >/dev/null 2>&1 || true
+        [[ -n "${work_dir:-}" ]] && rm -rf "$work_dir"
     }
     trap cleanup_verify_dmg RETURN
 
@@ -1192,6 +1197,8 @@ cmd_verify_dmg() {
     (cd "$(dirname "$dmg_path")" && shasum -a 256 "$(basename "$dmg_path")" > "$(basename "$sha_file")")
     echo "=== Generated Checksum: $sha_file ==="
     cat "$sha_file"
+    cleanup_verify_dmg
+    trap - RETURN
 }
 
 subcmd="${1:-}"
