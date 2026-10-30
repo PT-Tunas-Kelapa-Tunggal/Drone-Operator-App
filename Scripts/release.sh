@@ -137,6 +137,36 @@ cmd_select_xcode() {
         done
     fi
 
+    # 3. Fallback to highest installed Xcode in /Applications (e.g. 26.6 on GitHub macos-26 runner)
+    if [[ -z "$selected_app" ]]; then
+        selected_app="$(python3 - <<'PY'
+import glob, os, plistlib
+
+best_ver = ()
+best_app = ""
+for app in sorted(glob.glob("/Applications/Xcode*.app")):
+    info = os.path.join(app, "Contents", "Info.plist")
+    if not os.path.isfile(info):
+        continue
+    try:
+        with open(info, "rb") as f:
+            ver_str = plistlib.load(f).get("CFBundleShortVersionString", "")
+        ver_tuple = tuple(int(x) for x in ver_str.split(".") if x.isdigit())
+        if ver_tuple and ver_tuple >= best_ver:
+            best_ver = ver_tuple
+            best_app = app
+    except Exception:
+        pass
+print(best_app)
+PY
+)"
+        if [[ -n "$selected_app" ]]; then
+            local fb_ver
+            fb_ver="$(defaults read "$selected_app/Contents/Info" CFBundleShortVersionString 2>/dev/null || echo unknown)"
+            echo "note: Xcode '$desired' not installed on runner; falling back to highest installed Xcode $fb_ver at $selected_app"
+        fi
+    fi
+
     if [[ -z "$selected_app" ]]; then
         echo "error: Could not find Xcode matching '$desired' (or ${major_prefix}.x). Installed Xcode bundles:" >&2
         for app in /Applications/Xcode*.app; do
