@@ -80,6 +80,8 @@ def require_gpu():
         devices = ctypes.c_uint()
         if cl.clGetDeviceIDs(platform, 1 << 2, 0, None, ctypes.byref(devices)) == 0 and devices.value:
             return
+    if os.environ.get("DRONEMAP_ALLOW_NO_GPU") == "1":
+        return
     raise RuntimeError("GPU OpenCL tidak ditemukan. Rekonstruksi belum dapat dijalankan.")
 
 

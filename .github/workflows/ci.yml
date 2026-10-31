@@ -1,0 +1,174 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate Deps, Schema & Build
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-26' }}
+    timeout-minutes: 45
+    outputs:
+      tag_name: ${{ steps.v.outputs.tag_name }}
+      marketing_version: ${{ steps.v.outputs.marketing_version }}
+      build_number: ${{ steps.v.outputs.build_number }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+      app_environment: ${{ steps.v.outputs.app_environment }}
+      dmg_name: ${{ steps.v.outputs.dmg_name }}
+    env:
+      ENGINES_STRICT: '1'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Derive version and target environment
+        id: v
+        run: Scripts/release.sh version
+
+      - name: Select Xcode
+        run: Scripts/release.sh select-xcode "${{ vars.XCODE_VERSION || '27.1' }}"
+
+      - name: Seed developer config template
+        run: cp Config/Developer.xcconfig.example Config/Developer.xcconfig
+
+      - name: Cache precompiled engines
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build/OrthomosaicEngine
+            .build/OrthomosaicPython
+            .build/.orthomosaic_version
+            .build/QGroundControl.app
+            .build/.qgc_version
+            .build/VariEngine
+            .build/VariPython
+            .build/.vari_version
+          key: engines-arm64-${{ hashFiles('Config/engines.json') }}
+
+      - name: Ensure all dependencies are valid
+        run: Scripts/ensure-all-deps-valid.sh --download-only
+
+      - name: Audit config, compile macOS + iOS & smoke-check engines
+        run: Scripts/release.sh build-check
+
+  release:
+    name: Release Signed & Notarized DMG (${{ needs.validate.outputs.app_environment }})
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-26' }}
+    environment: ${{ needs.validate.outputs.app_environment }}
+    timeout-minutes: 150
+    permissions:
+      contents: write
+    env:
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      APP_BUNDLE_PREFIX: ${{ vars.APP_BUNDLE_PREFIX }}
+      ICLOUD_CONTAINER_NAME: ${{ vars.ICLOUD_CONTAINER_NAME }}
+      APP_ENVIRONMENT: ${{ needs.validate.outputs.app_environment }}
+      ENGINES_STRICT: '1'
+      CLOUDKIT_MANAGEMENT_TOKEN: ${{ secrets.CLOUDKIT_MANAGEMENT_TOKEN }}
+      NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_API_KEY_P8_BASE64 }}
+      NOTARY_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
+      NOTARY_ISSUER_ID: ${{ secrets.NOTARY_API_ISSUER_ID }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: Scripts/release.sh select-xcode "${{ vars.XCODE_VERSION || '27.1' }}"
+
+      - name: Sync & verify CloudKit container schema
+        run: Scripts/release.sh sync-cloudkit-schema
+
+      - name: Cache precompiled engines
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build/OrthomosaicEngine
+            .build/OrthomosaicPython
+            .build/.orthomosaic_version
+            .build/QGroundControl.app
+            .build/.qgc_version
+            .build/VariEngine
+            .build/VariPython
+            .build/.vari_version
+          key: engines-arm64-${{ hashFiles('Config/engines.json') }}
+
+      - name: Set up Developer ID signing
+        id: signing
+        env:
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
+          DEVELOPER_ID_PROFILE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_PROFILE_BASE64 }}
+        run: Scripts/release.sh setup-signing
+
+      - name: Ensure all dependencies are valid
+        run: Scripts/ensure-all-deps-valid.sh --download-only
+
+      - name: Archive with Developer ID signing
+        env:
+          MARKETING_VERSION: ${{ needs.validate.outputs.marketing_version }}
+          BUILD_NUMBER: ${{ needs.validate.outputs.build_number }}
+          PROFILE_UUID: ${{ steps.signing.outputs.profile_uuid }}
+        run: Scripts/release.sh archive
+
+      - name: Verify app signatures, entitlements & engine self-checks
+        env:
+          MARKETING_VERSION: ${{ needs.validate.outputs.marketing_version }}
+        run: Scripts/release.sh verify-app dist/ControlDroneMapping.app
+
+      - name: Notarize & staple app bundle
+        run: Scripts/release.sh notarize dist/ControlDroneMapping.app
+
+      - name: Package, sign, notarize & verify DMG
+        env:
+          APP_PATH: dist/ControlDroneMapping.app
+          DMG_PATH: dist/${{ needs.validate.outputs.dmg_name }}
+          SKIP_ENGINE_SELF_CHECKS: '1'
+        run: |
+          Scripts/release.sh dmg
+          Scripts/release.sh sign-dmg "$DMG_PATH"
+          Scripts/release.sh notarize "$DMG_PATH"
+          Scripts/release.sh verify-dmg "$DMG_PATH"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.validate.outputs.dmg_name }}
+          path: |
+            dist/${{ needs.validate.outputs.dmg_name }}
+            dist/${{ needs.validate.outputs.dmg_name }}.sha256
+          retention-days: 14
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease_flag=()
+          if [[ "${{ needs.validate.outputs.prerelease }}" == "true" ]]; then
+            prerelease_flag=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/${{ needs.validate.outputs.dmg_name }}" \
+            "dist/${{ needs.validate.outputs.dmg_name }}.sha256" \
+            --title "ControlDroneMapping $GITHUB_REF_NAME" \
+            --generate-notes \
+            ${prerelease_flag[@]+"${prerelease_flag[@]}"}
+
+      - name: Clean up signing credentials
+        if: always()
+        run: Scripts/release.sh cleanup-signing
+

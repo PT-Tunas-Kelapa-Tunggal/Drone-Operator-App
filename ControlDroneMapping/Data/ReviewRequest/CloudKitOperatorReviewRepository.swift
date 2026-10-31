@@ -4,16 +4,18 @@ import Foundation
 public final class CloudKitOperatorReviewRepository: OperatorReviewRepository, @unchecked Sendable {
     public static let shared = CloudKitOperatorReviewRepository()
 
-    private let containerIdentifier = "iCloud.com.hata.Krops"
+    private let containerIdentifier: String
     private let database: CKDatabase
     private let domainMapper = PlantationDomainMapper()
     private let jsonEncoder = JSONEncoder()
 
-    public init(database: CKDatabase? = nil) {
+    public init(database: CKDatabase? = nil, containerIdentifier: String? = nil) {
+        let resolvedID = containerIdentifier ?? AppConfiguration.current.cloudKitContainerIdentifier
+        self.containerIdentifier = resolvedID
         if let database {
             self.database = database
         } else {
-            let container = CKContainer(identifier: "iCloud.com.hata.Krops")
+            let container = CKContainer(identifier: resolvedID)
             self.database = container.publicCloudDatabase
         }
     }

@@ -1,4 +1,0 @@
-// Copy to Developer.local.xcconfig; use the Team ID shown in your Apple account.
-DRONE_DEVELOPMENT_TEAM = YOURTEAMID
-// Choose a reverse-domain prefix unique to your own development builds.
-DRONE_BUNDLE_PREFIX = com.yourname.krops
