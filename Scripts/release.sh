@@ -752,6 +752,11 @@ run_engine_self_checks() {
     local app_path="$1"
     local app_bin="$app_path/Contents/MacOS/ControlDroneMapping"
 
+    if [[ "${SKIP_ENGINE_SELF_CHECKS:-0}" == "1" ]]; then
+        echo "=== Embedded Engine Self-Checks skipped on $app_path (SKIP_ENGINE_SELF_CHECKS=1) ==="
+        return 0
+    fi
+
     echo "=== Running Embedded Engine Self-Checks on $app_path ==="
     echo "--- [1/3] --check-orthomosaic-engine ---"
     DRONEMAP_ALLOW_NO_GPU=1 "$app_bin" --check-orthomosaic-engine
@@ -1191,8 +1196,12 @@ cmd_verify_dmg() {
         syspolicy_check distribution "$installed_app" || echo "note: syspolicy_check reported non-fatal advisory above"
     fi
 
-    echo "=== [4/4] Running Engine Self-Checks from Quarantined Installed Copy ==="
-    run_engine_self_checks "$installed_app"
+    if [[ "${SKIP_ENGINE_SELF_CHECKS:-0}" != "1" ]]; then
+        echo "=== [4/4] Running Engine Self-Checks from Quarantined Installed Copy ==="
+        run_engine_self_checks "$installed_app"
+    else
+        echo "=== [4/4] Quarantined Engine Self-Checks skipped (SKIP_ENGINE_SELF_CHECKS=1) ==="
+    fi
 
     local sha_file="${dmg_path}.sha256"
     (cd "$(dirname "$dmg_path")" && shasum -a 256 "$(basename "$dmg_path")" > "$(basename "$sha_file")")
