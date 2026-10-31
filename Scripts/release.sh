@@ -646,10 +646,10 @@ APP_ENVIRONMENT = $app_env
 EOF
 
     cat > "$STATE_FILE" <<EOF
-KEYCHAIN_PATH=$keychain_path
-PROFILE_FILE_1=$profile_dir1/${profile_uuid}.provisionprofile
-PROFILE_FILE_2=$profile_dir2/${profile_uuid}.provisionprofile
-HAD_CONFIG=$had_config
+KEYCHAIN_PATH="$keychain_path"
+PROFILE_FILE_1="$profile_dir1/${profile_uuid}.provisionprofile"
+PROFILE_FILE_2="$profile_dir2/${profile_uuid}.provisionprofile"
+HAD_CONFIG="$had_config"
 EOF
 
     echo "Installed Developer ID provisioning profile: $profile_name ($profile_uuid) for container $icloud_container ($app_env)"
