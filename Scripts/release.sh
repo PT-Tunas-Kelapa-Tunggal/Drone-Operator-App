@@ -592,10 +592,11 @@ cmd_setup_signing() {
 
     # Parse and validate provisioning profile (including CloudKit container authorization)
     local profile_info
-    profile_info="$(security cms -D -i "$profile_temp" | python3 - "$APPLE_TEAM_ID" "$icloud_container" <<'PY'
-import plistlib, sys
-expected_team, expected_container = sys.argv[1:3]
-plist = plistlib.loads(sys.stdin.buffer.read())
+    profile_info="$(python3 - "$profile_temp" "$APPLE_TEAM_ID" "$icloud_container" <<'PY'
+import plistlib, subprocess, sys
+profile_path, expected_team, expected_container = sys.argv[1:4]
+raw = subprocess.check_output(["security", "cms", "-D", "-i", profile_path])
+plist = plistlib.loads(raw)
 uuid = plist.get("UUID", "")
 name = plist.get("Name", "")
 teams = plist.get("TeamIdentifier", [])
