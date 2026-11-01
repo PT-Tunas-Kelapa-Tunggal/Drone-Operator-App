@@ -248,7 +248,7 @@ final class OrthomosaicViewModel: ObservableObject {
     ) {
         guard !busy, storageError == nil else { return }
         let existing =
-            (projectID ?? mission?.id).flatMap { project($0) } ?? (append || reference ? selected : nil)
+            (projectID ?? mission?.id).flatMap { self.project($0) } ?? (append || reference ? selected : nil)
         let project =
             existing
             ?? OrthomosaicProject(

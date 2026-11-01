@@ -74,6 +74,22 @@ struct AppSettingsView: View {
                 Text("Tinggi, kecepatan, exposure, gray card, dan foto uji diatur pada halaman Misi.")
                 Button("Buka pengaturan misi") { model.step = .mission }
             }
+            Section("Informasi Build & CloudKit") {
+                LabeledContent("Versi") {
+                    Text("\(AppConfiguration.current.shortVersion) (\(AppConfiguration.current.buildNumber))")
+                        .font(.caption.monospaced())
+                }
+                LabeledContent("Lingkungan") {
+                    Text(AppConfiguration.current.environment.displayName)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppConfiguration.current.isProduction ? .green : .orange)
+                }
+                LabeledContent("CloudKit Container") {
+                    Text(AppConfiguration.current.cloudKitContainerIdentifier)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                }
+            }
         }.formStyle(.grouped).frame(maxWidth: 760)
     }
 }

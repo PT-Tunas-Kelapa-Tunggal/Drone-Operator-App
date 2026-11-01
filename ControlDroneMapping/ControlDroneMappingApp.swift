@@ -77,8 +77,17 @@ struct ControlDroneMappingApp: App {
         }
     }
     @AppStorage("dashboardAppearance") private var appearance = "light"
+
+    private var windowTitle: String {
+        let base = model.isDemo ? "Krops - Demo" : "Krops"
+        if let badge = AppConfiguration.current.environment.windowBadge {
+            return "\(base) [\(badge)]"
+        }
+        return base
+    }
+
     var body: some Scene {
-        WindowGroup(model.isDemo ? "Krops - Demo" : "Krops") {
+        WindowGroup(windowTitle) {
             ContentView(model: model, link: link, farms: farms, location: location, planner: planner)
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
                 .tint(KropsStyle.accent)

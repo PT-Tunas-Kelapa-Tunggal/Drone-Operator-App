@@ -9,24 +9,24 @@ public final class InMemoryOperatorReviewRepository: OperatorReviewRepository, @
     }
 
     public func fetchAllRequests() async throws -> [PlantationReviewRequest] {
-        lock.lock()
-        defer { lock.unlock() }
-        return requests
+        lock.withLock {
+            requests
+        }
     }
 
     public func fetchRequest(id: UUID) async throws -> PlantationReviewRequest? {
-        lock.lock()
-        defer { lock.unlock() }
-        return requests.first { $0.id == id }
+        lock.withLock {
+            requests.first { $0.id == id }
+        }
     }
 
     public func dispatchResult(requestID: UUID, result: PlantationReviewResult, previewAssetURL: URL?) async throws {
-        lock.lock()
-        defer { lock.unlock() }
-        guard let index = requests.firstIndex(where: { $0.id == requestID }) else { return }
-        requests[index].status = .completed
-        requests[index].timeline.completedAt = result.completedAt
-        requests[index].result = result
+        lock.withLock {
+            guard let index = requests.firstIndex(where: { $0.id == requestID }) else { return }
+            requests[index].status = .completed
+            requests[index].timeline.completedAt = result.completedAt
+            requests[index].result = result
+        }
     }
 
     public func observeIncomingRequests() -> AsyncStream<[PlantationReviewRequest]> {
@@ -36,8 +36,8 @@ public final class InMemoryOperatorReviewRepository: OperatorReviewRepository, @
     }
 
     private func currentRequests() -> [PlantationReviewRequest] {
-        lock.lock()
-        defer { lock.unlock() }
-        return requests
+        lock.withLock {
+            requests
+        }
     }
 }

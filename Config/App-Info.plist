@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>AppEnvironment</key>
+	<string>$(APP_ENVIRONMENT)</string>
+	<key>ICloudContainerIdentifier</key>
+	<string>$(ICLOUD_CONTAINER_NAME)</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_drone-map._tcp</string>

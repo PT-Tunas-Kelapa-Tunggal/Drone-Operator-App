@@ -27,23 +27,49 @@ Setelah undangan diterima:
 ```sh
 git clone --branch dev https://github.com/hatamisg/Control-Mapping.git
 cd Control-Mapping
-cp Config/Developer.local.xcconfig.example Config/Developer.local.xcconfig
+cp Config/Developer.xcconfig.example Config/Developer.xcconfig
 ```
 
-Edit `Config/Developer.local.xcconfig`:
+Edit `Config/Developer.xcconfig`:
 
 ```xcconfig
-DRONE_DEVELOPMENT_TEAM = ABCDE12345
-DRONE_BUNDLE_PREFIX = com.namakamu.krops
+DEVELOPMENT_TEAM = ABCDE12345
+APP_BUNDLE_PREFIX = com.namakamu.krops
+ICLOUD_CONTAINER_NAME = iCloud.com.namakamu.krops
+APP_ENVIRONMENT = development
 ```
 
-Ganti contoh Team ID dengan Team ID akun Apple milikmu dan gunakan prefix bundle
-pribadi yang unik. Kedua target, Debug dan Release, membaca file ini. File lokal
-diabaikan Git; tidak perlu mengedit signing di `project.pbxproj`. Tanpa file lokal,
-Team ID kosong sehingga akun pemilik repository tidak terpakai otomatis.
+Ganti contoh Team ID dengan Team ID akun Apple milikmu, gunakan prefix bundle
+pribadi yang unik, dan isi `ICLOUD_CONTAINER_NAME` secara eksplisit. Kedua target,
+Debug dan Release, membaca file ini. File `Config/Developer.xcconfig` diabaikan Git;
+tidak perlu mengedit signing di `project.pbxproj`. Build lokal selalu memakai
+`Config/App.entitlements` (`com.apple.developer.icloud-container-environment = Development`)
+dan `APP_ENVIRONMENT = development`, sehingga build lokal tidak pernah menyentuh
+partisi CloudKit Production.
 
-Nama helper internal `com.hata.ControlDroneMapping.engine.python` tetap: itu kontrak
-validasi runtime, bukan Bundle ID aplikasi yang perlu didaftarkan ulang.
+## Lingkungan Build, CloudKit Schema & CI/CD
+
+Proyek ini memisahkan lingkungan menjadi tiga tingkat:
+
+1. **Lokal (`APP_ENVIRONMENT = development`)**:
+   - Memakai `Config/App.entitlements` (`icloud-container-environment = Development`).
+   - Terhubung ke partisi **Development** dari container di `Config/Developer.xcconfig`.
+2. **CI Staging / Pre-Release (`APP_ENVIRONMENT = staging`)**:
+   - Dipicu oleh tag pre-release (misal `v1.0.0-rc1`) atau `workflow_dispatch`.
+   - Memakai GitHub Environment `staging` dan container staging pada partisi **Production** (`Config/App-DeveloperID.entitlements`), ditandatangani dengan `Developer ID Application` dan dinotarisasi Apple.
+3. **CI Production (`APP_ENVIRONMENT = production`)**:
+   - Hanya dipicu oleh tag SemVer murni tanpa akhiran (`vMAJOR.MINOR.PATCH`, misal `v1.0.0`).
+   - Memakai GitHub Environment `production` dan container produksi pada partisi **Production**.
+
+Skema CloudKit disimpan di Git pada `Config/CloudKit/schema.ckdb`:
+- Untuk mengekspor skema terbaru dari container CloudKit ke Git:
+  ```sh
+  Scripts/release.sh export-cloudkit-schema
+  ```
+- Untuk mengimpor `Config/CloudKit/schema.ckdb` ke partisi `Development` dan memverifikasi kesesuaian partisi `Production`:
+  ```sh
+  Scripts/release.sh sync-cloudkit-schema
+  ```
 
 ## Bangun engine sekali di komputer masing-masing
 

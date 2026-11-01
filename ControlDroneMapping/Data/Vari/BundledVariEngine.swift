@@ -28,11 +28,12 @@ public struct BundledVariEngine {
             throw MappingError.invalid("Build aplikasi belum menyertakan VariEngine siap pakai.")
         }
         let metadata = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: manifest))
+        let expectedHelperID = AppConfiguration.current.variHelperIdentifier
         guard metadata.formatVersion == 1,
               metadata.architecture == "arm64",
-              metadata.pythonIdentifier == "com.hata.ControlDroneMapping.engine.vari"
+              metadata.pythonIdentifier == expectedHelperID
         else {
-            throw MappingError.invalid("Metadata paket VariEngine tidak sesuai.")
+            throw MappingError.invalid("Metadata paket VariEngine tidak sesuai (expected \(expectedHelperID)).")
         }
 
         if let teamID = signingInformation()?[kSecCodeInfoTeamIdentifier as String] as? String {
