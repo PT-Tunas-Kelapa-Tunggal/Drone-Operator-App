@@ -28,10 +28,13 @@ public final class CloudKitOperatorReviewRepository: OperatorReviewRepository, @
         let (matchResults, _) = try await database.records(matching: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: 100)
         var requests: [PlantationReviewRequest] = []
         for result in matchResults {
-            if let record = try? result.1.get(),
-               let dto = try? PlantationRecordCKAdapter.toDTO(from: record),
-               let domain = try? domainMapper.toDomain(from: dto) {
+            do {
+                let record = try result.1.get()
+                let dto = try PlantationRecordCKAdapter.toDTO(from: record)
+                let domain = try domainMapper.toDomain(from: dto)
                 requests.append(domain)
+            } catch {
+                print("[CloudKitOperatorReviewRepository] Warning: Failed to parse record: \(error.localizedDescription)")
             }
         }
         return requests

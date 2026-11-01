@@ -120,16 +120,16 @@ struct DashboardView: View {
                         VStack(spacing: 12) {
                             Image(systemName: search.isEmpty ? "leaf" : "magnifyingglass")
                                 .font(.system(size: 28)).foregroundStyle(KropsStyle.accent)
-                            Text(search.isEmpty ? "Mulai pemetaan pertamamu" : "Misi tidak ditemukan")
+                            Text(search.isEmpty ? "Menunggu Permintaan Petani" : "Misi tidak ditemukan")
                                 .font(.headline)
                             Text(search.isEmpty
-                                ? "Buat misi untuk mulai memetakan kebun."
+                                ? "Permintaan peninjauan dari CloudKit akan muncul di sini secara otomatis."
                                 : "Coba nama misi atau ID yang lain.")
                                 .font(.callout).foregroundStyle(.secondary)
                             if search.isEmpty {
                                 Button("Buat misi") { createMission("") }
                                     .kropsPrimaryAction()
-                                    .disabled(model.editingLocked || model.missionStorageError != nil)
+                                    .disabled(true)
                             }
                         }
                         .frame(maxWidth: .infinity, minHeight: 228)
@@ -310,7 +310,7 @@ struct DashboardView: View {
             }
             Button("Rencanakan waypoint") { openPlanner(area) }
             Button("Buat misi untuk kebun ini") { createMission(area.name) }
-                .disabled(model.editingLocked)
+                .disabled(true)
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
         .background(KropsStyle.surface, in: RoundedRectangle(cornerRadius: 16))
