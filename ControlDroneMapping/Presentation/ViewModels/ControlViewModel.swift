@@ -64,6 +64,7 @@ final class ControlViewModel: ObservableObject {
     let isDemo: Bool
     @Published var isDispatchingReview = false
     private let reviewRepository: any OperatorReviewRepository
+    private var reviewObservationTask: Task<Void, Never>?
     private var expectedTestID: UUID?
     private var expectedReferenceID: UUID?
     private var demoHeartbeat: Timer?
@@ -92,13 +93,8 @@ final class ControlViewModel: ObservableObject {
         link = transport ?? LocalLink(camera: false, enabled: !demo)
         plan.guidedMode = true
         plan.durationSeconds = 600
-        do {
-            missionLibrary = try libraryRepository.load()
-            libraryReady = true
-        } catch {
-            missionStorageError = "Daftar misi belum dapat dibaca: " + error.localizedDescription
-            errorMessage = missionStorageError
-        }
+        missionLibrary = MissionLibrary()
+        libraryReady = true
         do {
             if let draft = try self.drafts.load(), let savedPlan = draft.plan {
                 plan = savedPlan
@@ -107,18 +103,11 @@ final class ControlViewModel: ObservableObject {
                 hasLocalDraft = true
                 if let existing = missionLibrary.missions.first(where: { $0.commandID == draft.id }) {
                     selectedMissionID = existing.id
-                    // A stale journal after a committed ACK must not recreate the mission.
                     if existing.remoteID != nil && !existing.preparationRequested {
                         hasLocalDraft = false
                         draftCommandID = nil
                         try self.drafts.clear()
                     }
-                } else if libraryReady {
-                    let migrated = SavedMission(
-                        plan: savedPlan, commandID: draft.id, preparationRequested: true)
-                    missionLibrary.missions.append(migrated)
-                    selectedMissionID = migrated.id
-                    saveLibrary(missionLibrary)
                 }
             }
         } catch { errorMessage = "Draft misi: " + error.localizedDescription }
@@ -126,13 +115,10 @@ final class ControlViewModel: ObservableObject {
             do { try link.store.migrateLegacy() } catch {
                 errorMessage = "Migrasi dataset: " + error.localizedDescription
             }
-            Task { [weak self] in
-                await self?.syncCloudKitRequests()
-            }
         }
+        startReviewRequestsObservation()
 
         records = link.store.records().filter { !missionLibrary.hiddenRemoteIDs.contains($0.id) }
-        mergeSavedRecords()
         connectionObservation = link.connectionChanges.sink { [weak self] _ in self?.objectWillChange.send() }
         link.onConnect = { [weak self] in
             guard let self else { return }
@@ -149,7 +135,10 @@ final class ControlViewModel: ObservableObject {
             link.status = "Mode demo • tidak mengendalikan iPhone"
         }
     }
-    deinit { demoHeartbeat?.invalidate() }
+    deinit {
+        demoHeartbeat?.invalidate()
+        reviewObservationTask?.cancel()
+    }
     func freshness(now: Date = Date()) -> Bool {
         lastReceived.map { (0...6).contains(now.timeIntervalSince($0)) } ?? false
     }
@@ -244,33 +233,19 @@ final class ControlViewModel: ObservableObject {
 
     var settingsApplied: Bool { appliedSettings == plan.camera && telemetry.settings == plan.camera }
     func createMission(name: String) {
-        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, name.count <= 70 else {
-            errorMessage = "Nama misi wajib diisi, maksimal 70 karakter."
-            return
+        errorMessage = "Pembuatan misi manual dinonaktifkan. Gunakan permintaan pemetaan dari petani via CloudKit."
+    }
+
+    func startReviewRequestsObservation() {
+        reviewObservationTask?.cancel()
+        reviewObservationTask = Task { [weak self] in
+            guard let self else { return }
+            await self.syncReviewRequests()
+            for await requests in self.reviewRepository.observeIncomingRequests() {
+                guard !Task.isCancelled else { break }
+                await self.applyIncomingRequests(requests)
+            }
         }
-        guard !editingLocked, !(hasLocalDraft && selectedMission?.preparationRequested == true) else {
-            errorMessage = "Selesaikan misi aktif atau operasi sebelumnya dahulu."
-            return
-        }
-        guard libraryReady else {
-            errorMessage = missionStorageError
-            return
-        }
-        var newPlan = MissionPlan()
-        newPlan.name = name
-        newPlan.guidedMode = true
-        newPlan.durationSeconds = 600
-        newPlan.survey = SurveyGeometry()
-        let mission = SavedMission(plan: newPlan)
-        var updated = missionLibrary
-        updated.missions.insert(mission, at: 0)
-        guard saveLibrary(updated) else { return }
-        selectMission(mission)
-        missionDetailVisible = false
-        step = .dashboard
-        errorMessage = nil
-        append("Misi tersimpan di Mac. Buka misi untuk mengatur area dan menyiapkan iPhone.")
     }
 
     @MainActor
@@ -281,38 +256,59 @@ final class ControlViewModel: ObservableObject {
     @MainActor
     func syncReviewRequests() async {
         guard let requests = try? await reviewRepository.fetchAllRequests() else { return }
-        var updated = missionLibrary
-        var hasChanges = false
+        applyIncomingRequests(requests)
+    }
+
+    @MainActor
+    func applyIncomingRequests(_ requests: [PlantationReviewRequest]) {
+        var newMissions: [SavedMission] = []
         for request in requests {
-            let existingIndex = updated.missions.firstIndex(where: { $0.id == request.id || $0.remoteID == request.id })
+            if missionLibrary.hiddenRemoteIDs.contains(request.id) {
+                continue
+            }
+            let existing = missionLibrary.missions.first(where: { $0.id == request.id || $0.remoteID == request.id })
             let areaPoints = request.boundary.map { FarmArea.Point(latitude: $0.latitude, longitude: $0.longitude) }
             let area = FarmArea(id: request.garden.id, name: request.garden.name, points: areaPoints)
-            let phase: MissionPhase = request.status == .completed ? .completed : .idle
-            if let existingIndex {
-                if updated.missions[existingIndex].phase != phase || updated.missions[existingIndex].area?.points != areaPoints {
-                    updated.missions[existingIndex].area = area
-                    updated.missions[existingIndex].phase = phase
-                    hasChanges = true
+            let phase: MissionPhase = request.status == .completed ? .completed : (existing?.phase ?? .idle)
+
+            let localRecord = records.first(where: { $0.id == request.id })
+            let savedCount = localRecord?.saved ?? existing?.saved ?? 0
+
+            var plan = existing?.plan ?? MissionPlan()
+            if existing == nil {
+                plan.name = "\(request.garden.name) · \(request.farmer.name)"
+                plan.guidedMode = true
+                plan.durationSeconds = 600
+                if !areaPoints.isEmpty {
+                    var geometry = SurveyGeometry()
+                    geometry.reviewed = true
+                    plan.survey = geometry
                 }
-            } else {
-                var newPlan = MissionPlan()
-                newPlan.name = "\(request.garden.name) · \(request.farmer.name)"
-                newPlan.guidedMode = true
-                newPlan.durationSeconds = 600
-                let mission = SavedMission(
-                    id: request.id,
-                    createdAt: request.timeline.submittedAt,
-                    plan: newPlan,
-                    area: area,
-                    remoteID: request.id,
-                    phase: phase
-                )
-                updated.missions.insert(mission, at: 0)
-                hasChanges = true
             }
+
+            let mission = SavedMission(
+                id: request.id,
+                createdAt: existing?.createdAt ?? request.timeline.submittedAt,
+                plan: plan,
+                area: area,
+                remoteID: request.id,
+                phase: phase,
+                saved: savedCount,
+                commandID: existing?.commandID ?? UUID(),
+                preparationRequested: existing?.preparationRequested ?? false
+            )
+            newMissions.append(mission)
         }
-        if hasChanges {
-            _ = saveLibrary(updated)
+
+        newMissions.sort { $0.createdAt > $1.createdAt }
+
+        var updated = missionLibrary
+        updated.missions = newMissions
+        saveLibrary(updated)
+
+        if let selected = selectedMissionID, !newMissions.contains(where: { $0.id == selected }) {
+            selectedMissionID = nil
+            missionDetailVisible = false
         }
     }
 
@@ -327,19 +323,13 @@ final class ControlViewModel: ObservableObject {
 
         do {
             let allRequests = (try? await reviewRepository.fetchAllRequests()) ?? []
-            let targetRequest: PlantationReviewRequest?
-            if let missionID = mission?.id, let exact = allRequests.first(where: { $0.id == missionID }) {
-                targetRequest = exact
-            } else if let remoteID = mission?.remoteID, let exact = allRequests.first(where: { $0.id == remoteID }) {
-                targetRequest = exact
-            } else if let name = mission?.plan.name, let byName = allRequests.first(where: { name.contains($0.garden.name) || $0.garden.name.contains(name) }) {
-                targetRequest = byName
-            } else {
-                targetRequest = allRequests.first(where: { $0.status != .completed }) ?? allRequests.first
+            guard let targetID = mission?.remoteID ?? mission?.id else {
+                errorMessage = "ID misi tidak valid untuk pengiriman hasil."
+                return
             }
 
-            guard let request = targetRequest else {
-                errorMessage = "Tidak ada permintaan peninjauan dari petani yang ditemukan di CloudKit."
+            guard let request = allRequests.first(where: { $0.id == targetID }) else {
+                errorMessage = "Permintaan peninjauan (\(targetID.uuidString)) tidak ditemukan di CloudKit container aktif."
                 return
             }
 
@@ -356,7 +346,8 @@ final class ControlViewModel: ObservableObject {
                 result: result,
                 previewAssetURL: assetURL
             )
-            markMissionCompleted(mission?.id ?? request.id)
+            markMissionCompleted(targetID)
+            await syncReviewRequests()
         } catch {
             errorMessage = "Gagal mengirim hasil: \(error.localizedDescription)"
         }
@@ -382,17 +373,9 @@ final class ControlViewModel: ObservableObject {
         }.sorted { $0.createdAt > $1.createdAt }
     }
     @discardableResult private func saveLibrary(_ updated: MissionLibrary) -> Bool {
-        guard libraryReady else { return false }
-        do {
-            try libraryRepository.save(updated)
-            missionLibrary = updated
-            missionStorageError = nil
-            return true
-        } catch {
-            missionStorageError = "Misi belum tersimpan: " + error.localizedDescription
-            errorMessage = missionStorageError
-            return false
-        }
+        missionLibrary = updated
+        missionStorageError = nil
+        return true
     }
 
     func markMissionCompleted(_ id: UUID) {
@@ -624,34 +607,11 @@ final class ControlViewModel: ObservableObject {
         transmit(Command(id: id, action: .createMission, plan: configured))
     }
     private func mergeSavedRecords() {
-        guard libraryReady, missionStorageError == nil else { return }
-        var updated = missionLibrary
-        for record in records where !updated.hiddenRemoteIDs.contains(record.id) {
-            if let index = updated.missions.firstIndex(where: { $0.remoteID == record.id }) {
-                updated.missions[index].phase = record.phase
-                updated.missions[index].saved = record.saved
-            } else {
-                updated.missions.append(
-                    SavedMission(
-                        createdAt: record.createdAt, plan: record.plan, remoteID: record.id,
-                        phase: record.phase, saved: record.saved))
-            }
-        }
-        if updated != missionLibrary { saveLibrary(updated) }
+        // Obsolete: local photo records must not synthesize phantom missions into CloudKit mission list.
     }
     func retryMissionSaving() {
-        if !libraryReady {
-            do {
-                missionLibrary = try libraryRepository.load()
-                libraryReady = true
-            } catch {
-                missionStorageError = "Daftar misi belum dapat dibaca: " + error.localizedDescription
-                errorMessage = missionStorageError
-                return
-            }
-        }
-        if selectedMissionID != nil { persistDraft() } else { saveLibrary(missionLibrary) }
-        if missionStorageError == nil { errorMessage = nil }
+        missionStorageError = nil
+        errorMessage = nil
     }
     func retryDraft() {
         guard hasLocalDraft, draftNeedsRetry, canOperate, !editingLocked else { return }
@@ -849,6 +809,10 @@ final class ControlViewModel: ObservableObject {
             records[index].phase = telemetry.phase
             records[index].saved = telemetry.saved
             records[index].missed = telemetry.missed
+        }
+        if let id = telemetry.missionID, let mIndex = missionLibrary.missions.firstIndex(where: { $0.id == id || $0.remoteID == id }) {
+            missionLibrary.missions[mIndex].saved = telemetry.saved
+            missionLibrary.missions[mIndex].phase = telemetry.phase
         }
         if let preview = packet.preview {
             displayedPreview = preview

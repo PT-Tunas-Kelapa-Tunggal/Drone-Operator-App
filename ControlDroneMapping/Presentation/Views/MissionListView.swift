@@ -41,7 +41,7 @@ struct MissionListView: View {
                     search.isEmpty ? "Belum ada misi di daftar ini" : "Misi tidak ditemukan",
                     systemImage: search.isEmpty ? "map" : "magnifyingglass",
                     description: Text(search.isEmpty
-                        ? "Gunakan Misi baru di kanan atas untuk mulai merencanakan rute."
+                        ? "Menunggu permintaan peninjauan dari CloudKit."
                         : "Coba nama atau ID misi lain."))
                     .frame(maxWidth: .infinity).padding(.vertical, 50)
             } else {
