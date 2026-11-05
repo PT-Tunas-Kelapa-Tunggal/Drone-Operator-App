@@ -63,6 +63,7 @@ final class ControlViewModel: ObservableObject {
     let link: any LocalTransport
     let isDemo: Bool
     @Published var isDispatchingReview = false
+    @Published private(set) var isSyncingCloudKit = false
     private let reviewRepository: any OperatorReviewRepository
     private var reviewObservationTask: Task<Void, Never>?
     private var expectedTestID: UUID?
@@ -250,7 +251,19 @@ final class ControlViewModel: ObservableObject {
 
     @MainActor
     func syncCloudKitRequests() async {
-        await syncReviewRequests()
+        guard !isSyncingCloudKit else { return }
+        isSyncingCloudKit = true
+        defer { isSyncingCloudKit = false }
+        do {
+            let requests = try await reviewRepository.fetchAllRequests()
+            applyIncomingRequests(requests)
+            if errorMessage?.hasPrefix("Gagal memuat permintaan dari CloudKit") == true {
+                errorMessage = nil
+            }
+        } catch {
+            print("[ControlViewModel] Failed to sync CloudKit requests: \(error.localizedDescription)")
+            errorMessage = "Gagal memuat permintaan dari CloudKit: \(error.localizedDescription)"
+        }
     }
 
     @MainActor

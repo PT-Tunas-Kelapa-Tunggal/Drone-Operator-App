@@ -88,15 +88,25 @@ struct DashboardView: View {
                 }
                 Spacer()
                 Button {
-                    model.showMissionList()
+                    Task {
+                        await model.syncCloudKitRequests()
+                    }
                 } label: {
-                    Image(systemName: "arrow.up.right")
-                        .frame(width: 32, height: 32)
-                        .background(KropsStyle.canvas, in: Circle())
+                    if model.isSyncingCloudKit {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(width: 32, height: 32)
+                            .background(KropsStyle.canvas, in: Circle())
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .frame(width: 32, height: 32)
+                            .background(KropsStyle.canvas, in: Circle())
+                    }
                 }
                 .buttonStyle(.plain)
-                .help("Lihat semua misi")
-                .accessibilityLabel("Lihat semua misi")
+                .disabled(model.isSyncingCloudKit)
+                .help("Segarkan daftar misi dari CloudKit")
+                .accessibilityLabel("Segarkan daftar misi dari CloudKit")
             }
             .padding(20)
 

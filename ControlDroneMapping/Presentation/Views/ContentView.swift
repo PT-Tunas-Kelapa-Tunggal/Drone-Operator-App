@@ -277,12 +277,29 @@ struct ContentView: View {
                     Label("Ekspor rute", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
                 }.kropsToolbarAction().disabled(model.editingLocked)
             }
-            Button {
-                missionName = ""
-                newMission = true
-            } label: {
-                Label("Misi baru", systemImage: "plus")
-            }.kropsToolbarAction().disabled(true)
+            if model.step == .mission && !model.hasMissionDetail {
+                Button {
+                    Task {
+                        await model.syncCloudKitRequests()
+                    }
+                } label: {
+                    Label(
+                        model.isSyncingCloudKit ? "Menyinkronkan…" : "Segarkan",
+                        systemImage: "arrow.clockwise"
+                    )
+                }
+                .kropsToolbarAction()
+                .disabled(model.isSyncingCloudKit)
+                .help("Segarkan daftar misi dari CloudKit")
+                .accessibilityLabel("Segarkan daftar misi dari CloudKit")
+            } else {
+                Button {
+                    missionName = ""
+                    newMission = true
+                } label: {
+                    Label("Misi baru", systemImage: "plus")
+                }.kropsToolbarAction().disabled(true)
+            }
         }.padding(.horizontal, 22).padding(.vertical, inMissionDetail ? 8 : 14)
     }
     private var inMissionDetail: Bool { model.step == .mission && model.hasMissionDetail }
