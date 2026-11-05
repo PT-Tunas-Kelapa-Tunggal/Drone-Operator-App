@@ -77,7 +77,7 @@ struct WaypointMap: NSViewRepresentable {
                 }
             }
 
-            if canvas || planningStep == .boundary {
+            if planningStep == .boundary {
                 // In Step 1: Batas Area
                 // Only boundary vertex pins are shown and editable. Home, Entry, Exit, and transect lines are strictly hidden.
                 for (index, point) in route.waypoints.enumerated() where point.coordinate.isValid {
@@ -90,7 +90,7 @@ struct WaypointMap: NSViewRepresentable {
                     map.addAnnotation(marker)
                 }
             }
-            if canvas || planningStep == .flight {
+            if planningStep == .flight {
                 // In Step 2: Parameter & Jalur Terbang
                 // Boundary vertex markers are hidden so operator cannot alter or drag the boundary.
                 // Home (H) and Entry (E) pins, Exit marker, and QGC survey transect lines are shown.
@@ -101,8 +101,7 @@ struct WaypointMap: NSViewRepresentable {
                     marker.coordinate = home.clCoordinate
                     map.addAnnotation(marker)
                 }
-                let effectiveEntry = route.surveyEntry ?? route.visualTransects.first
-                if let entry = effectiveEntry, entry.isValid {
+                if let entry = route.surveyEntry, entry.isValid {
                     let entryMarker = RouteMarker()
                     entryMarker.kind = .surveyEntry
                     entryMarker.title = "Titik Masuk Survei (Entry)"
@@ -121,23 +120,18 @@ struct WaypointMap: NSViewRepresentable {
                     let transectLine = SurveyTransectPolyline(coordinates: transectCoords, count: transectCoords.count)
                     map.addOverlay(transectLine)
 
-                    if let home = route.home, home.isValid {
-                        if let entry = effectiveEntry {
-                            let ingressCoords = [home.clCoordinate, entry.clCoordinate]
-                            map.addOverlay(SurveyTransitPolyline(coordinates: ingressCoords, count: 2))
-                            if let first = route.visualTransects.first, entry != first {
-                                let connectCoords = [entry.clCoordinate, first.clCoordinate]
-                                map.addOverlay(SurveyTransitPolyline(coordinates: connectCoords, count: 2))
-                            }
+                    if let home = route.home, home.isValid, let entry = route.surveyEntry, entry.isValid {
+                        let ingressCoords = [home.clCoordinate, entry.clCoordinate]
+                        map.addOverlay(SurveyTransitPolyline(coordinates: ingressCoords, count: 2))
+                        if let first = route.visualTransects.first, entry != first {
+                            let connectCoords = [entry.clCoordinate, first.clCoordinate]
+                            map.addOverlay(SurveyTransitPolyline(coordinates: connectCoords, count: 2))
                         }
                         if let last = route.visualTransects.last, route.returnToHome {
                             let egressCoords = [last.clCoordinate, home.clCoordinate]
                             map.addOverlay(SurveyTransitPolyline(coordinates: egressCoords, count: 2))
                         }
                     }
-                } else if let home = route.home, home.isValid, let entry = effectiveEntry {
-                    let ingressCoords = [home.clCoordinate, entry.clCoordinate]
-                    map.addOverlay(SurveyTransitPolyline(coordinates: ingressCoords, count: 2))
                 }
             }
 
@@ -234,14 +228,12 @@ final class SurveyTransitPolyline: MKPolyline {}
                 map.selectAnnotation(marker, animated: false)
                 return
             }
-            if parent.canvas, parent.mode == .inspect || !parent.editingEnabled {
+            if parent.mode == .inspect || !parent.editingEnabled {
                 parent.selectedWaypoint = nil
                 return
             }
             guard parent.editingEnabled else { return }
-            if parent.canvas {
-                // Any placing tool reaches the click handler.
-            } else if parent.planningStep == .boundary {
+            if parent.planningStep == .boundary {
                 guard parent.mode == .waypoint || parent.drawingBoundary else { return }
             } else {
                 guard parent.mode == .home || parent.mode == .entry else { return }
@@ -255,7 +247,7 @@ final class SurveyTransitPolyline: MKPolyline {}
             let point = MapCoordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
             if parent.drawingBoundary {
                 parent.onBoundaryClick?(point)
-            } else if parent.canvas, parent.mode == .waypoint, let index = edgeIndex(near: position, in: map) {
+            } else if parent.planningStep == .boundary, parent.mode == .waypoint, let index = edgeIndex(near: position, in: map) {
                 parent.onInsertBoundary?(index, point)
             } else {
                 parent.onClick(point)
@@ -316,14 +308,14 @@ final class SurveyTransitPolyline: MKPolyline {}
                 view.markerTintColor = .systemGreen
                 view.glyphText = "H"
                 view.isDraggable =
-                    parent.editingEnabled && (parent.canvas || parent.planningStep == .flight)
+                    parent.editingEnabled && parent.planningStep == .flight
                     && (parent.mode == .inspect || parent.dragWhileAdding)
                     && !parent.drawingBoundary && parent.onHomeMove != nil
             case .surveyEntry:
                 view.markerTintColor = .systemCyan
                 view.glyphText = "E"
                 view.isDraggable =
-                    parent.editingEnabled && (parent.canvas || parent.planningStep == .flight)
+                    parent.editingEnabled && parent.planningStep == .flight
                     && !parent.drawingBoundary && parent.onEntryMove != nil
             case .surveyExit:
                 view.markerTintColor = .systemCyan
@@ -333,7 +325,7 @@ final class SurveyTransitPolyline: MKPolyline {}
                 view.markerTintColor = .systemOrange
                 view.glyphText = "\(marker.number)"
                 view.isDraggable =
-                    parent.editingEnabled && (parent.canvas || parent.planningStep == .boundary)
+                    parent.editingEnabled && parent.planningStep == .boundary
                     && (parent.mode == .inspect || parent.dragWhileAdding)
                     && !parent.drawingBoundary
             case .boundary:

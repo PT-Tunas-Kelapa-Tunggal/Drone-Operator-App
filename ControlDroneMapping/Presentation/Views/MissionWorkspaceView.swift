@@ -30,6 +30,7 @@ struct MissionWorkspaceView: View {
         canEditRoute ? planner.mode : .inspect
     }
     private var boundaryReady: Bool { planner.draft.waypoints.count >= 3 }
+    private var canProceedToFlight: Bool { boundaryReady && planner.isAreaConfirmed }
     private var pathReady: Bool { !planner.draft.visualTransects.isEmpty }
 
     var body: some View {
@@ -51,7 +52,6 @@ struct MissionWorkspaceView: View {
             onEntryMove: { coordinate in
                 editRoute { planner.moveEntry(to: coordinate) }
             },
-            canvas: true,
             onInsertBoundary: { index, coordinate in
                 editRoute { planner.addWaypoint(coordinate, at: index) }
             }
@@ -89,8 +89,8 @@ struct MissionWorkspaceView: View {
             planner.open(
                 farm: mission.area, name: "Rute " + mission.plan.name,
                 altitude: model.geometry.heightAGL, speed: model.geometry.speed, missionID: mission.id)
-            // Opening a plan starts ready to draw boundary points.
-            planner.mode = canEditRoute ? .waypoint : .inspect
+            // Opening a plan starts ready to draw boundary points if in boundary step.
+            planner.mode = canEditRoute ? (planner.planningStep == .boundary ? .waypoint : .inspect) : .inspect
             installKeyMonitor()
         }
         .onDisappear {
@@ -98,7 +98,9 @@ struct MissionWorkspaceView: View {
             keyMonitor = nil
         }
         .onChange(of: planner.selectedWaypointID) { _, id in
-            if id != nil { planner.planningStep = .boundary }
+            if id != nil && planner.planningStep == .boundary {
+                planner.planningStep = .boundary
+            }
         }
         .onChange(of: model.geometry.heightAGL) { _, altitude in
             if canEditRoute { planner.draft.defaultAltitude = altitude }
@@ -169,25 +171,26 @@ struct MissionWorkspaceView: View {
     private func toolPalette(compact: Bool) -> some View {
         HStack(spacing: 2) {
             Group {
-                PlanToolButton(
-                    title: "Pilih", compact: compact, systemImage: "cursorarrow", shortcut: "V", selected: planner.mode == .inspect,
-                    help: "Pilih & geser pin"
-                ) { selectTool(.inspect) }
-                PlanToolButton(
-                    title: "Titik", compact: compact, systemImage: "pencil.and.outline", shortcut: "P",
-                    selected: planner.mode == .waypoint, help: "Tambah titik batas (klik dekat garis untuk menyisipkan)",
-                    tint: .orange
-                ) { selectTool(.waypoint) }
-                PlanToolButton(
-                    title: "Home", compact: compact, systemImage: "house", shortcut: "H", selected: planner.mode == .home,
-                    help: "Taruh titik lepas landas & mendarat", tint: .green
-                ) { selectTool(.home) }
-                .disabled(!boundaryReady)
-                PlanToolButton(
-                    title: "Entry", compact: compact, systemImage: "arrow.right.to.line", shortcut: "E", selected: planner.mode == .entry,
-                    help: "Taruh titik masuk survei di garis batas", tint: .cyan
-                ) { selectTool(.entry) }
-                .disabled(!boundaryReady)
+                if planner.planningStep == .boundary {
+                    PlanToolButton(
+                        title: "Pilih", compact: compact, systemImage: "cursorarrow", shortcut: "V", selected: planner.mode == .inspect,
+                        help: "Pilih & geser pin"
+                    ) { selectTool(.inspect) }
+                    PlanToolButton(
+                        title: "Titik", compact: compact, systemImage: "pencil.and.outline", shortcut: "P",
+                        selected: planner.mode == .waypoint, help: "Tambah titik batas (klik dekat garis untuk menyisipkan)",
+                        tint: .orange
+                    ) { selectTool(.waypoint) }
+                } else {
+                    PlanToolButton(
+                        title: "Home", compact: compact, systemImage: "house", shortcut: "H", selected: planner.mode == .home,
+                        help: "Taruh titik lepas landas & mendarat", tint: .green
+                    ) { selectTool(.home) }
+                    PlanToolButton(
+                        title: "Entry", compact: compact, systemImage: "arrow.right.to.line", shortcut: "E", selected: planner.mode == .entry,
+                        help: "Taruh titik masuk survei di garis batas", tint: .cyan
+                    ) { selectTool(.entry) }
+                }
             }
             .disabled(!canEditRoute)
         }
@@ -244,7 +247,11 @@ struct MissionWorkspaceView: View {
                 .labelsHidden()
                 .controlSize(.extraLarge)
                 .frame(maxWidth: .infinity)
-                .help(boundaryReady ? "Pindah antara batas area dan jalur terbang" : "Jalur terbuka setelah ada minimal 3 titik batas")
+                .help(
+                    canProceedToFlight
+                        ? "Pindah antara batas area dan jalur terbang"
+                        : "Konfirmasi batas area terlebih dahulu untuk membuka langkah Jalur"
+                )
             }
             HStack {
                 Text(planner.planningStep == .boundary ? "Batas area" : "Jalur terbang")
@@ -289,6 +296,18 @@ struct MissionWorkspaceView: View {
             }
         }
 
+        if boundaryReady {
+            Toggle(isOn: $planner.isAreaConfirmed) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Konfirmasi batas area kebun").font(.body.weight(.medium))
+                    Text("Batas perkebunan sudah sesuai dengan kondisi lapangan.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .toggleStyle(.checkbox)
+            .disabled(!canEditRoute)
+        }
+
         Button {
             setLayer(.flight)
         } label: {
@@ -296,7 +315,7 @@ struct MissionWorkspaceView: View {
                 .frame(maxWidth: .infinity)
         }
         .kropsPrimaryAction(size: .large)
-        .disabled(!boundaryReady)
+        .disabled(!canProceedToFlight)
     }
 
     /// Points are edited on the map; the panel only says how.
@@ -592,7 +611,7 @@ struct MissionWorkspaceView: View {
                 PlanStatusRow("Home", glyph: "H", color: .green, placed: planner.draft.home != nil,
                               status: planner.draft.home == nil ? "Belum · tekan H" : "Sudah ditaruh")
                 PlanStatusRow("Entry", glyph: "E", color: .cyan, placed: planner.draft.surveyEntry != nil,
-                              status: planner.draft.surveyEntry == nil ? "Otomatis" : "Sudah ditaruh")
+                              status: planner.draft.surveyEntry == nil ? "Belum · tekan E" : "Sudah ditaruh")
                 PlanSummaryRow("Kembali ke Home", planner.draft.returnToHome ? "Ya" : "Tidak")
             }
 
@@ -653,35 +672,45 @@ struct MissionWorkspaceView: View {
         case .entry:
             return ("arrow.right.to.line", "Klik dekat garis batas untuk menaruh Entry · Esc batal")
         case .inspect:
-            if let selected = planner.selectedWaypoint,
-                let index = planner.draft.waypoints.firstIndex(where: { $0.id == selected.id })
-            {
-                return ("cursorarrow", "Titik \(index + 1) terpilih · geser untuk memindah · Delete hapus · Esc batal pilih")
+            if planner.planningStep == .boundary {
+                if let selected = planner.selectedWaypoint,
+                    let index = planner.draft.waypoints.firstIndex(where: { $0.id == selected.id })
+                {
+                    return ("cursorarrow", "Titik \(index + 1) terpilih · geser untuk memindah · Delete hapus · Esc batal pilih")
+                }
+                if !boundaryReady { return ("pencil.and.outline", "Tekan P lalu klik peta untuk menggambar batas kebun") }
+                return ("cursorarrow", "Geser pin untuk memindah · klik pin untuk memilih · seret peta untuk menggeser")
+            } else {
+                return ("cursorarrow", "Taruh Home (H) dan Entry (E) · geser peta untuk navigasi")
             }
-            if !boundaryReady { return ("pencil.and.outline", "Tekan P lalu klik peta untuk menggambar batas kebun") }
-            return ("cursorarrow", "Geser pin untuk memindah · klik pin untuk memilih · seret peta untuk menggeser")
         }
     }
 
     // MARK: - Actions
 
     private func setLayer(_ step: FlightPlanningStep) {
-        guard planner.planningStep != step, step == .boundary || boundaryReady else { return }
-        planner.planningStep = step
-        if step == .flight { planner.selectedWaypointID = nil }
+        guard planner.planningStep != step else { return }
+        if step == .flight {
+            guard canProceedToFlight else { return }
+            planner.planningStep = .flight
+            planner.selectedWaypointID = nil
+            if planner.mode == .waypoint { planner.mode = .inspect }
+        } else {
+            planner.planningStep = .boundary
+            if planner.mode == .home || planner.mode == .entry { planner.mode = .inspect }
+        }
     }
 
     /// Tools behave like a design app: Titik stays active for repeated clicks,
     /// Home and Entry place once and return to Pilih.
     private func selectTool(_ mode: FlightMapEditMode) {
         guard canEditRoute || mode == .inspect else { return }
-        if (mode == .home || mode == .entry) && !boundaryReady { return }
-        planner.mode = mode
-        switch mode {
-        case .waypoint: setLayer(.boundary)
-        case .home, .entry: setLayer(.flight)
-        case .inspect: break
+        if planner.planningStep == .boundary {
+            guard mode == .inspect || mode == .waypoint else { return }
+        } else {
+            guard mode == .inspect || mode == .home || mode == .entry else { return }
         }
+        planner.mode = mode
     }
 
     private func addPoint(_ coordinate: MapCoordinate) {
@@ -731,11 +760,16 @@ struct MissionWorkspaceView: View {
             break
         }
         switch event.charactersIgnoringModifiers?.lowercased() {
-        case "v": selectTool(.inspect)
-        case "p", "b": selectTool(.waypoint)
-        case "h": selectTool(.home)
-        case "e": selectTool(.entry)
-        default: return false
+        case "v":
+            selectTool(.inspect)
+        case "p", "b":
+            if planner.planningStep == .boundary { selectTool(.waypoint) }
+        case "h":
+            if planner.planningStep == .flight { selectTool(.home) }
+        case "e":
+            if planner.planningStep == .flight { selectTool(.entry) }
+        default:
+            return false
         }
         return true
     }
