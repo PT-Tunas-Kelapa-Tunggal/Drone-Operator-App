@@ -32,12 +32,16 @@ final class FlightPlannerViewModel: ObservableObject {
                 if undoStack.count > 50 { undoStack.removeFirst() }
                 redoStack = []
             }
+            if oldValue.waypoints != draft.waypoints {
+                isAreaConfirmed = false
+            }
             reviewed = false
             exportedURL = nil
             if !continuousEdit { persist() }
         }
     }
     @Published var planningStep: FlightPlanningStep = .boundary
+    @Published var isAreaConfirmed = false
     @Published var mode: FlightMapEditMode = .inspect
     @Published var selectedWaypointID: UUID?
     @Published var reviewed = false
@@ -85,7 +89,7 @@ final class FlightPlannerViewModel: ObservableObject {
             speed: draft.speed.isFinite && draft.speed > 0 ? draft.speed : 5
         )
         let alt = route.defaultAltitude
-        route.home = Self.defaultHomeLocation(for: farm.points)
+        route.home = nil
         route.waypoints = farm.points.map {
             FlightWaypoint(
                 coordinate: MapCoordinate(latitude: $0.latitude, longitude: $0.longitude),
@@ -155,7 +159,7 @@ final class FlightPlannerViewModel: ObservableObject {
             if let farm, farm.points.count >= 2 {
                 let matchesFarmCount = saved.waypoints.count == farm.points.count
                 let farmHome = Self.defaultHomeLocation(for: farm.points)
-                let isNearFarm = saved.home.map { $0.distance(to: farmHome) < 5_000 } ?? false
+                let isNearFarm = saved.home.map { $0.distance(to: farmHome) < 5_000 } ?? true
 
                 if matchesFarmCount && isNearFarm {
                     select(saved.id)
@@ -172,6 +176,7 @@ final class FlightPlannerViewModel: ObservableObject {
                 farm: farm, name: farm.map { "Rute " + $0.name } ?? name, altitude: altitude, speed: speed)
         }
         planningStep = draft.visualTransects.isEmpty ? .boundary : .flight
+        isAreaConfirmed = !draft.visualTransects.isEmpty && draft.waypoints.count >= 3
     }
     func newRoute(farm: FarmArea?, name: String, altitude: Double, speed: Double) {
         guard routes.count < 256 else {
@@ -186,7 +191,7 @@ final class FlightPlannerViewModel: ObservableObject {
             speed: speed.isFinite && speed > 0 ? speed : 5)
         if let farmPoints = farm?.points, farmPoints.count >= 2 {
             let alt = altitude.isFinite && altitude > 0 ? altitude : 80
-            route.home = Self.defaultHomeLocation(for: farmPoints)
+            route.home = nil
             route.waypoints = farmPoints.map {
                 FlightWaypoint(
                     coordinate: MapCoordinate(latitude: $0.latitude, longitude: $0.longitude),
@@ -198,8 +203,9 @@ final class FlightPlannerViewModel: ObservableObject {
         draft = route
         switching = false
         selectedWaypointID = nil
-        mode = draft.home == nil ? .home : .inspect
+        mode = .inspect
         reviewed = false
+        isAreaConfirmed = false
         exportedURL = nil
         undoStack = []
         redoStack = []
@@ -213,8 +219,9 @@ final class FlightPlannerViewModel: ObservableObject {
         draft = route
         switching = false
         selectedWaypointID = nil
-        mode = draft.home == nil ? .home : .inspect
+        mode = .inspect
         reviewed = false
+        isAreaConfirmed = !route.visualTransects.isEmpty && route.waypoints.count >= 3
         exportedURL = nil
         undoStack = []
         redoStack = []
@@ -235,7 +242,7 @@ final class FlightPlannerViewModel: ObservableObject {
         case .inspect: break
         case .home:
             draft.home = coordinate
-            mode = .waypoint
+            mode = .inspect
         case .entry:
             let boundary = activeBoundaryCoordinates()
             if !boundary.isEmpty {
@@ -243,6 +250,7 @@ final class FlightPlannerViewModel: ObservableObject {
             } else {
                 draft.surveyEntry = coordinate
             }
+            mode = .inspect
         case .waypoint: addWaypoint(coordinate)
         }
     }
@@ -516,9 +524,6 @@ final class FlightPlannerViewModel: ObservableObject {
             }
             draft.turnaroundDistance = turnaroundDistance
             draft.entryLocation = resolvedEntryLocation
-            if draft.surveyEntry == nil, let first = result.visualTransectPoints.first {
-                draft.surveyEntry = first.closestPointOnPolygonPerimeter(activeBoundary)
-            }
             reviewed = false
             if fitsRoute { fitRoute() }
         } catch {

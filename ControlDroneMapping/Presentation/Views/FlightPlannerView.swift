@@ -39,6 +39,7 @@ struct FlightPlannerView: View {
                     fitRequest: model.fitRequest, selectedWaypoint: $model.selectedWaypointID,
                     onClick: { model.mapClick($0) },
                     onMove: { model.moveWaypoint($0, to: $1) },
+                    planningStep: model.planningStep,
                     onHomeMove: { model.draft.home = $0 },
                     onEntryMove: { model.moveEntry(to: $0) }
                 )
