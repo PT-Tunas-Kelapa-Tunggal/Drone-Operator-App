@@ -18,6 +18,7 @@ struct QGCSurveyRequestDTO: Encodable {
         let frontalOverlap: Double
         let sideOverlap: Double
         let cameraBrand: String
+        let cameraSpec: CameraOpticalSpec?
         let firmwareType: Int
         let vehicleType: Int
         let entryLocation: Int
@@ -40,6 +41,7 @@ struct QGCSurveyRequestDTO: Encodable {
             frontalOverlap: parameters.frontalOverlap,
             sideOverlap: parameters.sideOverlap,
             cameraBrand: parameters.cameraBrand,
+            cameraSpec: parameters.cameraSpec,
             firmwareType: parameters.firmware.mavAutopilot,
             vehicleType: parameters.vehicleType,
             entryLocation: parameters.entryLocation
@@ -76,7 +78,10 @@ enum QGCSurveyResponseParser {
                 flightTimeSeconds: s["flightTimeSeconds"] as? Double ?? 0.0,
                 coveredAreaSquareMeters: s["coveredAreaSquareMeters"] as? Double ?? 0.0,
                 photoCount: s["photoCount"] as? Int ?? 0,
-                transectCount: s["transectCount"] as? Int ?? 0
+                transectCount: s["transectCount"] as? Int ?? 0,
+                calculatedLineSpacing: s["calculatedLineSpacing"] as? Double ?? 0.0,
+                calculatedTriggerDistance: s["calculatedTriggerDistance"] as? Double ?? 0.0,
+                groundResolutionCmPerPx: s["groundResolutionCmPerPx"] as? Double ?? 0.0
             )
         }
 

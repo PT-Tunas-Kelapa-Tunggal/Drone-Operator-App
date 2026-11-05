@@ -16,6 +16,7 @@ struct MissionWorkspaceView: View {
     @State private var inspectorContentHeight: CGFloat = 400
     @State private var keyMonitor: Any?
     @State private var replanPending = false
+    @State private var replanDebounceTask: Task<Void, Never>? = nil
 
     private var routeMatchesMission: Bool {
         model.selectedMissionID != nil && planner.draft.missionID == model.selectedMissionID
@@ -312,21 +313,122 @@ struct MissionWorkspaceView: View {
     @ViewBuilder
     private var flightInspector: some View {
         VStack(alignment: .leading, spacing: 10) {
-            PlanSectionTitle("Parameter")
-            HStack(spacing: 10) {
-                ControlField("Tinggi") { NumberField($model.geometry.heightAGL, unit: "m") }
-                    .help("Tinggi kamera di atas tanah (AGL), bukan altitude GPS.")
-                ControlField("Kecepatan") { NumberField($model.geometry.speed, unit: "m/s") }
+            PlanSectionTitle("Kamera & Parameter")
+
+            // Camera Header & Resolution (iPhone 17)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Label("Kamera", systemImage: "camera")
+                        .font(KropsTypography.supporting)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("iPhone 17")
+                        .font(.callout.weight(.medium))
+                }
+                Picker("Resolusi", selection: Binding(
+                    get: { planner.draft.cameraResolution },
+                    set: { res in
+                        guard canEditRoute else { return }
+                        planner.draft.cameraResolution = res
+                        model.geometry.reviewed = false
+                        replanLive()
+                    }
+                )) {
+                    ForEach(CameraOpticalSpec.Resolution.allCases) { res in
+                        Text(res.rawValue).tag(res)
+                    }
+                }
+                .pickerStyle(.segmented)
             }
-            ControlField("Jarak jalur") { NumberField($planner.draft.lineSpacing, unit: "m") }
-                .help("Jarak antar lintasan sejajar drone.")
+
+            HStack(spacing: 10) {
+                ControlField("Tinggi") {
+                    NumberField(
+                        Binding(
+                            get: { model.geometry.heightAGL },
+                            set: { val in
+                                model.geometry.heightAGL = val
+                                planner.draft.defaultAltitude = val
+                                model.geometry.reviewed = false
+                                replanDebounced()
+                            }
+                        ),
+                        unit: "m"
+                    )
+                }
+                .help("Tinggi kamera di atas tanah (AGL), bukan altitude GPS.")
+
+                ControlField("Kecepatan") {
+                    NumberField(
+                        Binding(
+                            get: { model.geometry.speed },
+                            set: { val in
+                                model.geometry.speed = val
+                                planner.draft.speed = val
+                                model.geometry.reviewed = false
+                            }
+                        ),
+                        unit: "m/s"
+                    )
+                }
+            }
+
+            // Overlap Sliders
+            VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Side Overlap").font(KropsTypography.supporting).foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(Int(planner.draft.sideOverlap.rounded()))%")
+                            .font(.callout.weight(.semibold).monospacedDigit())
+                    }
+                    Slider(
+                        value: Binding(
+                            get: { planner.draft.sideOverlap },
+                            set: { val in
+                                guard canEditRoute else { return }
+                                planner.draft.sideOverlap = val.rounded()
+                                model.geometry.reviewed = false
+                                replanDebounced()
+                            }
+                        ),
+                        in: 30...85,
+                        step: 1
+                    )
+                    .help("Persentase tumpang tindih antar jalur foto sejajar (rekomendasi kebun sawit: 70%).")
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Frontal Overlap").font(KropsTypography.supporting).foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(Int(planner.draft.frontalOverlap.rounded()))%")
+                            .font(.callout.weight(.semibold).monospacedDigit())
+                    }
+                    Slider(
+                        value: Binding(
+                            get: { planner.draft.frontalOverlap },
+                            set: { val in
+                                guard canEditRoute else { return }
+                                planner.draft.frontalOverlap = val.rounded()
+                                model.geometry.reviewed = false
+                                replanDebounced()
+                            }
+                        ),
+                        in: 30...85,
+                        step: 1
+                    )
+                    .help("Persentase tumpang tindih antar foto berturutan di sepanjang lintasan (rekomendasi kebun sawit: 75%).")
+                }
+            }
+
+            calculatedMetricsBox
+
             angleSlider
             Toggle("Kembali ke Home setelah selesai (RTL)", isOn: $planner.draft.returnToHome)
                 .font(.callout)
             DisclosureGroup("Lanjutan") {
                 HStack(spacing: 10) {
-                    ControlField("Jarak foto") { NumberField($planner.draft.triggerDistance, unit: "m") }
-                        .help("Jarak pemicu kamera antar foto sepanjang lintasan.")
                     ControlField("Jarak putar") { NumberField($planner.draft.turnaroundDistance, unit: "m") }
                         .help("Jarak manuver putar balik di luar batas kebun.")
                 }
@@ -353,6 +455,36 @@ struct MissionWorkspaceView: View {
         }
         .kropsPrimaryAction(size: .large)
         .disabled(planner.isGeneratingWaypoints || !boundaryReady)
+    }
+
+    private var calculatedMetricsBox: some View {
+        var spec = CameraOpticalSpec.iphone17
+        spec.setResolution(planner.draft.cameraResolution)
+        let estSpacing = planner.draft.calculatedLineSpacing ?? spec.estimatedLineSpacing(altitude: model.geometry.heightAGL, sideOverlapPercent: planner.draft.sideOverlap)
+        let estTrigger = planner.draft.calculatedTriggerDistance ?? spec.estimatedTriggerDistance(altitude: model.geometry.heightAGL, frontalOverlapPercent: planner.draft.frontalOverlap)
+        let estGSD = planner.draft.groundResolutionCmPerPx ?? spec.estimatedGSDcm(altitude: model.geometry.heightAGL)
+
+        return HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Jarak Jalur").font(.caption2).foregroundStyle(.secondary)
+                Text(String(format: "%.1f m", estSpacing)).font(.caption.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Divider()
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Jarak Foto").font(.caption2).foregroundStyle(.secondary)
+                Text(String(format: "%.1f m", estTrigger)).font(.caption.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Divider()
+            VStack(alignment: .leading, spacing: 2) {
+                Text("GSD Tanah").font(.caption2).foregroundStyle(.secondary)
+                Text(String(format: "%.2f cm/px", estGSD)).font(.caption.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(8)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
 
     /// Dragging re-plans the survey live; the whole drag is one undo step.
@@ -390,6 +522,17 @@ struct MissionWorkspaceView: View {
         }
     }
 
+    /// Debounced trigger for smooth live planning when editing sliders or typing fields.
+    private func replanDebounced() {
+        guard canEditRoute, boundaryReady else { return }
+        replanDebounceTask?.cancel()
+        replanDebounceTask = Task {
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            guard !Task.isCancelled else { return }
+            replanLive()
+        }
+    }
+
     /// Runs one survey at a time; changes made while QGC is busy trigger one more run.
     private func replanLive() {
         guard canEditRoute, boundaryReady else { return }
@@ -411,6 +554,9 @@ struct MissionWorkspaceView: View {
             altitude: model.geometry.heightAGL,
             speed: model.geometry.speed,
             gridAngle: planner.draft.gridAngle,
+            sideOverlap: planner.draft.sideOverlap,
+            frontalOverlap: planner.draft.frontalOverlap,
+            cameraResolution: planner.draft.cameraResolution,
             lineSpacing: planner.draft.lineSpacing,
             triggerDistance: planner.draft.triggerDistance,
             turnaroundDistance: planner.draft.turnaroundDistance,
@@ -455,9 +601,10 @@ struct MissionWorkspaceView: View {
                 if let stats = planner.draft.surveyStatistics, stats.totalDistanceMeters > 0 {
                     PlanSummaryRow("Foto", "\(stats.photoCount)")
                     PlanSummaryRow("Jarak terbang", String(format: "%.0f m", stats.totalDistanceMeters))
-                    if stats.flightTimeSeconds > 0 {
-                        PlanSummaryRow("Durasi", Self.formattedDuration(stats.flightTimeSeconds))
-                    }
+                    let flightTime = stats.flightTimeSeconds > 0
+                        ? stats.flightTimeSeconds
+                        : (stats.totalDistanceMeters / max(1.0, planner.draft.speed))
+                    PlanSummaryRow("Durasi", Self.formattedDuration(flightTime))
                     PlanSummaryRow("Lintasan", "\(stats.transectCount)")
                 } else {
                     Text("Belum dihitung").font(.callout).foregroundStyle(.secondary)

@@ -420,8 +420,11 @@ final class FlightPlannerViewModel: ObservableObject {
         altitude: Double,
         speed: Double,
         gridAngle: Double,
-        lineSpacing: Double = 20.0,
-        triggerDistance: Double = 15.0,
+        sideOverlap: Double? = nil,
+        frontalOverlap: Double? = nil,
+        cameraResolution: CameraOpticalSpec.Resolution? = nil,
+        lineSpacing: Double? = nil,
+        triggerDistance: Double? = nil,
         turnaroundDistance: Double = 10.0,
         entryLocation: Int = 0,
         fitsRoute: Bool = true
@@ -431,6 +434,10 @@ final class FlightPlannerViewModel: ObservableObject {
             error = "Batas survei memerlukan minimal 3 titik."
             return
         }
+
+        if let sideOverlap { draft.sideOverlap = sideOverlap }
+        if let frontalOverlap { draft.frontalOverlap = frontalOverlap }
+        if let cameraResolution { draft.cameraResolution = cameraResolution }
 
         isGeneratingWaypoints = true
         error = nil
@@ -456,16 +463,22 @@ final class FlightPlannerViewModel: ObservableObject {
             resolvedEntryLocation = entryLocation
         }
 
+        var opticalSpec = CameraOpticalSpec.iphone17
+        opticalSpec.setResolution(draft.cameraResolution)
+
         let params = SurveyScanParameters(
             altitude: altitude,
             speed: speed,
             gridAngle: gridAngle,
-            spacing: lineSpacing,
-            triggerDistance: triggerDistance,
+            spacing: lineSpacing ?? draft.lineSpacing,
+            triggerDistance: triggerDistance ?? draft.triggerDistance,
             turnaroundDistance: turnaroundDistance,
             hoverAndCapture: false,
-            useCameraOverlap: false,
-            cameraBrand: "Manual",
+            useCameraOverlap: true,
+            frontalOverlap: draft.frontalOverlap / 100.0,
+            sideOverlap: draft.sideOverlap / 100.0,
+            cameraBrand: "Custom Camera",
+            cameraSpec: opticalSpec,
             firmware: draft.firmware ?? .ardupilot,
             vehicleType: 2,
             entryLocation: resolvedEntryLocation
@@ -476,12 +489,31 @@ final class FlightPlannerViewModel: ObservableObject {
                 boundary: activeBoundary,
                 parameters: params
             )
+            var stats = result.statistics
+            if stats.flightTimeSeconds <= 0 && speed > 0 && stats.totalDistanceMeters > 0 {
+                let climbDescent = (altitude / 2.5) * 2.0
+                let turnarounds = Double(stats.transectCount) * (turnaroundDistance * 2.0 / speed)
+                stats.flightTimeSeconds = (stats.totalDistanceMeters / speed) + turnarounds + climbDescent
+            }
             draft.visualTransects = result.visualTransectPoints
-            draft.surveyStatistics = result.statistics
+            draft.surveyStatistics = stats
             draft.rawPlanJSON = result.rawPlanData
             draft.gridAngle = gridAngle
-            draft.lineSpacing = lineSpacing
-            draft.triggerDistance = triggerDistance
+            if result.statistics.calculatedLineSpacing > 0 {
+                draft.lineSpacing = result.statistics.calculatedLineSpacing
+                draft.calculatedLineSpacing = result.statistics.calculatedLineSpacing
+            } else if let lineSpacing {
+                draft.lineSpacing = lineSpacing
+            }
+            if result.statistics.calculatedTriggerDistance > 0 {
+                draft.triggerDistance = result.statistics.calculatedTriggerDistance
+                draft.calculatedTriggerDistance = result.statistics.calculatedTriggerDistance
+            } else if let triggerDistance {
+                draft.triggerDistance = triggerDistance
+            }
+            if result.statistics.groundResolutionCmPerPx > 0 {
+                draft.groundResolutionCmPerPx = result.statistics.groundResolutionCmPerPx
+            }
             draft.turnaroundDistance = turnaroundDistance
             draft.entryLocation = resolvedEntryLocation
             if draft.surveyEntry == nil, let first = result.visualTransectPoints.first {
