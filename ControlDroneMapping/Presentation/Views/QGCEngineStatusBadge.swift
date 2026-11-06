@@ -6,6 +6,9 @@ struct QGCEngineStatusBadge: View {
     var compact = false
 
     private var statusColor: Color {
+        if let drone = engineManager.activeVehicle, drone.communicationLost {
+            return .red
+        }
         switch engineManager.status {
         case .healthy:
             return .green
@@ -18,11 +21,25 @@ struct QGCEngineStatusBadge: View {
         }
     }
 
+    private var badgeText: String {
+        if let drone = engineManager.activeVehicle {
+            if drone.communicationLost {
+                return compact ? "Lost" : "Drone #\(drone.id) · Terputus"
+            }
+            return compact ? "\(drone.flightMode)" : "Drone #\(drone.id) · \(drone.flightMode)"
+        }
+        return compact ? "QGC" : "QGC Engine"
+    }
+
     private var statusTooltip: String {
         switch engineManager.status {
         case .healthy(let port, let pid):
             let pidStr = pid.map { " (PID: \($0))" } ?? ""
-            return "QGC Engine siap di port \(port)\(pidStr)"
+            let droneStr =
+                engineManager.vehicles.isEmpty
+                ? " · Tidak ada drone"
+                : " · \(engineManager.vehicles.count) drone terhubung"
+            return "QGC Engine siap di port \(port)\(pidStr)\(droneStr)"
         case .starting:
             return "Memulai QGC Engine..."
         case .skipped(let reason):
@@ -42,8 +59,13 @@ struct QGCEngineStatusBadge: View {
                 Circle()
                     .fill(statusColor)
                     .frame(width: 8, height: 8)
-                Text(compact ? "QGC" : "QGC Engine")
+                Text(badgeText)
                     .font(.caption.weight(.medium))
+                if let drone = engineManager.activeVehicle {
+                    Text(String(format: "%.0f%%", drone.battery.percent))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -100,6 +122,53 @@ struct QGCEngineStatusBadge: View {
                     }
                 }
                 .font(.caption)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Drone Terhubung:")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                if engineManager.vehicles.isEmpty {
+                    Text("Belum ada drone terhubung (menunggu telemetry di UDP 14550).")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(engineManager.vehicles) { drone in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Circle()
+                                    .fill(drone.communicationLost ? Color.red : Color.green)
+                                    .frame(width: 6, height: 6)
+                                Text("Drone #\(drone.id) (\(drone.firmwareType))")
+                                    .font(.caption.weight(.medium))
+                                Spacer()
+                                Text(drone.communicationLost ? "Terputus" : drone.flightMode)
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(drone.communicationLost ? Color.red : KropsStyle.accent)
+                            }
+                            HStack {
+                                Label(
+                                    "\(drone.gps.satellites) Sats",
+                                    systemImage: "antenna.radiowaves.left.and.right")
+                                Spacer()
+                                Label(
+                                    String(
+                                        format: "%.1fV (%.0f%%)", drone.battery.voltage, drone.battery.percent
+                                    ), systemImage: "battery.100")
+                            }
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        }
+                        .padding(6)
+                        .background(
+                            drone.communicationLost ? Color.red.opacity(0.08) : Color.secondary.opacity(0.08),
+                            in: RoundedRectangle(cornerRadius: 6)
+                        )
+                    }
+                }
             }
 
             if case .skipped(let reason) = engineManager.status {

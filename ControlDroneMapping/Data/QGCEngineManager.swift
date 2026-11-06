@@ -39,8 +39,32 @@ public final class QGCEngineManager: ObservableObject {
     private static var atexitRegistered = false
 
     @Published public private(set) var status: QGCEngineStatus = .stopped
+    @Published public private(set) var vehicles: [ConnectedDrone] = []
+    @Published public var selectedVehicleID: Int? = nil
+
     public let port: Int = 18080
     public let healthURL: URL = BundledQGCEngine.healthURL
+    public let vehiclesURL: URL = BundledQGCEngine.baseURL.appendingPathComponent("api/v1/vehicles")
+    public let vehicleCommandURL: URL = BundledQGCEngine.baseURL.appendingPathComponent(
+        "api/v1/vehicles/command")
+
+    private let session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        config.urlCache = nil
+        return URLSession(configuration: config)
+    }()
+
+    public var activeVehicle: ConnectedDrone? {
+        if let selectedVehicleID, let match = vehicles.first(where: { $0.id == selectedVehicleID }) {
+            return match
+        }
+        return vehicles.first(where: { $0.active }) ?? vehicles.first
+    }
+
+    public var reachableVehicles: [ConnectedDrone] {
+        vehicles.filter(\.isReachable)
+    }
 
     public var pid: pid_t? {
         if case .healthy(_, let p) = status { return p }
@@ -245,6 +269,7 @@ public final class QGCEngineManager: ObservableObject {
             kill(fallbackPID, SIGKILL)
         }
         self.status = .stopped
+        self.vehicles = []
         self.isTerminating = false
     }
 
@@ -253,12 +278,89 @@ public final class QGCEngineManager: ObservableObject {
         startEngine()
     }
 
+    public func fetchVehicles() async {
+        guard case .healthy = status else {
+            await MainActor.run {
+                if !self.vehicles.isEmpty {
+                    self.vehicles = []
+                }
+            }
+            return
+        }
+
+        var components = URLComponents(url: vehiclesURL, resolvingAgainstBaseURL: false)
+        components?.queryItems = [
+            URLQueryItem(name: "t", value: String(Date().timeIntervalSince1970))
+        ]
+        guard let url = components?.url else { return }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 2.0
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
+        request.setValue("no-cache, no-store, must-revalidate", forHTTPHeaderField: "Cache-Control")
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                return
+            }
+            let decoded = try JSONDecoder().decode(VehiclesResponse.self, from: data)
+            await MainActor.run {
+                self.vehicles = decoded.vehicles
+            }
+        } catch {
+            print("[QGCEngineManager] fetchVehicles decode error: \(error)")
+        }
+    }
+
+    public func sendCommand(
+        _ command: DroneFlightCommand,
+        param: Any? = nil,
+        vehicleID: Int? = nil
+    ) async throws {
+        guard case .healthy = status else {
+            throw MappingError.invalid("QGC Engine belum aktif.")
+        }
+
+        var payload: [String: Any] = [
+            "command": command.rawValue
+        ]
+        if let vehicleID {
+            payload["vehicleId"] = vehicleID
+        } else if let active = activeVehicle {
+            payload["vehicleId"] = active.id
+        }
+        if let param {
+            payload["param"] = param
+        }
+
+        var request = URLRequest(url: vehicleCommandURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 5.0
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw MappingError.invalid("Tidak ada respons dari QGC Engine.")
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let errorMsg =
+                (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["message"] as? String
+                ?? "Gagal menjalankan perintah drone (HTTP \(httpResponse.statusCode))."
+            throw MappingError.invalid(errorMsg)
+        }
+
+        await fetchVehicles()
+    }
+
     private func checkHealthEndpoint() async -> Bool {
         var request = URLRequest(url: healthURL)
         request.timeoutInterval = 2.0
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await session.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
                 return false
             }
@@ -277,23 +379,29 @@ public final class QGCEngineManager: ObservableObject {
         pollTask?.cancel()
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard let self = self, !Task.isCancelled else { break }
                 let isUp = await self.checkHealthEndpoint()
                 if isUp {
-                    if case .healthy = self.status {
-                        // Keep current healthy status
-                    } else {
-                        self.status = .healthy(port: self.port, pid: self.process?.processIdentifier)
-                    }
-                } else {
-                    if case .healthy = self.status {
-                        if let proc = self.process, !proc.isRunning {
-                            self.status = .failed(
-                                reason: "Proses QGC terhenti (exit code \(proc.terminationStatus)).")
+                    await MainActor.run {
+                        if case .healthy = self.status {
+                            // Keep current healthy status
                         } else {
-                            self.status = .failed(reason: "Endpoint 127.0.0.1:18080/healthz tidak merespons.")
+                            self.status = .healthy(port: self.port, pid: self.process?.processIdentifier)
                         }
+                    }
+                    await self.fetchVehicles()
+                } else {
+                    await MainActor.run {
+                        if case .healthy = self.status {
+                            if let proc = self.process, !proc.isRunning {
+                                self.status = .failed(
+                                    reason: "Proses QGC terhenti (exit code \(proc.terminationStatus)).")
+                            } else {
+                                self.status = .failed(reason: "Endpoint 127.0.0.1:18080/healthz tidak merespons.")
+                            }
+                        }
+                        self.vehicles = []
                     }
                 }
             }

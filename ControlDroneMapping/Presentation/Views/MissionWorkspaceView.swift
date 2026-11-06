@@ -9,6 +9,7 @@ struct MissionWorkspaceView: View {
     @ObservedObject var farms: FarmAreaViewModel
     @ObservedObject var location: OperatorLocationViewModel
     @ObservedObject var planner: FlightPlannerViewModel
+    var onStartFlight: (() -> Void)? = nil
     @State private var focusOperator = false
     @State private var requestedLocation = false
     @State private var inspectorVisible = true
@@ -821,6 +822,21 @@ struct MissionWorkspaceView: View {
                         }
                         .toggleStyle(.checkbox)
                         .disabled(model.editingLocked || !canEditRoute || !planner.isSOPChecklistComplete)
+
+                        if model.geometry.reviewed && planner.isSOPChecklistComplete {
+                            Button {
+                                onStartFlight?()
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "airplane.departure")
+                                    Text("Lanjut ke Penerbangan")
+                                        .fontWeight(.semibold)
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .kropsPrimaryAction(size: .large)
+                            .padding(.top, 4)
+                        }
                     }
                 }
                 .padding(16)
