@@ -7,7 +7,7 @@ enum ReviewTab: String, CaseIterable, Identifiable {
     case overview = "Ringkasan"
     case mission = "1. Rencana"
     case camera = "2. Kamera & uji"
-    case capture = "3. Capture"
+    case capture = "3. Penerbangan"
     case imagery = "4. Foto"
     case results = "5. Hasil"
     var id: String { rawValue }
@@ -146,7 +146,7 @@ struct ReviewWorkspaceView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             if model.step == .mission && model.hasMissionDetail && mission?.phase != .completed
-                && [.camera, .capture].contains(tab)
+                && tab == .camera
             {
                 MissionFooterView(model: model, link: link, continueTitle: continueTitle) {
                     tab = nextTab
@@ -199,7 +199,10 @@ struct ReviewWorkspaceView: View {
             if mission != nil && model.hasMissionDetail && model.step == .mission {
                 MissionWorkspaceView(
                     model: model, link: link, farms: farms, location: location,
-                    planner: planner
+                    planner: planner,
+                    onStartFlight: {
+                        tab = .capture
+                    }
                 )
                 .id(model.selectedMissionID)
             } else {
@@ -214,56 +217,22 @@ struct ReviewWorkspaceView: View {
                 missionList
             }
         case .capture:
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    Text("Capture foto misi").font(.title2.bold())
-                    Text(
-                        "Tombol Mulai capture ada di kanan bawah. Penerbangan dijalankan melalui QGroundControl."
-                    )
-                    .foregroundStyle(.secondary)
-                    if model.selectedMissionIsCurrent && model.isActiveMission {
-                        CaptureProgressView(model: model, link: link)
-                    } else if let mission, [.completed, .failed].contains(mission.phase) {
-                        Text(
-                            mission.phase == .completed
-                                ? "Capture selesai. Lanjutkan ke Foto untuk transfer dan pemeriksaan."
-                                : "Capture gagal. Periksa foto yang tersimpan atau buat percobaan baru.")
-                        HStack(spacing: 12) {
-                            Button("Buka foto") { tab = .imagery }
-                            Button("Ulangi capture", systemImage: "arrow.clockwise") {
-                                if model.repeatCapture(copyRoutes: { sourceID, destinationID in
-                                    try planner.copyMissionRoutes(from: sourceID, to: destinationID)
-                                }) {
-                                    tab = .mission
-                                }
-                            }
-                            .kropsPrimaryAction()
-                            .disabled(!model.canRepeatCapture)
-                        }
-                        Text(
-                            "Ulangi capture membuat misi baru dengan salinan area, rute, dan pengaturan. Foto sebelumnya tetap tersimpan. Periksa rencana, lalu siapkan kamera dan ambil foto uji lagi."
-                        )
-                        .font(.callout).foregroundStyle(.secondary)
-                    } else {
-                        ControlPanel("Kesiapan capture", state: model.iphoneReadyForCapture ? "Siap" : nil) {
-                            if model.iphoneReadyForCapture {
-                                Label("Semua pemeriksaan terpenuhi", systemImage: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
-                            } else {
-                                ForEach(model.readiness().blockers, id: \.self) { blocker in
-                                    Label(blocker, systemImage: "circle").foregroundStyle(.secondary)
-                                }
-                                Button(continueTitle) { tab = nextTab }.kropsPrimaryAction()
-                            }
-                        }
-                    }
-                }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
-            }
+            FlightWorkspaceView(
+                model: model,
+                link: link,
+                planner: planner,
+                mission: mission,
+                activeTab: $tab
+            )
         case .imagery:
             imagery
         case .results:
             results
         }
+    }
+
+    private var isFlightUnlocked: Bool {
+        planner.isSOPChecklistComplete && model.geometry.reviewed
     }
 
     private var landingTab: ReviewTab {
@@ -280,7 +249,7 @@ struct ReviewWorkspaceView: View {
     private var continueTitle: String {
         switch nextTab {
         case .mission: return "Periksa rencana"
-        case .capture: return "Lanjut ke capture"
+        case .capture: return "Lanjut ke penerbangan"
         default: return "Lanjut ke kamera & uji"
         }
     }
