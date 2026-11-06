@@ -96,14 +96,19 @@ private struct SurveyActionSection: View {
                             Circle()
                                 .fill(Color.green)
                                 .frame(width: 8, height: 8)
-                            Text(planner.mode == .home ? "Pilih Home..." : (planner.draft.home != nil ? "Ubah Home" : "Pilih Home"))
-                                .lineLimit(1)
+                            Text(
+                                planner.mode == .home
+                                    ? "Pilih Home..."
+                                    : (planner.draft.home != nil ? "Ubah Home" : "Pilih Home")
+                            )
+                            .lineLimit(1)
                         }
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
                     .tint(planner.mode == .home ? .green : .secondary)
-                    .help("Klik tombol ini, lalu klik di mana saja pada peta untuk menentukan posisi Home (H).")
+                    .help(
+                        "Klik tombol ini, lalu klik di mana saja pada peta untuk menentukan posisi Home (H).")
 
                     Button {
                         planner.mode = (planner.mode == .entry ? .inspect : .entry)
@@ -112,20 +117,26 @@ private struct SurveyActionSection: View {
                             Circle()
                                 .fill(Color.cyan)
                                 .frame(width: 8, height: 8)
-                            Text(planner.mode == .entry ? "Pilih Entry..." : (planner.draft.surveyEntry != nil ? "Ubah Entry" : "Pilih Entry"))
-                                .lineLimit(1)
+                            Text(
+                                planner.mode == .entry
+                                    ? "Pilih Entry..."
+                                    : (planner.draft.surveyEntry != nil ? "Ubah Entry" : "Pilih Entry")
+                            )
+                            .lineLimit(1)
                         }
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
                     .tint(planner.mode == .entry ? .cyan : .secondary)
-                    .help("Klik tombol ini, lalu klik pada garis batas kebun untuk menentukan titik masuk (E).")
+                    .help(
+                        "Klik tombol ini, lalu klik pada garis batas kebun untuk menentukan titik masuk (E).")
                 }
 
                 if planner.mode == .home {
                     Text("Klik pada peta untuk memilih posisi Home.").font(.caption2).foregroundStyle(.green)
                 } else if planner.mode == .entry {
-                    Text("Klik pada garis batas kebun untuk memilih posisi Entry.").font(.caption2).foregroundStyle(.cyan)
+                    Text("Klik pada garis batas kebun untuk memilih posisi Entry.").font(.caption2)
+                        .foregroundStyle(.cyan)
                 }
             }
 
@@ -167,7 +178,9 @@ private struct SurveyActionSection: View {
                         ProgressView().controlSize(.small)
                         Text("Menghitung di QGC...")
                     } else {
-                        Label("Rencanakan Jalur Survei", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                        Label(
+                            "Rencanakan Jalur Survei",
+                            systemImage: "point.topleft.down.to.point.bottomright.curvepath")
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -238,9 +251,16 @@ private struct SurveyActionSection: View {
     private var calculatedTelemetryPreview: some View {
         var spec = CameraOpticalSpec.iphone17
         spec.setResolution(planner.draft.cameraResolution)
-        let estSpacing = planner.draft.calculatedLineSpacing ?? spec.estimatedLineSpacing(altitude: model.geometry.heightAGL, sideOverlapPercent: planner.draft.sideOverlap)
-        let estTrigger = planner.draft.calculatedTriggerDistance ?? spec.estimatedTriggerDistance(altitude: model.geometry.heightAGL, frontalOverlapPercent: planner.draft.frontalOverlap)
-        let estGSD = planner.draft.groundResolutionCmPerPx ?? spec.estimatedGSDcm(altitude: model.geometry.heightAGL)
+        let estSpacing =
+            planner.draft.calculatedLineSpacing
+            ?? spec.estimatedLineSpacing(
+                altitude: model.geometry.heightAGL, sideOverlapPercent: planner.draft.sideOverlap)
+        let estTrigger =
+            planner.draft.calculatedTriggerDistance
+            ?? spec.estimatedTriggerDistance(
+                altitude: model.geometry.heightAGL, frontalOverlapPercent: planner.draft.frontalOverlap)
+        let estGSD =
+            planner.draft.groundResolutionCmPerPx ?? spec.estimatedGSDcm(altitude: model.geometry.heightAGL)
 
         return HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {

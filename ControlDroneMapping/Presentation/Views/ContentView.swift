@@ -102,7 +102,9 @@ struct ContentView: View {
                                         exportMission = $0
                                     }
                                 case .mission:
-                                    MissionListView(model: model, planner: planner, processing: orthomosaic, search: search)
+                                    MissionListView(
+                                        model: model, planner: planner, processing: orthomosaic,
+                                        search: search)
                                 }
                             }.padding(22).frame(maxWidth: 1540).frame(maxWidth: .infinity)
                         }
@@ -232,7 +234,8 @@ struct ContentView: View {
                 if !inMissionDetail {
                     Text(
                         Date().formatted(
-                            .dateTime.weekday(.wide).day().month(.wide).year().locale(Locale(identifier: "id_ID"))
+                            .dateTime.weekday(.wide).day().month(.wide).year().locale(
+                                Locale(identifier: "id_ID"))
                         )
                     ).font(.caption).foregroundStyle(.secondary)
                 }
@@ -319,10 +322,12 @@ struct ContentView: View {
     }
     private var createForm: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Mulai dengan nama dan rencana area. Lanjutkan ke Kamera & uji, Capture, lalu Foto dan Hasil dalam misi yang sama. Misi tersimpan otomatis di Mac.")
-                .font(
-                    .caption
-                ).foregroundStyle(.secondary)
+            Text(
+                "Mulai dengan nama dan rencana area. Lanjutkan ke Kamera & uji, Capture, lalu Foto dan Hasil dalam misi yang sama. Misi tersimpan otomatis di Mac."
+            )
+            .font(
+                .caption
+            ).foregroundStyle(.secondary)
             TextField("Nama misi", text: $missionName).textFieldStyle(.roundedBorder)
             HStack {
                 Spacer()
@@ -343,9 +348,10 @@ struct ContentView: View {
     let dependencies = ControlDependencies(demo: true)
     ContentView(
         model: dependencies.viewModel, link: dependencies.link, farms: dependencies.farms,
-        location: dependencies.location, planner: dependencies.planner)
-        .frame(width: 1440, height: 900)
-        .preferredColorScheme(.light)
+        location: dependencies.location, planner: dependencies.planner
+    )
+    .frame(width: 1440, height: 900)
+    .preferredColorScheme(.light)
 }
 
 private struct SidebarIconButton: View {
@@ -363,7 +369,8 @@ private struct SidebarIconButton: View {
                 .frame(width: 56, height: 56)
                 .background(
                     Color.primary.opacity(isSelected ? 0.08 : isHovered ? 0.04 : 0),
-                    in: RoundedRectangle(cornerRadius: 16))
+                    in: RoundedRectangle(cornerRadius: 16)
+                )
                 .contentShape(RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
@@ -379,7 +386,8 @@ private struct SidebarIconButton: View {
     let _ = dependencies.viewModel.showMissionList()
     ContentView(
         model: dependencies.viewModel, link: dependencies.link, farms: dependencies.farms,
-        location: dependencies.location, planner: dependencies.planner)
-        .frame(width: 1280, height: 800)
-        .preferredColorScheme(.light)
+        location: dependencies.location, planner: dependencies.planner
+    )
+    .frame(width: 1280, height: 800)
+    .preferredColorScheme(.light)
 }

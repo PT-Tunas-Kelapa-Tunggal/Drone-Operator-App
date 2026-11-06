@@ -38,8 +38,9 @@ struct BundledOrthomosaicEngine {
             signingInformation()?[kSecCodeInfoTeamIdentifier as String] as? String == metadata.teamIdentifier
         else { throw MappingError.invalid("Identitas paket engine tidak sesuai dengan aplikasi.") }
         let package = Self(archive: directory, manifest: manifest)
-        guard let helper = Bundle.main.executableURL?.deletingLastPathComponent()
-            .appendingPathComponent("OrthomosaicPython")
+        guard
+            let helper = Bundle.main.executableURL?.deletingLastPathComponent()
+                .appendingPathComponent("OrthomosaicPython")
         else { throw MappingError.invalid("Helper engine belum disertakan dalam aplikasi.") }
         try package.validatePython(helper, metadata: metadata)
     }
@@ -54,10 +55,13 @@ struct BundledOrthomosaicEngine {
         var code: SecCode?
         guard SecCodeCopySelf([], &code) == errSecSuccess, let code else { return nil }
         var staticCode: SecStaticCode?
-        guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode else { return nil }
+        guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode else {
+            return nil
+        }
         var information: CFDictionary?
-        guard SecCodeCopySigningInformation(
-            staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &information) == errSecSuccess
+        guard
+            SecCodeCopySigningInformation(
+                staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &information) == errSecSuccess
         else { return nil }
         return information as? [String: Any]
     }
@@ -69,15 +73,18 @@ struct BundledOrthomosaicEngine {
         let metadata = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: manifest))
         let expectedHelperID = AppConfiguration.current.orthomosaicHelperIdentifier
         guard metadata.formatVersion == 1,
-            (metadata.folder == "OpenSfM-engine" || metadata.folder == "OrthomosaicEngine"),
+            metadata.folder == "OpenSfM-engine" || metadata.folder == "OrthomosaicEngine",
             metadata.architecture == "arm64",
             metadata.teamIdentifier.range(of: "^[A-Z0-9]{10}$", options: .regularExpression) != nil,
             metadata.pythonIdentifier == expectedHelperID,
             try DatasetStore.hashFile(archive) == metadata.sha256
         else { throw MappingError.invalid("Paket engine tidak lolos pemeriksaan. Build ulang paket engine.") }
-        guard Self.signingInformation()?[kSecCodeInfoTeamIdentifier as String] as? String
-            == metadata.teamIdentifier
-        else { throw MappingError.invalid("Paket engine harus ditandatangani oleh pembuat aplikasi yang sama.") }
+        guard
+            Self.signingInformation()?[kSecCodeInfoTeamIdentifier as String] as? String
+                == metadata.teamIdentifier
+        else {
+            throw MappingError.invalid("Paket engine harus ditandatangani oleh pembuat aplikasi yang sama.")
+        }
         try Task.checkCancellation()
         // The current directory also contains the installation lock and diagnostic log.
         // Publish only the validated runtime's two subdirectories, keeping those files intact.
@@ -114,7 +121,8 @@ struct BundledOrthomosaicEngine {
         guard SecStaticCodeCreateWithPath(resolved as CFURL, [], &code) == errSecSuccess, let code else {
             throw MappingError.invalid("Tanda tangan Python engine tidak dapat dibaca.")
         }
-        let expression = "anchor apple generic and certificate leaf[subject.OU] = \""
+        let expression =
+            "anchor apple generic and certificate leaf[subject.OU] = \""
             + metadata.teamIdentifier + "\" and identifier \"" + metadata.pythonIdentifier + "\""
         var requirement: SecRequirement?
         guard SecRequirementCreateWithString(expression as CFString, [], &requirement) == errSecSuccess,
@@ -122,8 +130,9 @@ struct BundledOrthomosaicEngine {
                 == errSecSuccess
         else { throw MappingError.invalid("Tanda tangan Python engine tidak valid.") }
         var information: CFDictionary?
-        guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &information)
-            == errSecSuccess,
+        guard
+            SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &information)
+                == errSecSuccess,
             let info = information as? [String: Any],
             let entitlements = info[kSecCodeInfoEntitlementsDict as String] as? [String: Any],
             entitlements["com.apple.security.app-sandbox"] as? Bool == true,

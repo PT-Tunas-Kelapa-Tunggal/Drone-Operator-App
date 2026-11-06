@@ -21,13 +21,16 @@ struct PreflightChecklistView: View {
                 Spacer()
                 Text("\(completedCount)/\(PreflightChecklistItem.allCases.count)")
                     .font(.caption.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(completedCount == PreflightChecklistItem.allCases.count ? .green : .secondary)
+                    .foregroundStyle(
+                        completedCount == PreflightChecklistItem.allCases.count ? .green : .secondary)
             }
 
-            Text("Periksa seluruh poin keselamatan berikut. Mengubah parameter terbang akan me-reset seluruh daftar periksa.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(
+                "Periksa seluruh poin keselamatan berikut. Mengubah parameter terbang akan me-reset seluruh daftar periksa."
+            )
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
 
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(PreflightChecklistItem.allCases) { item in
@@ -43,18 +46,20 @@ struct PreflightChecklistView: View {
         let isChecked = planner.checkedSOPItems.contains(item) && status.met
 
         VStack(alignment: .leading, spacing: 2) {
-            Toggle(isOn: Binding(
-                get: { isChecked },
-                set: { newValue in
-                    guard canEdit, status.met else { return }
-                    if newValue {
-                        planner.checkedSOPItems.insert(item)
-                    } else {
-                        planner.checkedSOPItems.remove(item)
+            Toggle(
+                isOn: Binding(
+                    get: { isChecked },
+                    set: { newValue in
+                        guard canEdit, status.met else { return }
+                        if newValue {
+                            planner.checkedSOPItems.insert(item)
+                        } else {
+                            planner.checkedSOPItems.remove(item)
+                        }
+                        onChecklistChanged()
                     }
-                    onChecklistChanged()
-                }
-            )) {
+                )
+            ) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.title)
                         .font(.caption.weight(.medium))

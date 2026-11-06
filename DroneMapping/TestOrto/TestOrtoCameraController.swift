@@ -29,7 +29,8 @@ final class TestOrtoCameraController: ObservableObject {
     @Published private(set) var savedMissions: [MissionRecord] = []
     @Published private(set) var currentLocation: GeoSample?
     @Published private(set) var currentAttitude: AttitudeSample?
-    @Published private(set) var statusMessage = "Siapkan posisi jalan kaki, lalu tekan Take Gray Card atau TAKE."
+    @Published private(set) var statusMessage =
+        "Siapkan posisi jalan kaki, lalu tekan Take Gray Card atau TAKE."
     @Published private(set) var lastMappingThumbnail: UIImage?
     @Published private(set) var grayCardThumbnail: UIImage?
     @Published private(set) var lastAssessment: PreviewAssessment?
@@ -144,7 +145,8 @@ final class TestOrtoCameraController: ObservableObject {
         stopAutoCapture()
         if var previous = activeMission, previous.phase != .completed {
             previous.phase = .completed
-            previous.note = previous.saved > 0
+            previous.note =
+                previous.saved > 0
                 ? "Misi TestOrto selesai (\(previous.saved) foto)"
                 : "Ditutup saat membuat misi TestOrto baru"
             try? store.write(previous)
@@ -233,7 +235,8 @@ final class TestOrtoCameraController: ObservableObject {
                         updated.shutterSeconds = chosen.shutter
                         updated.lensPosition = min(1.0, max(0.0, device.lensPosition))
                         try self.lockHardware(device: device, settings: updated)
-                        let focusCal = FocusCalibration(measuredAt: Date(), lensPosition: updated.lensPosition)
+                        let focusCal = FocusCalibration(
+                            measuredAt: Date(), lensPosition: updated.lensPosition)
                         let expCal = ExposureCalibration(
                             measuredAt: Date(), meteredISO: meteredISO,
                             meteredShutter: meteredShutter, selectedISO: updated.iso,
@@ -345,7 +348,8 @@ final class TestOrtoCameraController: ObservableObject {
                             if let chosen = try? GuidedAcquisition.exposure(
                                 meteredISO: meteredISO,
                                 meteredShutter: meteredShutter,
-                                preferredShutter: max(caps.minShutter, min(caps.maxShutter, preferredShutter)),
+                                preferredShutter: max(
+                                    caps.minShutter, min(caps.maxShutter, preferredShutter)),
                                 minISO: caps.minISO,
                                 maxISO: caps.maxISO,
                                 minShutter: caps.minShutter
@@ -391,7 +395,8 @@ final class TestOrtoCameraController: ObservableObject {
                                         "Gray Card 18% tersimpan & warna dikunci (\(Int(updated.temperature))K)."
                                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                                 case .failure(let error):
-                                    self.statusMessage = "Gagal menyimpan Gray Card: \(error.localizedDescription)"
+                                    self.statusMessage =
+                                        "Gagal menyimpan Gray Card: \(error.localizedDescription)"
                                 }
                             }
                         }
@@ -455,9 +460,10 @@ final class TestOrtoCameraController: ObservableObject {
                                 self.lastAssessment = latestThumb.assessment
                                 self.lastSharpness = latestThumb.sharpness
                             }
-                            let stepHint = self.overlayMetrics.map {
-                                String(format: "Maju %.2f m untuk foto berikutnya.", $0.forwardStepMeters)
-                            } ?? ""
+                            let stepHint =
+                                self.overlayMetrics.map {
+                                    String(format: "Maju %.2f m untuk foto berikutnya.", $0.forwardStepMeters)
+                                } ?? ""
                             self.statusMessage = "Foto #\(nextSequence) tersimpan. \(stepHint)"
                             UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
                         }
@@ -571,7 +577,8 @@ final class TestOrtoCameraController: ObservableObject {
         plan.camera = cameraSettings
         plan.survey = geometry
 
-        let record = MissionRecord(plan: plan, phase: .ready, saved: 0, missed: 0, note: "Mode eksperimen TestOrto")
+        let record = MissionRecord(
+            plan: plan, phase: .ready, saved: 0, missed: 0, note: "Mode eksperimen TestOrto")
         do {
             try store.write(record)
             activeMission = record
@@ -617,7 +624,8 @@ final class TestOrtoCameraController: ObservableObject {
             return
         }
 
-        guard let backCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
+        guard let backCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+        else {
             throw MappingError.invalid("Kamera belakang tidak ditemukan")
         }
         let input = try AVCaptureDeviceInput(device: backCamera)

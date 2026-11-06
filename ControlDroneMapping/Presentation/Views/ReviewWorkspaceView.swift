@@ -145,7 +145,9 @@ struct ReviewWorkspaceView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            if model.step == .mission && model.hasMissionDetail && mission?.phase != .completed && [.camera, .capture].contains(tab) {
+            if model.step == .mission && model.hasMissionDetail && mission?.phase != .completed
+                && [.camera, .capture].contains(tab)
+            {
                 MissionFooterView(model: model, link: link, continueTitle: continueTitle) {
                     tab = nextTab
                 }
@@ -161,8 +163,7 @@ struct ReviewWorkspaceView: View {
             resolveImportedProject()
         }
         .onChange(of: model.step) { _, step in
-            if step == .datasets { tab = .imagery }
-            else if step == .mission { tab = landingTab }
+            if step == .datasets { tab = .imagery } else if step == .mission { tab = landingTab }
         }
         .onChange(of: model.selectedMissionID) { _, _ in
             tab = landingTab
@@ -172,7 +173,9 @@ struct ReviewWorkspaceView: View {
             if visible { tab = landingTab }
         }
         .onChange(of: model.telemetry.phase) { _, phase in
-            guard model.hasMissionDetail, model.step == .mission, model.selectedMissionIsCurrent else { return }
+            guard model.hasMissionDetail, model.step == .mission, model.selectedMissionIsCurrent else {
+                return
+            }
             if [.capturing, .countdown, .paused].contains(phase) { tab = .capture }
             if phase == .completed { tab = .imagery }
         }
@@ -181,7 +184,8 @@ struct ReviewWorkspaceView: View {
             guard let id, record?.id == id else { return }
             model.refreshLocalDatasets()
             guard let transferred = model.records.first(where: { $0.id == id }),
-                !processing.busy, processing.storageError == nil else { return }
+                !processing.busy, processing.storageError == nil
+            else { return }
             processing.prepareMission(transferred, projectID: mission?.id ?? id, openEditor: false)
         }
     }
@@ -195,8 +199,9 @@ struct ReviewWorkspaceView: View {
             if mission != nil && model.hasMissionDetail && model.step == .mission {
                 MissionWorkspaceView(
                     model: model, link: link, farms: farms, location: location,
-                    planner: planner)
-                    .id(model.selectedMissionID)
+                    planner: planner
+                )
+                .id(model.selectedMissionID)
             } else {
                 missionList
             }
@@ -205,19 +210,24 @@ struct ReviewWorkspaceView: View {
                 ScrollView {
                     DevicesView(model: model, link: link, missionContext: true).padding(20)
                 }
-            } else { missionList }
+            } else {
+                missionList
+            }
         case .capture:
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     Text("Capture foto misi").font(.title2.bold())
-                    Text("Tombol Mulai capture ada di kanan bawah. Penerbangan dijalankan melalui QGroundControl.")
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "Tombol Mulai capture ada di kanan bawah. Penerbangan dijalankan melalui QGroundControl."
+                    )
+                    .foregroundStyle(.secondary)
                     if model.selectedMissionIsCurrent && model.isActiveMission {
                         CaptureProgressView(model: model, link: link)
                     } else if let mission, [.completed, .failed].contains(mission.phase) {
-                        Text(mission.phase == .completed
-                             ? "Capture selesai. Lanjutkan ke Foto untuk transfer dan pemeriksaan."
-                             : "Capture gagal. Periksa foto yang tersimpan atau buat percobaan baru.")
+                        Text(
+                            mission.phase == .completed
+                                ? "Capture selesai. Lanjutkan ke Foto untuk transfer dan pemeriksaan."
+                                : "Capture gagal. Periksa foto yang tersimpan atau buat percobaan baru.")
                         HStack(spacing: 12) {
                             Button("Buka foto") { tab = .imagery }
                             Button("Ulangi capture", systemImage: "arrow.clockwise") {
@@ -230,8 +240,10 @@ struct ReviewWorkspaceView: View {
                             .kropsPrimaryAction()
                             .disabled(!model.canRepeatCapture)
                         }
-                        Text("Ulangi capture membuat misi baru dengan salinan area, rute, dan pengaturan. Foto sebelumnya tetap tersimpan. Periksa rencana, lalu siapkan kamera dan ambil foto uji lagi.")
-                            .font(.callout).foregroundStyle(.secondary)
+                        Text(
+                            "Ulangi capture membuat misi baru dengan salinan area, rute, dan pengaturan. Foto sebelumnya tetap tersimpan. Periksa rencana, lalu siapkan kamera dan ambil foto uji lagi."
+                        )
+                        .font(.callout).foregroundStyle(.secondary)
                     } else {
                         ControlPanel("Kesiapan capture", state: model.iphoneReadyForCapture ? "Siap" : nil) {
                             if model.iphoneReadyForCapture {
@@ -317,8 +329,11 @@ struct ReviewWorkspaceView: View {
                             .fontWeight(.semibold)
                             .foregroundStyle(mission.area == nil ? Color.orange : KropsStyle.accent)
                         Text("·").foregroundStyle(.tertiary)
-                        Text(model.missionStorageError == nil ? mission.phase.dashboardTitle : "Perubahan belum tersimpan")
-                            .foregroundStyle(.secondary)
+                        Text(
+                            model.missionStorageError == nil
+                                ? mission.phase.dashboardTitle : "Perubahan belum tersimpan"
+                        )
+                        .foregroundStyle(.secondary)
                     }
                     .font(.callout).lineLimit(1)
                 }
@@ -348,7 +363,9 @@ struct ReviewWorkspaceView: View {
     private var missionStatus: some View {
         HStack(spacing: 10) {
             QGCEngineStatusBadge(compact: true)
-            Button { tab = .camera } label: {
+            Button {
+                tab = .camera
+            } label: {
                 Image(systemName: model.iphoneReadyForCapture ? "iphone.gen3" : "iphone.gen3.slash")
                     .foregroundStyle(model.iphoneReadyForCapture ? Color.green : Color.orange)
                     .frame(width: 26, height: 26)
@@ -374,16 +391,17 @@ struct ReviewWorkspaceView: View {
         HStack(spacing: 0) {
             MissionAreaMap(
                 points: mission.area?.points ?? [], drawing: false, focus: mapFocus,
-                location: location.sample, addPoint: { _ in }, movePoint: { _, _ in })
-                .overlay(alignment: .topLeading) {
-                    if mission.area == nil {
-                        Label("Batas area belum ditentukan", systemImage: "map")
-                            .font(.callout).padding(12)
-                            .background(KropsStyle.surface, in: RoundedRectangle(cornerRadius: 12))
-                            .padding(16)
-                    }
+                location: location.sample, addPoint: { _ in }, movePoint: { _, _ in }
+            )
+            .overlay(alignment: .topLeading) {
+                if mission.area == nil {
+                    Label("Batas area belum ditentukan", systemImage: "map")
+                        .font(.callout).padding(12)
+                        .background(KropsStyle.surface, in: RoundedRectangle(cornerRadius: 12))
+                        .padding(16)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
@@ -393,14 +411,15 @@ struct ReviewWorkspaceView: View {
                             .font(.title3).foregroundStyle(.secondary)
                     }
                     detail("Status misi", value: mission.phase.dashboardTitle)
-                    detail("Area pemetaan", value: mission.area.map { "\($0.points.count) titik batas" } ?? "—")
+                    detail(
+                        "Area pemetaan", value: mission.area.map { "\($0.points.count) titik batas" } ?? "—")
                     detail("Foto tersimpan", value: "\(mission.saved) foto")
                     detail("Dibuat", value: mission.createdAt.formatted(date: .long, time: .omitted))
                     Button("Buka perencanaan misi", systemImage: "arrow.right") {
                         if model.step != .mission { model.openMission(mission.id) }
                         tab = .mission
                     }
-                        .kropsPrimaryAction()
+                    .kropsPrimaryAction()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading).padding(32)
             }
@@ -440,12 +459,17 @@ struct ReviewWorkspaceView: View {
                             .disabled(model.pending != nil || link.receiving || link.sending)
                     }
                     if let record {
-                        Button(model.hasLocalDataset(record.id) ? "Transfer ulang foto" : "Transfer foto dari iPhone") {
+                        Button(
+                            model.hasLocalDataset(record.id)
+                                ? "Transfer ulang foto" : "Transfer foto dari iPhone"
+                        ) {
                             model.send(.download, missionID: record.id)
                         }
-                        .disabled(!model.canTransferDatasets || processing.busy
-                            || model.missionLibrary.hiddenRemoteIDs.contains(record.id)
-                            || record.saved == 0 || !model.records.contains(where: { $0.id == record.id }))
+                        .disabled(
+                            !model.canTransferDatasets || processing.busy
+                                || model.missionLibrary.hiddenRemoteIDs.contains(record.id)
+                                || record.saved == 0 || !model.records.contains(where: { $0.id == record.id })
+                        )
                         Text(link.receiving ? "Transfer berlangsung…" : link.transferStatus)
                             .font(.caption).foregroundStyle(.secondary)
                         if let pending = model.pending {
@@ -457,8 +481,10 @@ struct ReviewWorkspaceView: View {
                             }
                         }
                         if record.saved == 0 {
-                            Text("Belum ada foto capture untuk ditransfer. Kamu juga dapat mengimpor foto dari Finder.")
-                                .font(.caption).foregroundStyle(.secondary)
+                            Text(
+                                "Belum ada foto capture untuk ditransfer. Kamu juga dapat mengimpor foto dari Finder."
+                            )
+                            .font(.caption).foregroundStyle(.secondary)
                         } else if !link.connected {
                             Text("Hubungkan iPhone untuk mentransfer foto misi ini.")
                                 .font(.caption).foregroundStyle(.secondary)
@@ -466,9 +492,12 @@ struct ReviewWorkspaceView: View {
                         if model.hasLocalDataset(record.id) {
                             if project != nil {
                                 Button("Muat ulang foto transfer") {
-                                    processing.prepareMission(record, projectID: mission?.id ?? record.id, refresh: true)
+                                    processing.prepareMission(
+                                        record, projectID: mission?.id ?? record.id, refresh: true)
                                 }
-                                .disabled(processing.busy || link.receiving || link.sending || model.isActiveMission)
+                                .disabled(
+                                    processing.busy || link.receiving || link.sending || model.isActiveMission
+                                )
                             }
                             Button("Buka folder foto") { model.openDatasetFolder(missionID: record.id) }
                             Button("Siapkan WebODM…") { export(record) }
@@ -476,7 +505,9 @@ struct ReviewWorkspaceView: View {
                         }
                     }
                     Divider()
-                    Button { importPhotos() } label: {
+                    Button {
+                        importPhotos()
+                    } label: {
                         VStack(spacing: 12) {
                             Image(systemName: "square.and.arrow.up").font(.system(size: 30, weight: .light))
                             Text("Impor foto dari Finder").font(.headline)
@@ -484,8 +515,9 @@ struct ReviewWorkspaceView: View {
                         }
                         .frame(maxWidth: .infinity).padding(.vertical, 28)
                         .background(KropsStyle.canvas, in: RoundedRectangle(cornerRadius: 16))
-                        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(
-                            KropsStyle.border, style: StrokeStyle(lineWidth: 1, dash: [5])))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16).strokeBorder(
+                                KropsStyle.border, style: StrokeStyle(lineWidth: 1, dash: [5])))
                     }
                     .buttonStyle(.plain)
                     .disabled(processing.busy || processing.storageError != nil)
@@ -526,8 +558,8 @@ struct ReviewWorkspaceView: View {
                     Button("Olah foto", systemImage: "play.fill", action: prepareOrthomosaic)
                         .kropsPrimaryAction(size: .large)
                         .disabled(!canPrepare)
-                    .help("Buka persiapan dan jalankan orthomosaic")
-                    .padding(20)
+                        .help("Buka persiapan dan jalankan orthomosaic")
+                        .padding(20)
                 }
         }
     }
@@ -544,9 +576,12 @@ struct ReviewWorkspaceView: View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(ReviewResultLayer.allCases) { layer in
-                    Button { resultLayer = layer } label: {
+                    Button {
+                        resultLayer = layer
+                    } label: {
                         HStack {
-                            Text(layer.rawValue).font(.body.weight(resultLayer == layer ? .semibold : .regular))
+                            Text(layer.rawValue).font(
+                                .body.weight(resultLayer == layer ? .semibold : .regular))
                             Spacer()
                             if resultLayer == layer { Image(systemName: "chevron.right").font(.caption) }
                         }
@@ -573,7 +608,9 @@ struct ReviewWorkspaceView: View {
                                 await model.dispatchReviewResult(for: mission, output: output)
                             }
                         } label: {
-                            Label(model.isDispatchingReview ? "Mengirim..." : "Kirim", systemImage: "paperplane")
+                            Label(
+                                model.isDispatchingReview ? "Mengirim..." : "Kirim", systemImage: "paperplane"
+                            )
                         }
                         .disabled(model.isDispatchingReview || processing.busy)
 
@@ -581,7 +618,10 @@ struct ReviewWorkspaceView: View {
                             OrthomosaicFilePanels.save(output: output, model: processing)
                         }.disabled(processing.busy)
                     } else {
-                        Button {} label: { Label("Kirim", systemImage: "paperplane") }.disabled(true)
+                        Button {
+                        } label: {
+                            Label("Kirim", systemImage: "paperplane")
+                        }.disabled(true)
                     }
                 }
                 .padding(20)
@@ -590,8 +630,10 @@ struct ReviewWorkspaceView: View {
                     ReviewOutputPreview(url: output.folder.appendingPathComponent("preview.png"))
                         .id(output.folder)
                     HStack {
-                        Text("\(output.width) × \(output.height) px · \(output.registered)/\(output.total) foto")
-                            .font(.caption).foregroundStyle(.secondary)
+                        Text(
+                            "\(output.width) × \(output.height) px · \(output.registered)/\(output.total) foto"
+                        )
+                        .font(.caption).foregroundStyle(.secondary)
                         Spacer()
                         Button("Buka hasil") { processing.showOutput(output) }
                     }.padding(16)
@@ -599,12 +641,15 @@ struct ReviewWorkspaceView: View {
                     variView
                 } else {
                     ContentUnavailableView(
-                        resultLayer == .orthomosaic ? "Belum ada orthomosaic" : "Belum ada data " + resultLayer.rawValue,
+                        resultLayer == .orthomosaic
+                            ? "Belum ada orthomosaic" : "Belum ada data " + resultLayer.rawValue,
                         systemImage: resultLayer == .orthomosaic ? "square.3.layers.3d" : "chart.xyaxis.line",
-                        description: Text(resultLayer == .orthomosaic
-                            ? "Impor dan olah foto melalui tab Citra."
-                            : "Hasil analisis akan ditampilkan di sini."))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        description: Text(
+                            resultLayer == .orthomosaic
+                                ? "Impor dan olah foto melalui tab Citra."
+                                : "Hasil analisis akan ditampilkan di sini.")
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -619,7 +664,6 @@ struct ReviewWorkspaceView: View {
         }
     }
 
-
     @ViewBuilder
     private var variView: some View {
         if !isOrthomosaicReady {
@@ -627,7 +671,9 @@ struct ReviewWorkspaceView: View {
                 Label("Orthomosaic Belum Tersedia", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
             } description: {
-                Text("Indeks VARI memerlukan hasil olah citra orthomosaic gabungan. Silakan selesaikan pengolahan foto pemetaan pada tab Orthomosaic terlebih dahulu.")
+                Text(
+                    "Indeks VARI memerlukan hasil olah citra orthomosaic gabungan. Silakan selesaikan pengolahan foto pemetaan pada tab Orthomosaic terlebih dahulu."
+                )
             } actions: {
                 Button("Menuju Tab Orthomosaic") {
                     resultLayer = .orthomosaic
@@ -639,8 +685,10 @@ struct ReviewWorkspaceView: View {
             VStack(spacing: 16) {
                 ProgressView().controlSize(.large)
                 Text("Menjalankan Analisis Indeks VARI...").font(.headline)
-                Text("Mendeteksi tajuk pohon kelapa sawit dan menghitung indeks vegetasi VARI dari citra orthomosaic.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(
+                    "Mendeteksi tajuk pohon kelapa sawit dan menghitung indeks vegetasi VARI dari citra orthomosaic."
+                )
+                .font(.caption).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let result = variResult {
@@ -678,7 +726,8 @@ struct ReviewWorkspaceView: View {
                     Button {
                         let missionName = mission?.plan.name ?? record?.plan.name ?? "hasil"
                         let safeName = missionName.replacingOccurrences(of: " ", with: "_").lowercased()
-                        VariFilePanels.saveJSON(from: result.resultJSONURL, suggestedName: "vari_\(safeName).json")
+                        VariFilePanels.saveJSON(
+                            from: result.resultJSONURL, suggestedName: "vari_\(safeName).json")
                     } label: {
                         Label("Unduh Hasil JSON", systemImage: "arrow.down.doc")
                     }
@@ -702,7 +751,9 @@ struct ReviewWorkspaceView: View {
                 if let variError {
                     Text("Error: \(variError)").foregroundStyle(.red)
                 } else if let output {
-                    Text("Orthomosaic siap diolah (\(output.width) × \(output.height) px). Mulai proses deteksi tajuk pohon sawit dan penghitungan indeks vegetasi VARI.")
+                    Text(
+                        "Orthomosaic siap diolah (\(output.width) × \(output.height) px). Mulai proses deteksi tajuk pohon sawit dan penghitungan indeks vegetasi VARI."
+                    )
                 } else {
                     Text("Belum ada citra orthomosaic yang tersedia untuk dianalisis.")
                 }
@@ -724,7 +775,8 @@ struct ReviewWorkspaceView: View {
         variError = nil
         Task {
             do {
-                let result = try await variProcessor.process(photoURL: imageURL, plotID: nil, outputFolder: outputFolder)
+                let result = try await variProcessor.process(
+                    photoURL: imageURL, plotID: nil, outputFolder: outputFolder)
                 await MainActor.run {
                     self.variResult = result
                     self.isProcessingVari = false
@@ -740,14 +792,20 @@ struct ReviewWorkspaceView: View {
 
     private func resolveImportedProject() {
         guard mission == nil, record == nil else { return }
-        if let selectedID = processing.selectedID { importedProjectID = selectedID }
-        else if importedProjectID == nil { importedProjectID = processing.projects.first?.id }
+        if let selectedID = processing.selectedID {
+            importedProjectID = selectedID
+        } else if importedProjectID == nil {
+            importedProjectID = processing.projects.first?.id
+        }
     }
 
     private func prepareOrthomosaic() {
         guard canPrepare else { return }
-        if let project { processing.open(project.id) }
-        else if let record { processing.prepareMission(record, projectID: mission?.id ?? record.id) }
+        if let project {
+            processing.open(project.id)
+        } else if let record {
+            processing.prepareMission(record, projectID: mission?.id ?? record.id)
+        }
     }
 
     private func importPhotos() {
@@ -765,8 +823,6 @@ struct ReviewWorkspaceView: View {
         }
     }
 }
-
-
 
 private struct ReviewWorkspacePreview: View {
     let tab: ReviewTab
@@ -789,9 +845,10 @@ private struct ReviewWorkspacePreview: View {
             processing: ControlDependencies.orthomosaicViewModel(
                 store: dependencies.link.store, demo: true),
             variProcessor: dependencies.variProcessor,
-            search: "", openPlanner: {}, createMission: {}, export: { _ in }, tab: tab)
-            .frame(width: 1280, height: 720)
-            .preferredColorScheme(.light)
+            search: "", openPlanner: {}, createMission: {}, export: { _ in }, tab: tab
+        )
+        .frame(width: 1280, height: 720)
+        .preferredColorScheme(.light)
     }
 }
 
@@ -839,16 +896,21 @@ private struct ReviewPhotoMap: View {
             }
         }
         .mapStyle(.imagery)
-        .mapControls { MapCompass(); MapZoomStepper(); MapScaleView() }
+        .mapControls {
+            MapCompass()
+            MapZoomStepper()
+            MapScaleView()
+        }
         .overlay {
             if photos.isEmpty {
                 ContentUnavailableView(
                     "Posisi pengambilan foto",
                     systemImage: "mappin.and.ellipse",
-                    description: Text("Foto dengan koordinat GPS akan muncul di peta ini."))
-                    .padding(24)
-                    .background(KropsStyle.surface.opacity(0.94), in: RoundedRectangle(cornerRadius: 18))
-                    .padding(40)
+                    description: Text("Foto dengan koordinat GPS akan muncul di peta ini.")
+                )
+                .padding(24)
+                .background(KropsStyle.surface.opacity(0.94), in: RoundedRectangle(cornerRadius: 18))
+                .padding(40)
             }
         }
     }

@@ -139,9 +139,9 @@ public final class QGCEngineManager: ObservableObject {
             // 2. Resolve embedded QGC executable binary
             guard let executable = BundledQGCEngine.executableURL else {
                 #if DEBUG
-                self.status = .skipped(reason: "Engine belum disertakan dalam bundle (Mode Debug).")
+                    self.status = .skipped(reason: "Engine belum disertakan dalam bundle (Mode Debug).")
                 #else
-                self.status = .failed(reason: "Executable QGroundControl belum tersedia dalam bundle.")
+                    self.status = .failed(reason: "Executable QGroundControl belum tersedia dalam bundle.")
                 #endif
                 return
             }
@@ -213,7 +213,8 @@ public final class QGCEngineManager: ObservableObject {
                 self.status = .healthy(port: self.port, pid: proc.processIdentifier)
                 self.startPeriodicPolling()
             } else {
-                self.status = .failed(reason: "Health check timeout: 127.0.0.1:18080/healthz tidak merespons.")
+                self.status = .failed(
+                    reason: "Health check timeout: 127.0.0.1:18080/healthz tidak merespons.")
             }
         }
     }
@@ -262,7 +263,8 @@ public final class QGCEngineManager: ObservableObject {
                 return false
             }
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  json["status"] as? String == "ok" else {
+                json["status"] as? String == "ok"
+            else {
                 return false
             }
             return true
@@ -287,7 +289,8 @@ public final class QGCEngineManager: ObservableObject {
                 } else {
                     if case .healthy = self.status {
                         if let proc = self.process, !proc.isRunning {
-                            self.status = .failed(reason: "Proses QGC terhenti (exit code \(proc.terminationStatus)).")
+                            self.status = .failed(
+                                reason: "Proses QGC terhenti (exit code \(proc.terminationStatus)).")
                         } else {
                             self.status = .failed(reason: "Endpoint 127.0.0.1:18080/healthz tidak merespons.")
                         }

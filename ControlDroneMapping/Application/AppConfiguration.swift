@@ -44,26 +44,31 @@ public struct AppConfiguration: Sendable {
             fatalError("AppConfiguration Error: Bundle.main.bundleIdentifier is missing or empty.")
         }
 
-        guard let containerID = Bundle.main.object(forInfoDictionaryKey: "ICloudContainerIdentifier") as? String,
-              !containerID.isEmpty,
-              !containerID.contains("$(") else {
+        guard
+            let containerID = Bundle.main.object(forInfoDictionaryKey: "ICloudContainerIdentifier")
+                as? String,
+            !containerID.isEmpty,
+            !containerID.contains("$(")
+        else {
             fatalError(
-                "AppConfiguration Error: ICloudContainerIdentifier is not properly configured in Info.plist. " +
-                "Ensure Config/Developer.xcconfig defines a valid ICLOUD_CONTAINER_NAME."
+                "AppConfiguration Error: ICloudContainerIdentifier is not properly configured in Info.plist. "
+                    + "Ensure Config/Developer.xcconfig defines a valid ICLOUD_CONTAINER_NAME."
             )
         }
 
         guard let rawEnv = Bundle.main.object(forInfoDictionaryKey: "AppEnvironment") as? String,
-              !rawEnv.isEmpty,
-              !rawEnv.contains("$("),
-              let environment = BuildEnvironment(rawValue: rawEnv.lowercased()) else {
+            !rawEnv.isEmpty,
+            !rawEnv.contains("$("),
+            let environment = BuildEnvironment(rawValue: rawEnv.lowercased())
+        else {
             fatalError(
-                "AppConfiguration Error: AppEnvironment is missing or invalid in Info.plist. " +
-                "Ensure Config/Developer.xcconfig defines APP_ENVIRONMENT (development | staging | production)."
+                "AppConfiguration Error: AppEnvironment is missing or invalid in Info.plist. "
+                    + "Ensure Config/Developer.xcconfig defines APP_ENVIRONMENT (development | staging | production)."
             )
         }
 
-        let shortVersion = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0.0.0"
+        let shortVersion =
+            (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0.0.0"
         let buildNumber = (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String) ?? "1"
 
         return AppConfiguration(
@@ -77,4 +82,3 @@ public struct AppConfiguration: Sendable {
         )
     }()
 }
-

@@ -181,13 +181,13 @@ public struct PlantationReviewResult: Sendable {
                 NutrientMetric(name: "Fosfor (P)", current: 0.45, target: 0.80),
                 NutrientMetric(name: "Kalium (K)", current: 0.55, target: 0.90),
                 NutrientMetric(name: "Magnesium (Mg)", current: 0.70, target: 0.85),
-                NutrientMetric(name: "Boron (B)", current: 0.60, target: 0.75)
+                NutrientMetric(name: "Boron (B)", current: 0.60, target: 0.75),
             ],
             costs: [
                 CostEstimate(name: "Urea", quantity: "450 kg", cost: "Rp 1.125.000"),
                 CostEstimate(name: "Rock Phosphate", quantity: "300 kg", cost: "Rp 750.000"),
                 CostEstimate(name: "MOP (KCl)", quantity: "500 kg", cost: "Rp 1.850.000"),
-                CostEstimate(name: "Kieserite", quantity: "200 kg", cost: "Rp 600.000")
+                CostEstimate(name: "Kieserite", quantity: "200 kg", cost: "Rp 600.000"),
             ],
             totalCostFormatted: "Rp 4.325.000",
             allocationAreas: [
@@ -199,17 +199,20 @@ public struct PlantationReviewResult: Sendable {
                             dateRange: "Maret - Mei 2026",
                             lines: [
                                 FertilizerDoseLine(name: "Urea", total: "225 kg", dosage: "1.5 kg/pohon"),
-                                FertilizerDoseLine(name: "MOP (KCl)", total: "250 kg", dosage: "1.7 kg/pohon")
+                                FertilizerDoseLine(
+                                    name: "MOP (KCl)", total: "250 kg", dosage: "1.7 kg/pohon"),
                             ]
                         ),
                         FertilizerPeriodPlan(
                             title: "Periode 2",
                             dateRange: "September - November 2026",
                             lines: [
-                                FertilizerDoseLine(name: "Rock Phosphate", total: "300 kg", dosage: "2.0 kg/pohon"),
-                                FertilizerDoseLine(name: "Kieserite", total: "200 kg", dosage: "1.3 kg/pohon")
+                                FertilizerDoseLine(
+                                    name: "Rock Phosphate", total: "300 kg", dosage: "2.0 kg/pohon"),
+                                FertilizerDoseLine(
+                                    name: "Kieserite", total: "200 kg", dosage: "1.3 kg/pohon"),
                             ]
-                        )
+                        ),
                     ]
                 )
             ],

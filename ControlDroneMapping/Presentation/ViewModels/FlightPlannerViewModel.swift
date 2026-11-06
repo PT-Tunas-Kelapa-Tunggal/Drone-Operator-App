@@ -113,7 +113,8 @@ final class FlightPlannerViewModel: ObservableObject {
             name: draft.name,
             farmID: farm.id,
             missionID: missionScope,
-            defaultAltitude: draft.defaultAltitude.isFinite && draft.defaultAltitude > 0 ? draft.defaultAltitude : 80,
+            defaultAltitude: draft.defaultAltitude.isFinite && draft.defaultAltitude > 0
+                ? draft.defaultAltitude : 80,
             speed: draft.speed.isFinite && draft.speed > 0 ? draft.speed : 5
         )
         let alt = route.defaultAltitude
@@ -167,7 +168,8 @@ final class FlightPlannerViewModel: ObservableObject {
         guard let farm = currentFarm, farm.points.count >= 2 else { return }
         let alt = draft.defaultAltitude > 0 ? draft.defaultAltitude : 80
         draft.waypoints = farm.points.map {
-            FlightWaypoint(coordinate: MapCoordinate(latitude: $0.latitude, longitude: $0.longitude), altitude: alt)
+            FlightWaypoint(
+                coordinate: MapCoordinate(latitude: $0.latitude, longitude: $0.longitude), altitude: alt)
         }
         draft.visualTransects = []
         draft.surveyStatistics = nil
@@ -433,7 +435,7 @@ final class FlightPlannerViewModel: ObservableObject {
             switching = false
             selectedWaypointID = nil
             undoStack = []
-        redoStack = []
+            redoStack = []
         }
     }
 
@@ -492,10 +494,10 @@ final class FlightPlannerViewModel: ObservableObject {
             let maxLon = lons.max() ?? 0
 
             let corners = [
-                MapCoordinate(latitude: maxLat, longitude: minLon), // 0: TopLeft
-                MapCoordinate(latitude: maxLat, longitude: maxLon), // 1: TopRight
-                MapCoordinate(latitude: minLat, longitude: minLon), // 2: BottomLeft
-                MapCoordinate(latitude: minLat, longitude: maxLon)  // 3: BottomRight
+                MapCoordinate(latitude: maxLat, longitude: minLon),  // 0: TopLeft
+                MapCoordinate(latitude: maxLat, longitude: maxLon),  // 1: TopRight
+                MapCoordinate(latitude: minLat, longitude: minLon),  // 2: BottomLeft
+                MapCoordinate(latitude: minLat, longitude: maxLon),  // 3: BottomRight
             ]
             let distances = corners.map { $0.distance(to: entry) }
             resolvedEntryLocation = distances.enumerated().min(by: { $0.element < $1.element })?.offset ?? 0
@@ -586,10 +588,11 @@ final class FlightPlannerViewModel: ObservableObject {
                         "vehicleType": 2,
                         "cruiseSpeed": draft.speed,
                         "hoverSpeed": draft.speed,
-                        "items": []
-                    ] as [String: Any]
+                        "items": [],
+                    ] as [String: Any],
                 ]
-                data = try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
+                data = try JSONSerialization.data(
+                    withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
             }
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }

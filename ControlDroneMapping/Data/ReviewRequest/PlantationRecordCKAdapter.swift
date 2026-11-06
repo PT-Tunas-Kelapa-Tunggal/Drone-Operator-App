@@ -24,8 +24,11 @@ public struct PlantationRecordCKAdapter {
         public static let orthomosaicAsset = "orthomosaicAsset"
     }
 
-    public static func toCKRecord(from dto: PlantationScanRequestRecordDTO, existing: CKRecord? = nil) -> CKRecord {
-        let record = existing ?? CKRecord(recordType: recordType, recordID: CKRecord.ID(recordName: dto.recordName))
+    public static func toCKRecord(from dto: PlantationScanRequestRecordDTO, existing: CKRecord? = nil)
+        -> CKRecord
+    {
+        let record =
+            existing ?? CKRecord(recordType: recordType, recordID: CKRecord.ID(recordName: dto.recordName))
         record[Field.farmerName] = dto.farmerName as CKRecordValue
         record[Field.farmerPhone] = dto.farmerPhone as CKRecordValue
         record[Field.farmerAddress] = dto.farmerAddress as CKRecordValue
@@ -51,15 +54,15 @@ public struct PlantationRecordCKAdapter {
 
     public static func toDTO(from record: CKRecord) throws -> PlantationScanRequestRecordDTO {
         guard let farmerName = record[Field.farmerName] as? String,
-              let farmerPhone = record[Field.farmerPhone] as? String,
-              let farmerAddress = record[Field.farmerAddress] as? String,
-              let gardenID = record[Field.gardenID] as? String,
-              let gardenName = record[Field.gardenName] as? String,
-              let locationName = record[Field.locationName] as? String,
-              let boundaryJSON = record[Field.boundaryJSON] as? String,
-              let agronomicJSON = record[Field.agronomicJSON] as? String,
-              let statusCode = record[Field.statusCode] as? Int,
-              let submittedAt = record[Field.submittedAt] as? Date
+            let farmerPhone = record[Field.farmerPhone] as? String,
+            let farmerAddress = record[Field.farmerAddress] as? String,
+            let gardenID = record[Field.gardenID] as? String,
+            let gardenName = record[Field.gardenName] as? String,
+            let locationName = record[Field.locationName] as? String,
+            let boundaryJSON = record[Field.boundaryJSON] as? String,
+            let agronomicJSON = record[Field.agronomicJSON] as? String,
+            let statusCode = record[Field.statusCode] as? Int,
+            let submittedAt = record[Field.submittedAt] as? Date
         else {
             throw CKAdapterError.missingRequiredFields
         }

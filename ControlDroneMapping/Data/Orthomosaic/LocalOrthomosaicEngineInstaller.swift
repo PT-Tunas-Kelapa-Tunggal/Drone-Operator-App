@@ -56,7 +56,8 @@ struct LocalOrthomosaicEngineInstaller: OrthomosaicEngineInstalling {
             }
             guard !BundledOrthomosaicEngine.isSandboxed else {
                 throw MappingError.invalid(
-                    "Build aplikasi belum menyertakan engine bawaan. Siapkan paket engine lalu build ulang aplikasi.")
+                    "Build aplikasi belum menyertakan engine bawaan. Siapkan paket engine lalu build ulang aplikasi."
+                )
             }
             guard !directory.path.contains(where: { $0.isWhitespace }) else {
                 throw MappingError.invalid(

@@ -16,14 +16,17 @@ struct GeofenceInspectorSection: View {
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
                 Spacer()
-                Toggle("Aktif", isOn: Binding(
-                    get: { geofence.enabled },
-                    set: { val in
-                        guard canEdit else { return }
-                        geofence.enabled = val
-                        onParameterChanged()
-                    }
-                ))
+                Toggle(
+                    "Aktif",
+                    isOn: Binding(
+                        get: { geofence.enabled },
+                        set: { val in
+                            guard canEdit else { return }
+                            geofence.enabled = val
+                            onParameterChanged()
+                        }
+                    )
+                )
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .labelsHidden()
@@ -35,21 +38,26 @@ struct GeofenceInspectorSection: View {
                     Text("Bentuk Geofence")
                         .font(KropsTypography.supporting)
                         .foregroundStyle(.secondary)
-                    Picker("Bentuk Geofence", selection: Binding(
-                        get: { geofence.type },
-                        set: { val in
-                            guard canEdit else { return }
-                            geofence.type = val
-                            onParameterChanged()
-                        }
-                    )) {
+                    Picker(
+                        "Bentuk Geofence",
+                        selection: Binding(
+                            get: { geofence.type },
+                            set: { val in
+                                guard canEdit else { return }
+                                geofence.type = val
+                                onParameterChanged()
+                            }
+                        )
+                    ) {
                         ForEach(GeofenceType.allCases) { fenceType in
                             Text(fenceType.title).tag(fenceType)
                         }
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
-                    .help("Pilih bentuk Geofence: mengikuti poligon batas kebun atau lingkaran dari titik Home.")
+                    .help(
+                        "Pilih bentuk Geofence: mengikuti poligon batas kebun atau lingkaran dari titik Home."
+                    )
                 }
 
                 HStack(spacing: 10) {
@@ -67,7 +75,9 @@ struct GeofenceInspectorSection: View {
                                 unit: "m"
                             )
                         }
-                        .help("Jarak perluasan poligon Geofence di luar batas kebun agar manuver putar balik tercakup.")
+                        .help(
+                            "Jarak perluasan poligon Geofence di luar batas kebun agar manuver putar balik tercakup."
+                        )
                     } else {
                         ControlField("Radius Fence") {
                             NumberField(
@@ -120,14 +130,17 @@ struct GeofenceInspectorSection: View {
                     Text("Aksi Saat Batas Dilanggar")
                         .font(KropsTypography.supporting)
                         .foregroundStyle(.secondary)
-                    Picker("Aksi Pelanggaran", selection: Binding(
-                        get: { geofence.breachAction },
-                        set: { val in
-                            guard canEdit else { return }
-                            geofence.breachAction = val
-                            onParameterChanged()
-                        }
-                    )) {
+                    Picker(
+                        "Aksi Pelanggaran",
+                        selection: Binding(
+                            get: { geofence.breachAction },
+                            set: { val in
+                                guard canEdit else { return }
+                                geofence.breachAction = val
+                                onParameterChanged()
+                            }
+                        )
+                    ) {
                         ForEach(GeofenceBreachAction.allCases) { action in
                             Text(action.title).tag(action)
                         }
@@ -153,9 +166,12 @@ struct GeofenceInspectorSection: View {
                     }
                 }
             } else {
-                Label("Geofence nonaktif. Aktifkan untuk memenuhi SOP keselamatan.", systemImage: "exclamationmark.shield")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
+                Label(
+                    "Geofence nonaktif. Aktifkan untuk memenuhi SOP keselamatan.",
+                    systemImage: "exclamationmark.shield"
+                )
+                .font(.caption)
+                .foregroundStyle(.orange)
             }
         }
     }

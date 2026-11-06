@@ -18,10 +18,12 @@ public struct LocalVariProcessor: VariProcessing {
             throw MappingError.invalid("Helper binary VariPython tidak ditemukan.")
         }
 
-        let destinationFolder = outputFolder ?? FileManager.default.temporaryDirectory.appendingPathComponent("VariScans")
+        let destinationFolder =
+            outputFolder ?? FileManager.default.temporaryDirectory.appendingPathComponent("VariScans")
         try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
 
-        let outputJSONURL = outputFolder != nil
+        let outputJSONURL =
+            outputFolder != nil
             ? destinationFolder.appendingPathComponent("vari_result.json")
             : destinationFolder.appendingPathComponent("vari_result_\(UUID().uuidString).json")
 
@@ -30,7 +32,7 @@ public struct LocalVariProcessor: VariProcessing {
         var args = [
             "-m", "krops_vari.main",
             "--photo", photoURL.path,
-            "--out", outputJSONURL.path
+            "--out", outputJSONURL.path,
         ]
         if let plotID {
             args += ["--plot-id", plotID]
@@ -46,7 +48,8 @@ public struct LocalVariProcessor: VariProcessing {
         guard process.terminationStatus == 0 else {
             let errData = pipe.fileHandleForReading.readDataToEndOfFile()
             let errMsg = String(data: errData, encoding: .utf8) ?? "Unknown error"
-            throw MappingError.invalid("Pengolahan VARI gagal (exit code \(process.terminationStatus)): \(errMsg)")
+            throw MappingError.invalid(
+                "Pengolahan VARI gagal (exit code \(process.terminationStatus)): \(errMsg)")
         }
 
         guard FileManager.default.fileExists(atPath: outputJSONURL.path) else {
@@ -75,7 +78,8 @@ public struct LocalVariProcessor: VariProcessing {
         let zones = json["zones"] as? [[String: Any]] ?? []
 
         let summary = json["summary"] as? [String: Any]
-        let meanVari = summary?["reference_zone_mean_vari"] as? Double ?? summary?["p25_zone_mean_vari"] as? Double
+        let meanVari =
+            summary?["reference_zone_mean_vari"] as? Double ?? summary?["p25_zone_mean_vari"] as? Double
 
         return VariScanResult(
             resultJSONURL: url,

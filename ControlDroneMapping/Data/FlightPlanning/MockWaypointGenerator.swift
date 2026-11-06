@@ -49,7 +49,8 @@ final class MockWaypointGenerator: WaypointGenerator, @unchecked Sendable {
         let distanceMeters = zip(points, points.dropFirst()).reduce(0.0) { $0 + $1.0.distance(to: $1.1) }
         let wpCount = points.count
         let holdTotal = Double(wpCount) * parameters.holdSeconds
-        let climbDescent = (parameters.altitude / max(0.5, parameters.ascentSpeed))
+        let climbDescent =
+            (parameters.altitude / max(0.5, parameters.ascentSpeed))
             + (parameters.altitude / max(0.5, parameters.descentSpeed))
         let stats = SurveyScanStatistics(
             totalDistanceMeters: distanceMeters,
@@ -62,10 +63,12 @@ final class MockWaypointGenerator: WaypointGenerator, @unchecked Sendable {
             maxMissionAltitude: parameters.altitude
         )
 
-        let centerCoord = parameters.home ?? MapCoordinate(
-            latitude: (minLat + maxLat) / 2.0,
-            longitude: (minLon + maxLon) / 2.0
-        )
+        let centerCoord =
+            parameters.home
+            ?? MapCoordinate(
+                latitude: (minLat + maxLat) / 2.0,
+                longitude: (minLon + maxLon) / 2.0
+            )
         let resolvedRadius = parameters.geofence.radiusMeters > 0 ? parameters.geofence.radiusMeters : 250.0
         let ceilingOk = parameters.altitude <= parameters.geofence.ceilingMeters
         let safety = SurveySafetyResult(
@@ -84,7 +87,9 @@ final class MockWaypointGenerator: WaypointGenerator, @unchecked Sendable {
             circleRadiusMeters: resolvedRadius,
             breachReturnPoint: centerCoord,
             breachReturnAltitude: parameters.altitude,
-            issues: ceilingOk ? [] : [SafetyIssue(code: "CEILING_EXCEEDED", message: "Tinggi terbang melebihi batas Ceiling.")]
+            issues: ceilingOk
+                ? []
+                : [SafetyIssue(code: "CEILING_EXCEEDED", message: "Tinggi terbang melebihi batas Ceiling.")]
         )
 
         return SurveyScanResult(

@@ -142,8 +142,9 @@ enum QGCSurveyResponseParser {
             var circleRadius: Double = sf["radiusMeters"] as? Double ?? 0.0
             if let circleObj = sf["circle"] as? [String: Any] {
                 if let cObj = circleObj["center"] as? [String: Any],
-                   let lat = cObj["latitude"] as? Double,
-                   let lon = cObj["longitude"] as? Double {
+                    let lat = cObj["latitude"] as? Double,
+                    let lon = cObj["longitude"] as? Double
+                {
                     circleCenter = MapCoordinate(latitude: lat, longitude: lon)
                 }
                 if let r = circleObj["radiusMeters"] as? Double {
@@ -154,8 +155,9 @@ enum QGCSurveyResponseParser {
             var brPoint: MapCoordinate? = nil
             var brAlt: Double = 0.0
             if let brObj = sf["breachReturnPoint"] as? [String: Any],
-               let lat = brObj["latitude"] as? Double,
-               let lon = brObj["longitude"] as? Double {
+                let lat = brObj["latitude"] as? Double,
+                let lon = brObj["longitude"] as? Double
+            {
                 brPoint = MapCoordinate(latitude: lat, longitude: lon)
                 brAlt = brObj["altitude"] as? Double ?? 0.0
             }
@@ -192,7 +194,9 @@ enum QGCSurveyResponseParser {
         // Extract raw plan data
         var rawPlan = Data()
         if let plan = json["plan"] as? [String: Any] {
-            rawPlan = (try? JSONSerialization.data(withJSONObject: plan, options: [.prettyPrinted, .sortedKeys])) ?? Data()
+            rawPlan =
+                (try? JSONSerialization.data(withJSONObject: plan, options: [.prettyPrinted, .sortedKeys]))
+                ?? Data()
         }
 
         return SurveyScanResult(

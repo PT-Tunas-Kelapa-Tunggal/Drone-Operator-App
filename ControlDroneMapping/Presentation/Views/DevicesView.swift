@@ -53,24 +53,24 @@ struct DevicesView: View {
             }
             ControlPanel("Persiapan capture", state: model.iphoneReadyForCapture ? "Siap" : nil) {
                 if !missionContext {
-                Text(
-                    "Pilih misi yang akan memakai iPhone. Pengaturan kamera dan kalibrasi tetap mengikuti masing-masing misi."
-                )
-                .font(.callout).foregroundStyle(.secondary)
-                Picker(
-                    "Misi untuk persiapan",
-                    selection: Binding<UUID?>(
-                        get: { model.selectedMissionID },
-                        set: { if let id = $0 { model.selectMissionForDeviceSetup(id) } })
-                ) {
-                    Text("Pilih misi").tag(Optional<UUID>.none)
-                    ForEach(availableMissions) { mission in
-                        Text(mission.plan.name).tag(Optional(mission.id))
-                    }
-                    if let mission = model.selectedMission, mission.phase == .completed {
-                        Text(mission.plan.name + " · selesai").tag(Optional(mission.id))
-                    }
-                }.disabled(model.pending != nil || link.sending || link.receiving)
+                    Text(
+                        "Pilih misi yang akan memakai iPhone. Pengaturan kamera dan kalibrasi tetap mengikuti masing-masing misi."
+                    )
+                    .font(.callout).foregroundStyle(.secondary)
+                    Picker(
+                        "Misi untuk persiapan",
+                        selection: Binding<UUID?>(
+                            get: { model.selectedMissionID },
+                            set: { if let id = $0 { model.selectMissionForDeviceSetup(id) } })
+                    ) {
+                        Text("Pilih misi").tag(Optional<UUID>.none)
+                        ForEach(availableMissions) { mission in
+                            Text(mission.plan.name).tag(Optional(mission.id))
+                        }
+                        if let mission = model.selectedMission, mission.phase == .completed {
+                            Text(mission.plan.name + " · selesai").tag(Optional(mission.id))
+                        }
+                    }.disabled(model.pending != nil || link.sending || link.receiving)
                 }
                 if let mission = model.selectedMission, mission.phase != .completed {
                     HStack {

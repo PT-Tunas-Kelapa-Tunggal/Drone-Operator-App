@@ -134,7 +134,9 @@ struct MissionWorkspaceView: View {
                     requestedLocation = true
                     location.request()
                 }
-                PlanIconButton(systemImage: "arrow.up.left.and.arrow.down.right", help: "Tampilkan seluruh rute") {
+                PlanIconButton(
+                    systemImage: "arrow.up.left.and.arrow.down.right", help: "Tampilkan seluruh rute"
+                ) {
                     focusOperator = false
                     planner.fitRoute()
                 }
@@ -179,21 +181,25 @@ struct MissionWorkspaceView: View {
             Group {
                 if planner.planningStep == .boundary {
                     PlanToolButton(
-                        title: "Pilih", compact: compact, systemImage: "cursorarrow", shortcut: "V", selected: planner.mode == .inspect,
+                        title: "Pilih", compact: compact, systemImage: "cursorarrow", shortcut: "V",
+                        selected: planner.mode == .inspect,
                         help: "Pilih & geser pin"
                     ) { selectTool(.inspect) }
                     PlanToolButton(
                         title: "Titik", compact: compact, systemImage: "pencil.and.outline", shortcut: "P",
-                        selected: planner.mode == .waypoint, help: "Tambah titik batas (klik dekat garis untuk menyisipkan)",
+                        selected: planner.mode == .waypoint,
+                        help: "Tambah titik batas (klik dekat garis untuk menyisipkan)",
                         tint: .orange
                     ) { selectTool(.waypoint) }
                 } else {
                     PlanToolButton(
-                        title: "Home", compact: compact, systemImage: "house", shortcut: "H", selected: planner.mode == .home,
+                        title: "Home", compact: compact, systemImage: "house", shortcut: "H",
+                        selected: planner.mode == .home,
                         help: "Taruh titik lepas landas & mendarat", tint: .green
                     ) { selectTool(.home) }
                     PlanToolButton(
-                        title: "Entry", compact: compact, systemImage: "arrow.right.to.line", shortcut: "E", selected: planner.mode == .entry,
+                        title: "Entry", compact: compact, systemImage: "arrow.right.to.line", shortcut: "E",
+                        selected: planner.mode == .entry,
                         help: "Taruh titik masuk survei di garis batas", tint: .cyan
                     ) { selectTool(.entry) }
                 }
@@ -229,9 +235,10 @@ struct MissionWorkspaceView: View {
                 }
                 .padding(16)
                 .disabled(!canEditRoute)
-                .background(GeometryReader { proxy in
-                    Color.clear.preference(key: InspectorHeightKey.self, value: proxy.size.height)
-                })
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: InspectorHeightKey.self, value: proxy.size.height)
+                    })
             }
             .scrollBounceBehavior(.basedOnSize)
             .frame(maxHeight: inspectorContentHeight)
@@ -266,7 +273,8 @@ struct MissionWorkspaceView: View {
                 if !canEditRoute {
                     Label("Hanya baca", systemImage: "lock.fill").font(.caption).foregroundStyle(.secondary)
                 } else if planner.planningStep == .flight && model.geometry.reviewed {
-                    Label("Diperiksa", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)
+                    Label("Diperiksa", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(
+                        .green)
                 }
             }
             Text(
@@ -350,15 +358,18 @@ struct MissionWorkspaceView: View {
                     Text("iPhone 17")
                         .font(.callout.weight(.medium))
                 }
-                Picker("Resolusi", selection: Binding(
-                    get: { planner.draft.cameraResolution },
-                    set: { res in
-                        guard canEditRoute else { return }
-                        planner.draft.cameraResolution = res
-                        model.geometry.reviewed = false
-                        replanLive()
-                    }
-                )) {
+                Picker(
+                    "Resolusi",
+                    selection: Binding(
+                        get: { planner.draft.cameraResolution },
+                        set: { res in
+                            guard canEditRoute else { return }
+                            planner.draft.cameraResolution = res
+                            model.geometry.reviewed = false
+                            replanLive()
+                        }
+                    )
+                ) {
                     ForEach(CameraOpticalSpec.Resolution.allCases) { res in
                         Text(res.rawValue).tag(res)
                     }
@@ -463,7 +474,8 @@ struct MissionWorkspaceView: View {
                         in: 30...85,
                         step: 1
                     )
-                    .help("Persentase tumpang tindih antar jalur foto sejajar (rekomendasi kebun sawit: 70%).")
+                    .help(
+                        "Persentase tumpang tindih antar jalur foto sejajar (rekomendasi kebun sawit: 70%).")
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -486,23 +498,28 @@ struct MissionWorkspaceView: View {
                         in: 30...85,
                         step: 1
                     )
-                    .help("Persentase tumpang tindih antar foto berturutan di sepanjang lintasan (rekomendasi kebun sawit: 75%).")
+                    .help(
+                        "Persentase tumpang tindih antar foto berturutan di sepanjang lintasan (rekomendasi kebun sawit: 75%)."
+                    )
                 }
             }
 
             calculatedMetricsBox
 
             angleSlider
-            Toggle("Kembali ke Home setelah selesai (RTL)", isOn: Binding(
-                get: { planner.draft.returnToHome },
-                set: { val in
-                    guard canEditRoute else { return }
-                    planner.draft.returnToHome = val
-                    planner.resetChecklist()
-                    model.geometry.reviewed = false
-                    replanDebounced()
-                }
-            ))
+            Toggle(
+                "Kembali ke Home setelah selesai (RTL)",
+                isOn: Binding(
+                    get: { planner.draft.returnToHome },
+                    set: { val in
+                        guard canEditRoute else { return }
+                        planner.draft.returnToHome = val
+                        planner.resetChecklist()
+                        model.geometry.reviewed = false
+                        replanDebounced()
+                    }
+                )
+            )
             .font(.callout)
 
             GeofenceInspectorSection(
@@ -717,10 +734,12 @@ struct MissionWorkspaceView: View {
 
                     VStack(alignment: .leading, spacing: 6) {
                         PlanSectionTitle("Lepas landas & masuk")
-                        PlanStatusRow("Home", glyph: "H", color: .green, placed: planner.draft.home != nil,
-                                      status: planner.draft.home == nil ? "Belum · tekan H" : "Sudah ditaruh")
-                        PlanStatusRow("Entry", glyph: "E", color: .cyan, placed: planner.draft.surveyEntry != nil,
-                                      status: planner.draft.surveyEntry == nil ? "Belum · tekan E" : "Sudah ditaruh")
+                        PlanStatusRow(
+                            "Home", glyph: "H", color: .green, placed: planner.draft.home != nil,
+                            status: planner.draft.home == nil ? "Belum · tekan H" : "Sudah ditaruh")
+                        PlanStatusRow(
+                            "Entry", glyph: "E", color: .cyan, placed: planner.draft.surveyEntry != nil,
+                            status: planner.draft.surveyEntry == nil ? "Belum · tekan E" : "Sudah ditaruh")
                         PlanSummaryRow("Kembali ke Home", planner.draft.returnToHome ? "Ya" : "Tidak")
                     }
 
@@ -728,14 +747,18 @@ struct MissionWorkspaceView: View {
                         PlanSectionTitle("Jalur")
                         if let stats = planner.draft.surveyStatistics, stats.totalDistanceMeters > 0 {
                             PlanSummaryRow("Foto", "\(stats.photoCount)")
-                            PlanSummaryRow("Jarak terbang", String(format: "%.0f m", stats.totalDistanceMeters))
+                            PlanSummaryRow(
+                                "Jarak terbang", String(format: "%.0f m", stats.totalDistanceMeters))
                             PlanSummaryRow("Durasi", Self.formattedDuration(stats.flightTimeSeconds))
                             PlanSummaryRow("Lintasan", "\(stats.transectCount)")
                             PlanSummaryRow(
                                 "Kecepatan (H/↑/↓)",
-                                String(format: "%.1f / %.1f / %.1f m/s", planner.draft.speed, planner.draft.ascentSpeed, planner.draft.descentSpeed)
+                                String(
+                                    format: "%.1f / %.1f / %.1f m/s", planner.draft.speed,
+                                    planner.draft.ascentSpeed, planner.draft.descentSpeed)
                             )
-                            PlanSummaryRow("Jeda titik", String(format: "%.0f dtk", planner.draft.holdSeconds))
+                            PlanSummaryRow(
+                                "Jeda titik", String(format: "%.0f dtk", planner.draft.holdSeconds))
                         } else {
                             Text("Belum dihitung").font(.callout).foregroundStyle(.secondary)
                         }
@@ -752,7 +775,9 @@ struct MissionWorkspaceView: View {
                             }
                             PlanSummaryRow("Ceiling", String(format: "%.0f m", safety.ceilingMeters))
                             PlanSummaryRow("Aksi", safety.breachAction.title)
-                            PlanSummaryRow("Cakupan QGC", safety.coversMission && safety.ceilingOk ? "Aman" : "Perlu dicek")
+                            PlanSummaryRow(
+                                "Cakupan QGC",
+                                safety.coversMission && safety.ceilingOk ? "Aman" : "Perlu dicek")
                         } else {
                             Text(planner.draft.geofence.enabled ? "Menunggu QGC" : "Nonaktif")
                                 .font(.callout).foregroundStyle(.secondary)
@@ -772,16 +797,18 @@ struct MissionWorkspaceView: View {
                         )
 
                         Divider()
-                        Toggle(isOn: Binding(
-                            get: { model.geometry.reviewed && planner.isSOPChecklistComplete },
-                            set: { val in
-                                guard planner.isSOPChecklistComplete else {
-                                    model.geometry.reviewed = false
-                                    return
+                        Toggle(
+                            isOn: Binding(
+                                get: { model.geometry.reviewed && planner.isSOPChecklistComplete },
+                                set: { val in
+                                    guard planner.isSOPChecklistComplete else {
+                                        model.geometry.reviewed = false
+                                        return
+                                    }
+                                    model.geometry.reviewed = val
                                 }
-                                model.geometry.reviewed = val
-                            }
-                        )) {
+                            )
+                        ) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Rencana sudah diperiksa").font(.body.weight(.medium))
                                 Text(
@@ -822,7 +849,10 @@ struct MissionWorkspaceView: View {
         }
         switch planner.mode {
         case .waypoint:
-            return ("pencil.and.outline", "Klik peta untuk menambah titik · klik dekat garis untuk menyisipkan · Esc selesai")
+            return (
+                "pencil.and.outline",
+                "Klik peta untuk menambah titik · klik dekat garis untuk menyisipkan · Esc selesai"
+            )
         case .home:
             return ("house", "Klik peta untuk menaruh Home · Esc batal")
         case .entry:
@@ -832,10 +862,18 @@ struct MissionWorkspaceView: View {
                 if let selected = planner.selectedWaypoint,
                     let index = planner.draft.waypoints.firstIndex(where: { $0.id == selected.id })
                 {
-                    return ("cursorarrow", "Titik \(index + 1) terpilih · geser untuk memindah · Delete hapus · Esc batal pilih")
+                    return (
+                        "cursorarrow",
+                        "Titik \(index + 1) terpilih · geser untuk memindah · Delete hapus · Esc batal pilih"
+                    )
                 }
-                if !boundaryReady { return ("pencil.and.outline", "Tekan P lalu klik peta untuk menggambar batas kebun") }
-                return ("cursorarrow", "Geser pin untuk memindah · klik pin untuk memilih · seret peta untuk menggeser")
+                if !boundaryReady {
+                    return ("pencil.and.outline", "Tekan P lalu klik peta untuk menggambar batas kebun")
+                }
+                return (
+                    "cursorarrow",
+                    "Geser pin untuk memindah · klik pin untuk memilih · seret peta untuk menggeser"
+                )
             } else {
                 return ("cursorarrow", "Taruh Home (H) dan Entry (E) · geser peta untuk navigasi")
             }
@@ -1008,7 +1046,8 @@ private struct PlanToolButton: View {
                     .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary)
                     .padding(.horizontal, 4).padding(.vertical, 1)
                     .background(
-                        (selected ? Color.white : Color.primary).opacity(0.14), in: RoundedRectangle(cornerRadius: 4))
+                        (selected ? Color.white : Color.primary).opacity(0.14),
+                        in: RoundedRectangle(cornerRadius: 4))
             }
             .font(.callout.weight(selected ? .semibold : .regular))
             .padding(.horizontal, 10).frame(height: 30)

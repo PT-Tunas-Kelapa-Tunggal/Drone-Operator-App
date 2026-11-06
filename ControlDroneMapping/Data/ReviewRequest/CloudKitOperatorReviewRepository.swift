@@ -25,7 +25,8 @@ public final class CloudKitOperatorReviewRepository: OperatorReviewRepository, @
         let query = CKQuery(recordType: PlantationRecordCKAdapter.recordType, predicate: predicate)
         query.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
 
-        let (matchResults, _) = try await database.records(matching: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: 100)
+        let (matchResults, _) = try await database.records(
+            matching: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: 100)
         var requests: [PlantationReviewRequest] = []
         for result in matchResults {
             do {
@@ -34,7 +35,9 @@ public final class CloudKitOperatorReviewRepository: OperatorReviewRepository, @
                 let domain = try domainMapper.toDomain(from: dto)
                 requests.append(domain)
             } catch {
-                print("[CloudKitOperatorReviewRepository] Warning: Failed to parse record: \(error.localizedDescription)")
+                print(
+                    "[CloudKitOperatorReviewRepository] Warning: Failed to parse record: \(error.localizedDescription)"
+                )
             }
         }
         return requests
@@ -47,13 +50,17 @@ public final class CloudKitOperatorReviewRepository: OperatorReviewRepository, @
         return try domainMapper.toDomain(from: dto)
     }
 
-    public func dispatchResult(requestID: UUID, result: PlantationReviewResult, previewAssetURL: URL?) async throws {
+    public func dispatchResult(requestID: UUID, result: PlantationReviewResult, previewAssetURL: URL?)
+        async throws
+    {
         let recordID = CKRecord.ID(recordName: requestID.uuidString)
         let record = try await database.record(for: recordID)
 
         let resultDTO = PlantationReviewResultDTO(
             completedAt: result.completedAt,
-            nutrients: result.nutrients.map { NutrientMetricDTO(name: $0.name, current: $0.current, target: $0.target) },
+            nutrients: result.nutrients.map {
+                NutrientMetricDTO(name: $0.name, current: $0.current, target: $0.target)
+            },
             costs: result.costs.map { CostEstimateDTO(name: $0.name, quantity: $0.quantity, cost: $0.cost) },
             totalCostFormatted: result.totalCostFormatted,
             areas: result.allocationAreas.map { area in
@@ -93,7 +100,7 @@ public final class CloudKitOperatorReviewRepository: OperatorReviewRepository, @
                     if let requests = try? await self.fetchAllRequests() {
                         continuation.yield(requests)
                     }
-                    try? await Task.sleep(nanoseconds: 8_000_000_000) // Poll every 8s
+                    try? await Task.sleep(nanoseconds: 8_000_000_000)  // Poll every 8s
                 }
             }
             continuation.onTermination = { _ in

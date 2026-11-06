@@ -141,7 +141,9 @@ enum PreflightChecklistItem: String, CaseIterable, Identifiable, Hashable, Senda
                 return (false, "Aktifkan Geofence dan hitung jalur di QGC terlebih dahulu.")
             }
             guard safety.coversMission else {
-                let msg = safety.issues.first(where: { $0.code.contains("COVERAGE") || $0.code.contains("HOME") })?.message
+                let msg =
+                    safety.issues.first(where: { $0.code.contains("COVERAGE") || $0.code.contains("HOME") })?
+                    .message
                     ?? "Geofence belum mencakup seluruh jalur terbang dan titik Home."
                 return (false, msg)
             }
@@ -152,7 +154,8 @@ enum PreflightChecklistItem: String, CaseIterable, Identifiable, Hashable, Senda
                 return (false, "Aktifkan Geofence dan hitung jalur di QGC terlebih dahulu.")
             }
             guard safety.ceilingOk else {
-                let msg = safety.issues.first(where: { $0.code == "CEILING_EXCEEDED" })?.message
+                let msg =
+                    safety.issues.first(where: { $0.code == "CEILING_EXCEEDED" })?.message
                     ?? "Tinggi terbang melebihi batas Ceiling geofence."
                 return (false, msg)
             }
@@ -167,7 +170,8 @@ enum PreflightChecklistItem: String, CaseIterable, Identifiable, Hashable, Senda
             }
             return (true, nil)
 
-        case .takeoffAreaClear, .weatherAndWindSafe, .gnssAndCompassReady, .batterySufficient, .cameraAndStorageReady:
+        case .takeoffAreaClear, .weatherAndWindSafe, .gnssAndCompassReady, .batterySufficient,
+            .cameraAndStorageReady:
             guard hasSurveyCalculation else {
                 return (false, "Hitung jalur survei terlebih dahulu.")
             }

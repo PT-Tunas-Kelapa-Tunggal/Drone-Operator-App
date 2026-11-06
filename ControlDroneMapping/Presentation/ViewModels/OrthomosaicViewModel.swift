@@ -59,12 +59,13 @@ final class OrthomosaicViewModel: ObservableObject {
     func legacyDeletedFileIDs(liveIDs: Set<UUID>, hiddenIDs: Set<UUID>) -> Set<UUID> {
         // Hidden IDs also include superseded camera sessions. Only infer a legacy
         // deletion when its mission-owned project has no surviving mission.
-        return Set(projects.filter {
-            $0.fromMission && !liveIDs.contains($0.id)
-                && ($0.datasetID.map { hiddenIDs.contains($0) } == true
-                    || hiddenIDs.contains($0.id) || $0.datasetID == nil)
-                && !($0.datasetID.map { liveIDs.contains($0) } ?? false)
-        }.flatMap { [$0.id] + ($0.datasetID.map { [$0] } ?? []) })
+        return Set(
+            projects.filter {
+                $0.fromMission && !liveIDs.contains($0.id)
+                    && ($0.datasetID.map { hiddenIDs.contains($0) } == true
+                        || hiddenIDs.contains($0.id) || $0.datasetID == nil)
+                    && !($0.datasetID.map { liveIDs.contains($0) } ?? false)
+            }.flatMap { [$0.id] + ($0.datasetID.map { [$0] } ?? []) })
     }
 
     func removeMissionFiles(_ ids: Set<UUID>) throws {
@@ -72,7 +73,8 @@ final class OrthomosaicViewModel: ObservableObject {
             throw MappingError.invalid("Penyimpanan proyek tidak dapat dibaca: " + storageError)
         }
         guard !busy, workingID == nil else {
-            throw MappingError.invalid("Aplikasi masih menyiapkan engine, mengolah, atau mengimpor foto. Coba lagi setelah selesai.")
+            throw MappingError.invalid(
+                "Aplikasi masih menyiapkan engine, mengolah, atau mengimpor foto. Coba lagi setelah selesai.")
         }
         let matches = projects.filter {
             ids.contains($0.id) || $0.datasetID.map { ids.contains($0) } == true

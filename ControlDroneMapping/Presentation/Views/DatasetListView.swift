@@ -21,7 +21,8 @@ struct DatasetListView: View {
                 id: mission.remoteID ?? mission.id, createdAt: mission.createdAt,
                 plan: mission.plan, phase: mission.phase, saved: mission.saved)
         }
-        return (model.records + pending).filter { !model.missionLibrary.hiddenRemoteIDs.contains($0.id) }.sorted { $0.createdAt > $1.createdAt }
+        return (model.records + pending).filter { !model.missionLibrary.hiddenRemoteIDs.contains($0.id) }
+            .sorted { $0.createdAt > $1.createdAt }
     }
     private var visibleRecords: [MissionRecord] {
         resultRecords.filter { record in

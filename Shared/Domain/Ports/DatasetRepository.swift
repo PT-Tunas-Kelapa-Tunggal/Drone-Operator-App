@@ -15,7 +15,6 @@ protocol DatasetRepository: AnyObject {
     func encode<T: Encodable>(_ value: T) throws -> Data
 }
 
-
 extension DatasetRepository {
     /// Remove only direct, UUID-owned dataset folders, including their exports and staging files.
     func removeLocalMissionFiles(_ ids: Set<UUID>) throws {
