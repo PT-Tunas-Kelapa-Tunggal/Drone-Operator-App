@@ -35,16 +35,44 @@ final class FlightPlannerViewModel: ObservableObject {
             if oldValue.waypoints != draft.waypoints {
                 isAreaConfirmed = false
             }
+            checkedSOPItems.removeAll()
             reviewed = false
             exportedURL = nil
             if !continuousEdit { persist() }
         }
     }
     @Published var planningStep: FlightPlanningStep = .boundary
-    @Published var isAreaConfirmed = false
+    @Published var isAreaConfirmed = false {
+        didSet {
+            if !isAreaConfirmed {
+                checkedSOPItems.removeAll()
+                reviewed = false
+            }
+        }
+    }
     @Published var mode: FlightMapEditMode = .inspect
     @Published var selectedWaypointID: UUID?
+    @Published var checkedSOPItems: Set<PreflightChecklistItem> = []
     @Published var reviewed = false
+
+    func resetChecklist() {
+        if !checkedSOPItems.isEmpty {
+            checkedSOPItems.removeAll()
+        }
+        if reviewed {
+            reviewed = false
+        }
+    }
+
+    func precondition(for item: PreflightChecklistItem) -> (met: Bool, blockerReason: String?) {
+        item.precondition(isAreaConfirmed: isAreaConfirmed, route: draft)
+    }
+
+    var isSOPChecklistComplete: Bool {
+        PreflightChecklistItem.allCases.allSatisfy { item in
+            checkedSOPItems.contains(item) && precondition(for: item).met
+        }
+    }
     @Published private(set) var error: String?
     @Published private(set) var storageError: String?
     @Published private(set) var exportedURL: URL?
@@ -143,7 +171,9 @@ final class FlightPlannerViewModel: ObservableObject {
         }
         draft.visualTransects = []
         draft.surveyStatistics = nil
+        draft.safetyResult = nil
         draft.rawPlanJSON = nil
+        resetChecklist()
         fitRoute()
     }
 
@@ -204,6 +234,7 @@ final class FlightPlannerViewModel: ObservableObject {
         switching = false
         selectedWaypointID = nil
         mode = .inspect
+        checkedSOPItems.removeAll()
         reviewed = false
         isAreaConfirmed = false
         exportedURL = nil
@@ -220,6 +251,7 @@ final class FlightPlannerViewModel: ObservableObject {
         switching = false
         selectedWaypointID = nil
         mode = .inspect
+        checkedSOPItems.removeAll()
         reviewed = false
         isAreaConfirmed = !route.visualTransects.isEmpty && route.waypoints.count >= 3
         exportedURL = nil
@@ -477,6 +509,9 @@ final class FlightPlannerViewModel: ObservableObject {
         let params = SurveyScanParameters(
             altitude: altitude,
             speed: speed,
+            ascentSpeed: draft.ascentSpeed,
+            descentSpeed: draft.descentSpeed,
+            holdSeconds: draft.holdSeconds,
             gridAngle: gridAngle,
             spacing: lineSpacing ?? draft.lineSpacing,
             triggerDistance: triggerDistance ?? draft.triggerDistance,
@@ -489,7 +524,10 @@ final class FlightPlannerViewModel: ObservableObject {
             cameraSpec: opticalSpec,
             firmware: draft.firmware ?? .ardupilot,
             vehicleType: 2,
-            entryLocation: resolvedEntryLocation
+            entryLocation: resolvedEntryLocation,
+            home: draft.home,
+            returnToHome: draft.returnToHome,
+            geofence: draft.geofence
         )
 
         do {
@@ -497,14 +535,9 @@ final class FlightPlannerViewModel: ObservableObject {
                 boundary: activeBoundary,
                 parameters: params
             )
-            var stats = result.statistics
-            if stats.flightTimeSeconds <= 0 && speed > 0 && stats.totalDistanceMeters > 0 {
-                let climbDescent = (altitude / 2.5) * 2.0
-                let turnarounds = Double(stats.transectCount) * (turnaroundDistance * 2.0 / speed)
-                stats.flightTimeSeconds = (stats.totalDistanceMeters / speed) + turnarounds + climbDescent
-            }
             draft.visualTransects = result.visualTransectPoints
-            draft.surveyStatistics = stats
+            draft.surveyStatistics = result.statistics
+            draft.safetyResult = result.safety
             draft.rawPlanJSON = result.rawPlanData
             draft.gridAngle = gridAngle
             if result.statistics.calculatedLineSpacing > 0 {
@@ -524,7 +557,7 @@ final class FlightPlannerViewModel: ObservableObject {
             }
             draft.turnaroundDistance = turnaroundDistance
             draft.entryLocation = resolvedEntryLocation
-            reviewed = false
+            resetChecklist()
             if fitsRoute { fitRoute() }
         } catch {
             self.error = error.localizedDescription

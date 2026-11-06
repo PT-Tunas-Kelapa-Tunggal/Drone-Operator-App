@@ -47,17 +47,50 @@ final class MockWaypointGenerator: WaypointGenerator, @unchecked Sendable {
         }
 
         let distanceMeters = zip(points, points.dropFirst()).reduce(0.0) { $0 + $1.0.distance(to: $1.1) }
+        let wpCount = points.count
+        let holdTotal = Double(wpCount) * parameters.holdSeconds
+        let climbDescent = (parameters.altitude / max(0.5, parameters.ascentSpeed))
+            + (parameters.altitude / max(0.5, parameters.descentSpeed))
         let stats = SurveyScanStatistics(
             totalDistanceMeters: distanceMeters,
-            flightTimeSeconds: distanceMeters / max(1.0, parameters.speed),
+            flightTimeSeconds: (distanceMeters / max(1.0, parameters.speed)) + climbDescent + holdTotal,
             coveredAreaSquareMeters: (maxLat - minLat) * 111_000 * (maxLon - minLon) * 111_000,
             photoCount: max(1, Int(distanceMeters / 25.0)),
-            transectCount: transectCount
+            transectCount: transectCount,
+            waypointCount: wpCount,
+            holdTimeSeconds: holdTotal,
+            maxMissionAltitude: parameters.altitude
+        )
+
+        let centerCoord = parameters.home ?? MapCoordinate(
+            latitude: (minLat + maxLat) / 2.0,
+            longitude: (minLon + maxLon) / 2.0
+        )
+        let resolvedRadius = parameters.geofence.radiusMeters > 0 ? parameters.geofence.radiusMeters : 250.0
+        let ceilingOk = parameters.altitude <= parameters.geofence.ceilingMeters
+        let safety = SurveySafetyResult(
+            enabled: parameters.geofence.enabled,
+            type: parameters.geofence.type,
+            bufferMeters: parameters.geofence.bufferMeters,
+            radiusMeters: resolvedRadius,
+            ceilingMeters: parameters.geofence.ceilingMeters,
+            breachAction: parameters.geofence.breachAction,
+            coversMission: parameters.geofence.enabled,
+            homeInside: true,
+            uncoveredPointCount: 0,
+            ceilingOk: ceilingOk,
+            polygonCoordinates: boundary,
+            circleCenter: centerCoord,
+            circleRadiusMeters: resolvedRadius,
+            breachReturnPoint: centerCoord,
+            breachReturnAltitude: parameters.altitude,
+            issues: ceilingOk ? [] : [SafetyIssue(code: "CEILING_EXCEEDED", message: "Tinggi terbang melebihi batas Ceiling.")]
         )
 
         return SurveyScanResult(
             visualTransectPoints: points,
             statistics: stats,
+            safety: safety,
             rawPlanData: Data()
         )
     }

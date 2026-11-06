@@ -133,6 +133,28 @@ struct WaypointMap: NSViewRepresentable {
                         }
                     }
                 }
+
+                if let safety = route.safetyResult, safety.enabled {
+                    let isFenceSafe = safety.coversMission && safety.ceilingOk
+                    switch safety.type {
+                    case .polygon:
+                        let fenceCoords = safety.polygonCoordinates.filter(\.isValid).map(\.clCoordinate)
+                        if fenceCoords.count >= 3 {
+                            let fenceOverlay = GeofencePolygonOverlay(coordinates: fenceCoords, count: fenceCoords.count)
+                            fenceOverlay.isSafe = isFenceSafe
+                            map.addOverlay(fenceOverlay)
+                        }
+                    case .circle:
+                        if let center = safety.circleCenter, center.isValid, safety.circleRadiusMeters > 0 {
+                            let circleOverlay = GeofenceCircleOverlay(
+                                center: center.clCoordinate,
+                                radius: safety.circleRadiusMeters
+                            )
+                            circleOverlay.isSafe = isFenceSafe
+                            map.addOverlay(circleOverlay)
+                        }
+                    }
+                }
             }
 
             if let operatorLocation {
@@ -157,6 +179,7 @@ struct WaypointMap: NSViewRepresentable {
                 + route.waypoints.filter { $0.coordinate.isValid }.map { $0.coordinate.clCoordinate }
                 + (farm?.coordinates ?? [])
                 + route.visualTransects.map(\.clCoordinate)
+                + (route.safetyResult?.polygonCoordinates.filter(\.isValid).map(\.clCoordinate) ?? [])
             if focusOperator, let operatorLocation {
                 map.setRegion(
                     MKCoordinateRegion(
@@ -196,6 +219,12 @@ struct WaypointMap: NSViewRepresentable {
     }
 final class SurveyTransectPolyline: MKPolyline {}
 final class SurveyTransitPolyline: MKPolyline {}
+final class GeofencePolygonOverlay: MKPolygon {
+    var isSafe: Bool = true
+}
+final class GeofenceCircleOverlay: MKCircle {
+    var isSafe: Bool = true
+}
 
     final class RouteMarker: NSObject, MKAnnotation {
         enum Kind { case home, waypoint, boundary, operatorLocation, surveyEntry, surveyExit }
@@ -281,6 +310,24 @@ final class SurveyTransitPolyline: MKPolyline {}
                 renderer.strokeColor = .systemCyan
                 renderer.lineWidth = 2
                 renderer.lineDashPattern = [6, 4]
+                return renderer
+            }
+            if let fencePolygon = overlay as? GeofencePolygonOverlay {
+                let renderer = MKPolygonRenderer(polygon: fencePolygon)
+                let color: NSColor = fencePolygon.isSafe ? .systemOrange : .systemRed
+                renderer.strokeColor = color
+                renderer.fillColor = color.withAlphaComponent(0.08)
+                renderer.lineWidth = 2
+                renderer.lineDashPattern = [8, 5]
+                return renderer
+            }
+            if let fenceCircle = overlay as? GeofenceCircleOverlay {
+                let renderer = MKCircleRenderer(circle: fenceCircle)
+                let color: NSColor = fenceCircle.isSafe ? .systemOrange : .systemRed
+                renderer.strokeColor = color
+                renderer.fillColor = color.withAlphaComponent(0.08)
+                renderer.lineWidth = 2
+                renderer.lineDashPattern = [8, 5]
                 return renderer
             }
             if let polygon = overlay as? MKPolygon {

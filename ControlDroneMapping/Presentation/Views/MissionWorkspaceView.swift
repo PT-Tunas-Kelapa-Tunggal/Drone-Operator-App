@@ -47,10 +47,16 @@ struct MissionWorkspaceView: View {
             focusOperator: focusOperator,
             planningStep: planner.planningStep,
             onHomeMove: { coordinate in
-                editRoute { planner.draft.home = coordinate }
+                editRoute {
+                    planner.draft.home = coordinate
+                    replanDebounced()
+                }
             },
             onEntryMove: { coordinate in
-                editRoute { planner.moveEntry(to: coordinate) }
+                editRoute {
+                    planner.moveEntry(to: coordinate)
+                    replanDebounced()
+                }
             },
             onInsertBoundary: { index, coordinate in
                 editRoute { planner.addWaypoint(coordinate, at: index) }
@@ -89,8 +95,8 @@ struct MissionWorkspaceView: View {
             planner.open(
                 farm: mission.area, name: "Rute " + mission.plan.name,
                 altitude: model.geometry.heightAGL, speed: model.geometry.speed, missionID: mission.id)
-            // Opening a plan starts ready to draw boundary points if in boundary step.
-            planner.mode = canEditRoute ? (planner.planningStep == .boundary ? .waypoint : .inspect) : .inspect
+            // Default to inspect (Pilih) mode so operator can pan and select without accidental point additions.
+            planner.mode = .inspect
             installKeyMonitor()
         }
         .onDisappear {
@@ -368,6 +374,10 @@ struct MissionWorkspaceView: View {
                             set: { val in
                                 model.geometry.heightAGL = val
                                 planner.draft.defaultAltitude = val
+                                if planner.draft.geofence.ceilingMeters <= val {
+                                    planner.draft.geofence.ceilingMeters = min(120.0, val + 20.0)
+                                }
+                                planner.resetChecklist()
                                 model.geometry.reviewed = false
                                 replanDebounced()
                             }
@@ -384,12 +394,51 @@ struct MissionWorkspaceView: View {
                             set: { val in
                                 model.geometry.speed = val
                                 planner.draft.speed = val
+                                planner.resetChecklist()
                                 model.geometry.reviewed = false
+                                replanDebounced()
                             }
                         ),
                         unit: "m/s"
                     )
                 }
+                .help("Kecepatan terbang horizontal sepanjang lintasan survei.")
+            }
+
+            HStack(spacing: 10) {
+                ControlField("Kecepatan Naik") {
+                    NumberField(
+                        Binding(
+                            get: { planner.draft.ascentSpeed },
+                            set: { val in
+                                guard canEditRoute else { return }
+                                planner.draft.ascentSpeed = max(0.5, val)
+                                planner.resetChecklist()
+                                model.geometry.reviewed = false
+                                replanDebounced()
+                            }
+                        ),
+                        unit: "m/s"
+                    )
+                }
+                .help("Kecepatan vertikal saat lepas landas dan naik ke ketinggian misi (default 2.5 m/s).")
+
+                ControlField("Kecepatan Turun") {
+                    NumberField(
+                        Binding(
+                            get: { planner.draft.descentSpeed },
+                            set: { val in
+                                guard canEditRoute else { return }
+                                planner.draft.descentSpeed = max(0.5, val)
+                                planner.resetChecklist()
+                                model.geometry.reviewed = false
+                                replanDebounced()
+                            }
+                        ),
+                        unit: "m/s"
+                    )
+                }
+                .help("Kecepatan vertikal saat turun dan mendarat (default 1.5 m/s).")
             }
 
             // Overlap Sliders
@@ -444,12 +493,68 @@ struct MissionWorkspaceView: View {
             calculatedMetricsBox
 
             angleSlider
-            Toggle("Kembali ke Home setelah selesai (RTL)", isOn: $planner.draft.returnToHome)
-                .font(.callout)
+            Toggle("Kembali ke Home setelah selesai (RTL)", isOn: Binding(
+                get: { planner.draft.returnToHome },
+                set: { val in
+                    guard canEditRoute else { return }
+                    planner.draft.returnToHome = val
+                    planner.resetChecklist()
+                    model.geometry.reviewed = false
+                    replanDebounced()
+                }
+            ))
+            .font(.callout)
+
+            GeofenceInspectorSection(
+                geofence: $planner.draft.geofence,
+                safetyResult: planner.draft.safetyResult,
+                canEdit: canEditRoute,
+                onParameterChanged: {
+                    planner.resetChecklist()
+                    model.geometry.reviewed = false
+                    replanDebounced()
+                }
+            )
+
             DisclosureGroup("Lanjutan") {
                 HStack(spacing: 10) {
-                    ControlField("Jarak putar") { NumberField($planner.draft.turnaroundDistance, unit: "m") }
-                        .help("Jarak manuver putar balik di luar batas kebun.")
+                    ControlField("Jarak putar") {
+                        NumberField(
+                            Binding(
+                                get: { planner.draft.turnaroundDistance },
+                                set: { val in
+                                    guard canEditRoute else { return }
+                                    let clamped = max(0, val)
+                                    planner.draft.turnaroundDistance = clamped
+                                    if planner.draft.geofence.bufferMeters < clamped + 10 {
+                                        planner.draft.geofence.bufferMeters = clamped + 10
+                                    }
+                                    planner.resetChecklist()
+                                    model.geometry.reviewed = false
+                                    replanDebounced()
+                                }
+                            ),
+                            unit: "m"
+                        )
+                    }
+                    .help("Jarak manuver putar balik di luar batas kebun.")
+
+                    ControlField("Jeda titik") {
+                        NumberField(
+                            Binding(
+                                get: { planner.draft.holdSeconds },
+                                set: { val in
+                                    guard canEditRoute else { return }
+                                    planner.draft.holdSeconds = min(60, max(0, val))
+                                    planner.resetChecklist()
+                                    model.geometry.reviewed = false
+                                    replanDebounced()
+                                }
+                            ),
+                            unit: "dtk"
+                        )
+                    }
+                    .help("Durasi berhenti (hold) umum pada setiap titik waypoint survei (0–60 detik).")
                 }
                 .padding(.top, 8)
             }
@@ -477,28 +582,27 @@ struct MissionWorkspaceView: View {
     }
 
     private var calculatedMetricsBox: some View {
-        var spec = CameraOpticalSpec.iphone17
-        spec.setResolution(planner.draft.cameraResolution)
-        let estSpacing = planner.draft.calculatedLineSpacing ?? spec.estimatedLineSpacing(altitude: model.geometry.heightAGL, sideOverlapPercent: planner.draft.sideOverlap)
-        let estTrigger = planner.draft.calculatedTriggerDistance ?? spec.estimatedTriggerDistance(altitude: model.geometry.heightAGL, frontalOverlapPercent: planner.draft.frontalOverlap)
-        let estGSD = planner.draft.groundResolutionCmPerPx ?? spec.estimatedGSDcm(altitude: model.geometry.heightAGL)
+        let stats = planner.draft.surveyStatistics
+        let spacingText = stats.map { String(format: "%.1f m", $0.calculatedLineSpacing) } ?? "—"
+        let triggerText = stats.map { String(format: "%.1f m", $0.calculatedTriggerDistance) } ?? "—"
+        let gsdText = stats.map { String(format: "%.2f cm/px", $0.groundResolutionCmPerPx) } ?? "—"
 
         return HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Jarak Jalur").font(.caption2).foregroundStyle(.secondary)
-                Text(String(format: "%.1f m", estSpacing)).font(.caption.weight(.semibold))
+                Text(spacingText).font(.caption.weight(.semibold))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Divider()
             VStack(alignment: .leading, spacing: 2) {
                 Text("Jarak Foto").font(.caption2).foregroundStyle(.secondary)
-                Text(String(format: "%.1f m", estTrigger)).font(.caption.weight(.semibold))
+                Text(triggerText).font(.caption.weight(.semibold))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Divider()
             VStack(alignment: .leading, spacing: 2) {
                 Text("GSD Tanah").font(.caption2).foregroundStyle(.secondary)
-                Text(String(format: "%.2f cm/px", estGSD)).font(.caption.weight(.semibold))
+                Text(gsdText).font(.caption.weight(.semibold))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -586,65 +690,117 @@ struct MissionWorkspaceView: View {
 
     // MARK: - Summary
 
-    /// Read-only overview of the plan; the review checkbox is the last step before capture.
+    /// Read-only overview of the plan; the SOP checklist must be completed before the final review checkbox unlocks.
     private var summaryPanel: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Ringkasan rencana").font(KropsTypography.sectionTitle)
                 Spacer()
-                if model.geometry.reviewed {
+                if model.geometry.reviewed && planner.isSOPChecklistComplete {
                     Label("Diperiksa", systemImage: "checkmark.circle.fill")
                         .font(.caption).foregroundStyle(.green)
                 }
                 panelToggle(.trailing)
             }
+            .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
 
-            VStack(alignment: .leading, spacing: 6) {
-                PlanSectionTitle("Area")
-                PlanSummaryRow("Luas", String(format: "%.2f ha", planner.boundaryAreaHectares))
-                PlanSummaryRow("Keliling", String(format: "%.0f m", planner.boundaryPerimeterMeters))
-                PlanSummaryRow("Titik batas", "\(planner.draft.waypoints.count)")
-            }
+            Divider()
 
-            VStack(alignment: .leading, spacing: 6) {
-                PlanSectionTitle("Lepas landas & masuk")
-                PlanStatusRow("Home", glyph: "H", color: .green, placed: planner.draft.home != nil,
-                              status: planner.draft.home == nil ? "Belum · tekan H" : "Sudah ditaruh")
-                PlanStatusRow("Entry", glyph: "E", color: .cyan, placed: planner.draft.surveyEntry != nil,
-                              status: planner.draft.surveyEntry == nil ? "Belum · tekan E" : "Sudah ditaruh")
-                PlanSummaryRow("Kembali ke Home", planner.draft.returnToHome ? "Ya" : "Tidak")
-            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        PlanSectionTitle("Area")
+                        PlanSummaryRow("Luas", String(format: "%.2f ha", planner.boundaryAreaHectares))
+                        PlanSummaryRow("Keliling", String(format: "%.0f m", planner.boundaryPerimeterMeters))
+                        PlanSummaryRow("Titik batas", "\(planner.draft.waypoints.count)")
+                    }
 
-            VStack(alignment: .leading, spacing: 6) {
-                PlanSectionTitle("Jalur")
-                if let stats = planner.draft.surveyStatistics, stats.totalDistanceMeters > 0 {
-                    PlanSummaryRow("Foto", "\(stats.photoCount)")
-                    PlanSummaryRow("Jarak terbang", String(format: "%.0f m", stats.totalDistanceMeters))
-                    let flightTime = stats.flightTimeSeconds > 0
-                        ? stats.flightTimeSeconds
-                        : (stats.totalDistanceMeters / max(1.0, planner.draft.speed))
-                    PlanSummaryRow("Durasi", Self.formattedDuration(flightTime))
-                    PlanSummaryRow("Lintasan", "\(stats.transectCount)")
-                } else {
-                    Text("Belum dihitung").font(.callout).foregroundStyle(.secondary)
-                }
-            }
+                    VStack(alignment: .leading, spacing: 6) {
+                        PlanSectionTitle("Lepas landas & masuk")
+                        PlanStatusRow("Home", glyph: "H", color: .green, placed: planner.draft.home != nil,
+                                      status: planner.draft.home == nil ? "Belum · tekan H" : "Sudah ditaruh")
+                        PlanStatusRow("Entry", glyph: "E", color: .cyan, placed: planner.draft.surveyEntry != nil,
+                                      status: planner.draft.surveyEntry == nil ? "Belum · tekan E" : "Sudah ditaruh")
+                        PlanSummaryRow("Kembali ke Home", planner.draft.returnToHome ? "Ya" : "Tidak")
+                    }
 
-            if pathReady {
-                Divider()
-                Toggle(isOn: $model.geometry.reviewed) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Rencana sudah diperiksa").font(.body.weight(.medium))
-                        Text("Home, Entry, dan jalur sesuai kondisi lapangan.")
-                            .font(.caption).foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 6) {
+                        PlanSectionTitle("Jalur")
+                        if let stats = planner.draft.surveyStatistics, stats.totalDistanceMeters > 0 {
+                            PlanSummaryRow("Foto", "\(stats.photoCount)")
+                            PlanSummaryRow("Jarak terbang", String(format: "%.0f m", stats.totalDistanceMeters))
+                            PlanSummaryRow("Durasi", Self.formattedDuration(stats.flightTimeSeconds))
+                            PlanSummaryRow("Lintasan", "\(stats.transectCount)")
+                            PlanSummaryRow(
+                                "Kecepatan (H/↑/↓)",
+                                String(format: "%.1f / %.1f / %.1f m/s", planner.draft.speed, planner.draft.ascentSpeed, planner.draft.descentSpeed)
+                            )
+                            PlanSummaryRow("Jeda titik", String(format: "%.0f dtk", planner.draft.holdSeconds))
+                        } else {
+                            Text("Belum dihitung").font(.callout).foregroundStyle(.secondary)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        PlanSectionTitle("Geofence & keamanan")
+                        if let safety = planner.draft.safetyResult, safety.enabled {
+                            PlanSummaryRow("Tipe", safety.type.title)
+                            if safety.type == .polygon {
+                                PlanSummaryRow("Buffer", String(format: "%.0f m", safety.bufferMeters))
+                            } else {
+                                PlanSummaryRow("Radius", String(format: "%.0f m", safety.circleRadiusMeters))
+                            }
+                            PlanSummaryRow("Ceiling", String(format: "%.0f m", safety.ceilingMeters))
+                            PlanSummaryRow("Aksi", safety.breachAction.title)
+                            PlanSummaryRow("Cakupan QGC", safety.coversMission && safety.ceilingOk ? "Aman" : "Perlu dicek")
+                        } else {
+                            Text(planner.draft.geofence.enabled ? "Menunggu QGC" : "Nonaktif")
+                                .font(.callout).foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if pathReady {
+                        Divider()
+                        PreflightChecklistView(
+                            planner: planner,
+                            canEdit: canEditRoute && !model.editingLocked,
+                            onChecklistChanged: {
+                                if !planner.isSOPChecklistComplete {
+                                    model.geometry.reviewed = false
+                                }
+                            }
+                        )
+
+                        Divider()
+                        Toggle(isOn: Binding(
+                            get: { model.geometry.reviewed && planner.isSOPChecklistComplete },
+                            set: { val in
+                                guard planner.isSOPChecklistComplete else {
+                                    model.geometry.reviewed = false
+                                    return
+                                }
+                                model.geometry.reviewed = val
+                            }
+                        )) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Rencana sudah diperiksa").font(.body.weight(.medium))
+                                Text(
+                                    planner.isSOPChecklistComplete
+                                        ? "Seluruh checklist SOP telah diverifikasi."
+                                        : "Selesaikan seluruh 11 item checklist SOP di atas untuk mengaktifkan."
+                                )
+                                .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .toggleStyle(.checkbox)
+                        .disabled(model.editingLocked || !canEditRoute || !planner.isSOPChecklistComplete)
                     }
                 }
-                .toggleStyle(.checkbox)
-                .disabled(model.editingLocked || !canEditRoute)
+                .padding(16)
             }
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .padding(16)
-        .frame(width: 260)
+        .frame(width: 290)
         .kropsFloatingPanel()
     }
 
@@ -722,6 +878,7 @@ struct MissionWorkspaceView: View {
             editRoute {
                 planner.mapClick(coordinate)
                 planner.mode = .inspect
+                replanDebounced()
             }
         case .inspect:
             break
@@ -778,7 +935,10 @@ struct MissionWorkspaceView: View {
         guard canEditRoute else { return }
         let previous = planner.draft
         change()
-        if planner.draft != previous { model.geometry.reviewed = false }
+        if planner.draft != previous {
+            planner.resetChecklist()
+            model.geometry.reviewed = false
+        }
     }
 
     static func formattedDuration(_ seconds: Double) -> String {
