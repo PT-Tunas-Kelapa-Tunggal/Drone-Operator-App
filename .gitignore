@@ -6,6 +6,7 @@ DerivedData/
 dist/
 __pycache__/
 *.pyc
+.agents/
 
 # Xcode user state
 xcuserdata/
