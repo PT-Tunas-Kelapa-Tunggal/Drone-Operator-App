@@ -14,9 +14,9 @@
       "architecture": "arm64"
     },
     "qgc": {
-      "version": "http-api-v0.3.0",
-      "url": "https://github.com/PT-Tunas-Kelapa-Tunggal/qgc-over-http/releases/download/http-api-v0.3.0/QGroundControl-macOS-arm64.tar.gz",
-      "sha256": "38bc033b18458fb030eef8868e0c8d81ee09ff8d5ca8cb148cb88692b298e5a7",
+      "version": "http-api-v0.4.0",
+      "url": "https://github.com/PT-Tunas-Kelapa-Tunggal/qgc-over-http/releases/download/http-api-v0.4.0/QGroundControl-macOS-arm64.tar.gz",
+      "sha256": "c5bd6b6e506def5d536fe1b2c25a31a5378c1a4dbf19a2c093f9d9153dc87748",
       "layout": "helper-app",
       "folder": "QGroundControl.app",
       "helper": "Contents/MacOS/QGroundControl",

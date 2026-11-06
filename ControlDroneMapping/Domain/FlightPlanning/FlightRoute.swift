@@ -134,6 +134,9 @@ struct FlightRoute: Codable, Equatable, Identifiable {
     var defaultAltitude = 30.0
     var takeoffAltitude = 20.0
     var speed = 5.0
+    var ascentSpeed = 2.5
+    var descentSpeed = 1.5
+    var holdSeconds = 0.0
     var returnToHome = true
     var waypoints: [FlightWaypoint] = []
     var gridAngle = 0.0
@@ -144,11 +147,13 @@ struct FlightRoute: Codable, Equatable, Identifiable {
     var sideOverlap = 70.0
     var frontalOverlap = 75.0
     var cameraResolution: CameraOpticalSpec.Resolution = .res24MP
+    var geofence = GeofenceSettings()
     var calculatedLineSpacing: Double? = nil
     var calculatedTriggerDistance: Double? = nil
     var groundResolutionCmPerPx: Double? = nil
     var visualTransects: [MapCoordinate] = []
     var surveyStatistics: SurveyScanStatistics? = nil
+    var safetyResult: SurveySafetyResult? = nil
     var rawPlanJSON: Data? = nil
 
     func validateForExport() throws {
@@ -201,6 +206,9 @@ struct FlightRoute: Codable, Equatable, Identifiable {
         defaultAltitude: Double = 30.0,
         takeoffAltitude: Double = 20.0,
         speed: Double = 5.0,
+        ascentSpeed: Double = 2.5,
+        descentSpeed: Double = 1.5,
+        holdSeconds: Double = 0.0,
         returnToHome: Bool = true,
         waypoints: [FlightWaypoint] = [],
         gridAngle: Double = 0.0,
@@ -211,8 +219,10 @@ struct FlightRoute: Codable, Equatable, Identifiable {
         sideOverlap: Double = 70.0,
         frontalOverlap: Double = 75.0,
         cameraResolution: CameraOpticalSpec.Resolution = .res24MP,
+        geofence: GeofenceSettings = GeofenceSettings(),
         visualTransects: [MapCoordinate] = [],
         surveyStatistics: SurveyScanStatistics? = nil,
+        safetyResult: SurveySafetyResult? = nil,
         rawPlanJSON: Data? = nil
     ) {
         self.id = id
@@ -227,6 +237,9 @@ struct FlightRoute: Codable, Equatable, Identifiable {
         self.defaultAltitude = defaultAltitude
         self.takeoffAltitude = takeoffAltitude
         self.speed = speed
+        self.ascentSpeed = ascentSpeed
+        self.descentSpeed = descentSpeed
+        self.holdSeconds = holdSeconds
         self.returnToHome = returnToHome
         self.waypoints = waypoints
         self.gridAngle = gridAngle
@@ -237,9 +250,18 @@ struct FlightRoute: Codable, Equatable, Identifiable {
         self.sideOverlap = sideOverlap
         self.frontalOverlap = frontalOverlap
         self.cameraResolution = cameraResolution
+        self.geofence = geofence
         self.visualTransects = visualTransects
         self.surveyStatistics = surveyStatistics
+        self.safetyResult = safetyResult
         self.rawPlanJSON = rawPlanJSON
+    }
+
+    /// Only non-QGC identity/boundary metadata is listed in CodingKeys; QGC-derived
+    /// parameters, transects, statistics, geofence geometry, and .plan payloads are never persisted.
+    private enum CodingKeys: String, CodingKey {
+        case id, name, farmID, missionID, createdAt, firmware, home, homeAltitudeAMSL
+        case surveyEntry, defaultAltitude, takeoffAltitude, speed, returnToHome, waypoints
     }
 
     init(from decoder: Decoder) throws {
@@ -258,20 +280,6 @@ struct FlightRoute: Codable, Equatable, Identifiable {
         speed = try container.decodeIfPresent(Double.self, forKey: .speed) ?? 5.0
         returnToHome = try container.decodeIfPresent(Bool.self, forKey: .returnToHome) ?? true
         waypoints = try container.decodeIfPresent([FlightWaypoint].self, forKey: .waypoints) ?? []
-        gridAngle = try container.decodeIfPresent(Double.self, forKey: .gridAngle) ?? 0.0
-        lineSpacing = try container.decodeIfPresent(Double.self, forKey: .lineSpacing) ?? 10.7
-        triggerDistance = try container.decodeIfPresent(Double.self, forKey: .triggerDistance) ?? 6.7
-        turnaroundDistance = try container.decodeIfPresent(Double.self, forKey: .turnaroundDistance) ?? 10.0
-        entryLocation = try container.decodeIfPresent(Int.self, forKey: .entryLocation) ?? 0
-        sideOverlap = try container.decodeIfPresent(Double.self, forKey: .sideOverlap) ?? 70.0
-        frontalOverlap = try container.decodeIfPresent(Double.self, forKey: .frontalOverlap) ?? 75.0
-        cameraResolution = try container.decodeIfPresent(CameraOpticalSpec.Resolution.self, forKey: .cameraResolution) ?? .res24MP
-        calculatedLineSpacing = try container.decodeIfPresent(Double.self, forKey: .calculatedLineSpacing)
-        calculatedTriggerDistance = try container.decodeIfPresent(Double.self, forKey: .calculatedTriggerDistance)
-        groundResolutionCmPerPx = try container.decodeIfPresent(Double.self, forKey: .groundResolutionCmPerPx)
-        visualTransects = try container.decodeIfPresent([MapCoordinate].self, forKey: .visualTransects) ?? []
-        surveyStatistics = try container.decodeIfPresent(SurveyScanStatistics.self, forKey: .surveyStatistics)
-        rawPlanJSON = try container.decodeIfPresent(Data.self, forKey: .rawPlanJSON)
     }
 }
 
@@ -293,6 +301,9 @@ struct SurveyScanStatistics: Codable, Equatable, Sendable {
     var coveredAreaSquareMeters: Double = 0.0
     var photoCount: Int = 0
     var transectCount: Int = 0
+    var waypointCount: Int = 0
+    var holdTimeSeconds: Double = 0.0
+    var maxMissionAltitude: Double = 0.0
     var calculatedLineSpacing: Double = 0.0
     var calculatedTriggerDistance: Double = 0.0
     var groundResolutionCmPerPx: Double = 0.0
@@ -301,5 +312,6 @@ struct SurveyScanStatistics: Codable, Equatable, Sendable {
 struct SurveyScanResult: Sendable {
     var visualTransectPoints: [MapCoordinate] = []
     var statistics: SurveyScanStatistics = SurveyScanStatistics()
+    var safety: SurveySafetyResult? = nil
     var rawPlanData: Data = Data()
 }

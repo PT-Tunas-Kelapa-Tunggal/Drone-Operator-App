@@ -63,9 +63,12 @@ struct CameraOpticalSpec: Codable, Equatable, Sendable {
 
 /// Parameters controlling autonomous survey grid generation.
 /// All fields map directly to native flight engine facts and calculations.
-struct SurveyScanParameters: Codable, Equatable, Sendable {
+struct SurveyScanParameters: Equatable, Sendable {
     var altitude: Double = 30.0
     var speed: Double = 5.0
+    var ascentSpeed: Double = 2.5
+    var descentSpeed: Double = 1.5
+    var holdSeconds: Double = 0.0
     var gridAngle: Double = 0.0
     var spacing: Double? = nil
     var triggerDistance: Double? = nil
@@ -79,10 +82,16 @@ struct SurveyScanParameters: Codable, Equatable, Sendable {
     var firmware: FlightFirmware = .ardupilot
     var vehicleType: Int = 2
     var entryLocation: Int = 0
+    var home: MapCoordinate? = nil
+    var returnToHome: Bool = true
+    var geofence: GeofenceSettings = GeofenceSettings()
 
     init(
         altitude: Double = 30.0,
         speed: Double = 5.0,
+        ascentSpeed: Double = 2.5,
+        descentSpeed: Double = 1.5,
+        holdSeconds: Double = 0.0,
         gridAngle: Double = 0.0,
         spacing: Double? = nil,
         triggerDistance: Double? = nil,
@@ -95,10 +104,16 @@ struct SurveyScanParameters: Codable, Equatable, Sendable {
         cameraSpec: CameraOpticalSpec? = .iphone17,
         firmware: FlightFirmware = .ardupilot,
         vehicleType: Int = 2,
-        entryLocation: Int = 0
+        entryLocation: Int = 0,
+        home: MapCoordinate? = nil,
+        returnToHome: Bool = true,
+        geofence: GeofenceSettings = GeofenceSettings()
     ) {
         self.altitude = altitude
         self.speed = speed
+        self.ascentSpeed = ascentSpeed
+        self.descentSpeed = descentSpeed
+        self.holdSeconds = holdSeconds
         self.gridAngle = gridAngle
         self.spacing = spacing
         self.triggerDistance = triggerDistance
@@ -112,5 +127,8 @@ struct SurveyScanParameters: Codable, Equatable, Sendable {
         self.firmware = firmware
         self.vehicleType = vehicleType
         self.entryLocation = entryLocation
+        self.home = home
+        self.returnToHome = returnToHome
+        self.geofence = geofence
     }
 }
