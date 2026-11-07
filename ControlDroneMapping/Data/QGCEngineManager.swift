@@ -47,6 +47,8 @@ public final class QGCEngineManager: ObservableObject {
     public let vehiclesURL: URL = BundledQGCEngine.baseURL.appendingPathComponent("api/v1/vehicles")
     public let vehicleCommandURL: URL = BundledQGCEngine.baseURL.appendingPathComponent(
         "api/v1/vehicles/command")
+    public let uploadPlanURL: URL = BundledQGCEngine.baseURL.appendingPathComponent(
+        "api/v1/plan/upload")
 
     private let session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
@@ -349,6 +351,48 @@ public final class QGCEngineManager: ObservableObject {
             let errorMsg =
                 (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["message"] as? String
                 ?? "Gagal menjalankan perintah drone (HTTP \(httpResponse.statusCode))."
+            throw MappingError.invalid(errorMsg)
+        }
+
+        await fetchVehicles()
+    }
+
+    public func uploadMissionPlan(
+        _ planData: Data,
+        vehicleID: Int? = nil
+    ) async throws {
+        guard case .healthy = status else {
+            throw MappingError.invalid("QGC Engine belum aktif.")
+        }
+
+        let planObj = (try? JSONSerialization.jsonObject(with: planData) as? [String: Any]) ?? [:]
+        guard !planObj.isEmpty else {
+            throw MappingError.invalid("Format data rute (.plan) tidak valid atau kosong.")
+        }
+
+        var payload: [String: Any] = [
+            "plan": planObj
+        ]
+        if let vehicleID {
+            payload["vehicleId"] = vehicleID
+        } else if let active = activeVehicle {
+            payload["vehicleId"] = active.id
+        }
+
+        var request = URLRequest(url: uploadPlanURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 12.0
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw MappingError.invalid("Tidak ada respons dari QGC Engine saat mengunggah misi.")
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let errorMsg =
+                (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["message"] as? String
+                ?? "Gagal mengunggah misi ke drone (HTTP \(httpResponse.statusCode))."
             throw MappingError.invalid(errorMsg)
         }
 

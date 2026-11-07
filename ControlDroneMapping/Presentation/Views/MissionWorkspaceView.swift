@@ -985,6 +985,49 @@ struct MissionWorkspaceView: View {
         return true
     }
 
+    private func uploadMissionToDrone() {
+        guard let rawPlan = planner.draft.rawPlanJSON, !rawPlan.isEmpty else {
+            uploadErrorMessage = "Data rute (.plan) belum dihitung atau masih kosong."
+            showingUploadErrorAlert = true
+            return
+        }
+        guard let drone = engineManager.activeVehicle else {
+            uploadErrorMessage = "Tidak ada drone yang terhubung ke QGC Engine."
+            showingUploadErrorAlert = true
+            return
+        }
+        guard drone.isReachable && !drone.armed && !drone.flying else {
+            uploadErrorMessage =
+                "Demi keamanan, tidak dapat mengunggah atau memperbarui misi saat drone sedang Armed atau terbang. Daratkan dan Disarm drone terlebih dahulu."
+            showingUploadErrorAlert = true
+            return
+        }
+
+        let targetVehicleID = drone.id
+        isUploadingMission = true
+        uploadErrorMessage = nil
+
+        Task {
+            do {
+                try await engineManager.uploadMissionPlan(rawPlan, vehicleID: targetVehicleID)
+                await MainActor.run {
+                    self.isUploadingMission = false
+                    self.model.geometry.reviewed = true
+                    self.planner.reviewed = true
+                    self.planner.markUploadedAndLock(vehicleID: targetVehicleID)
+                    self.model.saveCurrentMissionPlan()
+                }
+            } catch {
+                await MainActor.run {
+                    self.isUploadingMission = false
+                    self.uploadErrorMessage = error.localizedDescription
+                    self.showingUploadErrorAlert = true
+                }
+            }
+        }
+    }
+
+
     private func editRoute(_ change: () -> Void) {
         guard canEditRoute else { return }
         let previous = planner.draft
