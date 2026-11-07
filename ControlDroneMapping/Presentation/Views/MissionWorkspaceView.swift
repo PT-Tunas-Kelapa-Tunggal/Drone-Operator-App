@@ -1027,6 +1027,171 @@ struct MissionWorkspaceView: View {
         }
     }
 
+    private func applyCurrentDroneAsHome(_ drone: ConnectedDrone) {
+        let coord = MapCoordinate(latitude: drone.telemetry.latitude, longitude: drone.telemetry.longitude)
+        editRoute {
+            planner.draft.home = coord
+            planner.mode = .inspect
+            replanDebounced()
+        }
+        syncHomeToQGC(coordinate: coord, altitudeAMSL: drone.telemetry.altitudeAMSL, vehicleID: drone.id)
+    }
+
+    private func syncHomeToQGC(coordinate: MapCoordinate, altitudeAMSL: Double? = nil, vehicleID: Int? = nil) {
+        guard engineManager.status.isHealthy else { return }
+        let targetID = vehicleID ?? engineManager.activeVehicle?.id
+        let alt = altitudeAMSL ?? engineManager.activeVehicle?.telemetry.altitudeAMSL ?? 0.0
+        Task {
+            try? await engineManager.sendCommand(
+                .setHome,
+                param: [
+                    "latitude": coordinate.latitude,
+                    "longitude": coordinate.longitude,
+                    "altitude": alt
+                ],
+                vehicleID: targetID
+            )
+        }
+    }
+
+    private var homeOptionsPopover: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: "house.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.green)
+                Text("Titik Home (Lepas Landas & RTL)")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Spacer()
+            }
+
+            Text("Pilih metode penentuan titik awal dan kepulangan (RTL) drone:")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            let connectedDrone = engineManager.activeVehicle
+            let hasDronePosition = (connectedDrone?.telemetry.latitude != nil)
+                && (connectedDrone!.telemetry.latitude != 0)
+                && (connectedDrone!.telemetry.longitude != 0)
+
+            // Opsi 1: Posisi Drone Saat Ini
+            Button {
+                guard let drone = connectedDrone, hasDronePosition else { return }
+                applyCurrentDroneAsHome(drone)
+                showingHomeOptions = false
+            } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(hasDronePosition ? Color.green.opacity(0.18) : Color.primary.opacity(0.06))
+                            .frame(width: 32, height: 32)
+                        Image(systemName: "location.north.circle.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(hasDronePosition ? Color.green : Color.secondary.opacity(0.6))
+                    }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text("Posisi Drone Saat Ini")
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(hasDronePosition ? .primary : .secondary)
+
+                            if hasDronePosition {
+                                Text("Online")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(.green)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.green.opacity(0.15), in: Capsule())
+                            }
+                        }
+
+                        if let drone = connectedDrone, hasDronePosition {
+                            Text("Drone #\(drone.id) (\(String(format: "%.5f", drone.telemetry.latitude)), \(String(format: "%.5f", drone.telemetry.longitude))) · \(drone.gps.satellites) Sats")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        } else if connectedDrone != nil {
+                            Text("Drone terhubung, menunggu koordinat GPS...")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Tidak ada drone yang terhubung ke QGC Engine")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(nsColor: .controlBackgroundColor).opacity(hasDronePosition ? 0.75 : 0.35))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(hasDronePosition ? Color.green.opacity(0.3) : Color.primary.opacity(0.06), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(!hasDronePosition)
+
+            // Opsi 2: Tentukan Manual di Peta
+            Button {
+                selectTool(.home)
+                showingHomeOptions = false
+            } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.blue.opacity(0.14))
+                            .frame(width: 32, height: 32)
+                        Image(systemName: "mappin.and.ellipse")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.blue)
+                    }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Tentukan Manual di Peta")
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(.primary)
+
+                        Text("Klik pada peta untuk menaruh pin Home secara bebas")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(nsColor: .controlBackgroundColor).opacity(0.75))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+
+            if let home = planner.draft.home, home.isValid {
+                Divider()
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.caption)
+                    Text("Home saat ini: \(String(format: "%.5f, %.5f", home.latitude, home.longitude))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(14)
+        .frame(width: 320)
+    }
 
     private func editRoute(_ change: () -> Void) {
         guard canEditRoute else { return }
