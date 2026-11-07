@@ -42,9 +42,9 @@ SCENARIOS = {
         },
     },
     "critical-battery": {
-        "description": "Simulate critical battery (<3.3V/cell, 19.8V total on 6S, triggers failsafe RTL/Land)",
+        "description": "Simulate critical battery (<3.3V/cell, 9.8V total on 6S, triggers failsafe RTL/Land)",
         "params": {
-            "SIM_BATT_VOLTAGE": 19.8,
+            "SIM_BATT_VOLTAGE": 9.8,
         },
     },
     "motor-fail": {
