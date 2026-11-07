@@ -217,11 +217,70 @@ public struct ConnectedDrone: Identifiable, Codable, Equatable {
         self.link = (try? c.decodeIfPresent(DroneLinkInfo.self, forKey: .link)) ?? DroneLinkInfo()
     }
 
-    public var activeAlertMessage: String? {
-        if let latestError, !latestError.isEmpty { return latestError }
-        if let prearmError, !prearmError.isEmpty { return prearmError }
-        if let firstProblem = armingProblems.first, !firstProblem.isEmpty { return firstProblem }
+    /// Unique key representing the most recent status/alert entry (including QGC timestamp when present)
+    /// so the UI can detect newly arrived messages and auto-dismiss them after a timeout.
+    public var latestAlertKey: String? {
+        if let latestError, let lastLine = Self.extractLatestStatusLine(from: latestError, stripTimestamp: false) {
+            return lastLine
+        }
+        if let prearmError, let lastLine = Self.extractLatestStatusLine(from: prearmError, stripTimestamp: false) {
+            return lastLine
+        }
+        if let firstProblem = armingProblems.first,
+            let lastLine = Self.extractLatestStatusLine(from: firstProblem, stripTimestamp: false)
+        {
+            return lastLine
+        }
         return nil
+    }
+
+    public var activeAlertMessage: String? {
+        if let latestError, let clean = Self.extractLatestStatusLine(from: latestError, stripTimestamp: true) {
+            return clean
+        }
+        if let prearmError, let clean = Self.extractLatestStatusLine(from: prearmError, stripTimestamp: true) {
+            return clean
+        }
+        if let firstProblem = armingProblems.first,
+            let clean = Self.extractLatestStatusLine(from: firstProblem, stripTimestamp: true)
+        {
+            return clean
+        }
+        return nil
+    }
+
+    private static func extractLatestStatusLine(from raw: String, stripTimestamp: Bool) -> String? {
+        guard !raw.isEmpty else { return nil }
+        let withLineBreaks = raw
+            .replacingOccurrences(of: "<br/>", with: "\n", options: .caseInsensitive)
+            .replacingOccurrences(of: "<br>", with: "\n", options: .caseInsensitive)
+        let withoutTags = withLineBreaks.replacingOccurrences(
+            of: "<[^>]+>",
+            with: "",
+            options: .regularExpression
+        )
+        let decoded = withoutTags
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+
+        let lines = decoded
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard var latest = lines.last else { return nil }
+        if stripTimestamp {
+            latest = latest.replacingOccurrences(
+                of: #"^\[[^\]]+\]\s*"#,
+                with: "",
+                options: .regularExpression
+            )
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return latest.isEmpty ? nil : latest
     }
 
     public var displayTitle: String {

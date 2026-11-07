@@ -52,6 +52,9 @@ struct FlightWorkspaceView: View {
     @State private var commandError: String? = nil
     @State private var showingCommandAlert = false
     @State private var followDrone = true
+    @State private var visibleAlertMessage: String? = nil
+    @State private var lastPresentedAlertKey: String? = nil
+    @State private var alertDismissTask: Task<Void, Never>? = nil
 
     private var activeDrone: ConnectedDrone? {
         engineManager.activeVehicle
@@ -175,6 +178,14 @@ struct FlightWorkspaceView: View {
                 )
             }
             initializeMapRegion()
+            presentAndScheduleAlertDismissal(for: activeDrone?.latestAlertKey)
+        }
+        .onDisappear {
+            alertDismissTask?.cancel()
+            alertDismissTask = nil
+        }
+        .onChange(of: activeDrone?.latestAlertKey) { _, newKey in
+            presentAndScheduleAlertDismissal(for: newKey)
         }
         .onChange(of: activeDrone?.telemetry.latitude) { _, _ in
             updateDronePositionAndTrail()
@@ -331,26 +342,7 @@ struct FlightWorkspaceView: View {
     // MARK: - Top Flight Bar
 
     private var topFlightBar: some View {
-        HStack(spacing: 12) {
-            // Back to Planning button
-            Button {
-                activeTab = .mission
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 12, weight: .bold))
-                    Text("Rencana Misi")
-                        .font(.subheadline.weight(.medium))
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-            }
-            .buttonStyle(.plain)
-            .flightDeckCard(cornerRadius: 20)
-            .help("Kembali ke penyesuaian rute rencana")
-
-            Spacer()
-
+        ZStack {
             // Center Drone Status & Multi-Drone Switcher Capsule
             if let drone = activeDrone {
                 HStack(spacing: 12) {
@@ -473,55 +465,57 @@ struct FlightWorkspaceView: View {
                 .flightDeckCard(cornerRadius: 20)
             }
 
-            Spacer()
+            // Map View Adjustment Buttons (Top-Right)
+            HStack {
+                Spacer()
 
-            // Map View Adjustment Buttons
-            HStack(spacing: 6) {
-                Button {
-                    followDrone.toggle()
-                    if followDrone, let coord = droneLiveCoordinate {
-                        cameraPosition = .region(
-                            MKCoordinateRegion(center: coord, span: MKCoordinateSpan(latitudeDelta: 0.005, longitudeDelta: 0.005))
-                        )
+                HStack(spacing: 6) {
+                    Button {
+                        followDrone.toggle()
+                        if followDrone, let coord = droneLiveCoordinate {
+                            cameraPosition = .region(
+                                MKCoordinateRegion(center: coord, span: MKCoordinateSpan(latitudeDelta: 0.005, longitudeDelta: 0.005))
+                            )
+                        }
+                    } label: {
+                        Image(systemName: followDrone ? "location.fill" : "location")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(followDrone ? KropsStyle.accent : Color.primary)
+                            .frame(width: 32, height: 32)
                     }
-                } label: {
-                    Image(systemName: followDrone ? "location.fill" : "location")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(followDrone ? KropsStyle.accent : Color.primary)
-                        .frame(width: 32, height: 32)
-                }
-                .buttonStyle(.plain)
-                .flightDeckCard(cornerRadius: 16)
-                .help("Kunci kamera ke posisi drone")
+                    .buttonStyle(.plain)
+                    .flightDeckCard(cornerRadius: 16)
+                    .help("Kunci kamera ke posisi drone")
 
-                Button {
-                    fitMissionArea()
-                } label: {
-                    Image(systemName: "map")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 32, height: 32)
-                }
-                .buttonStyle(.plain)
-                .flightDeckCard(cornerRadius: 16)
-                .help("Tampilkan seluruh area kebun misi")
-
-                // Burger Flight Commands Button
-                Button {
-                    showingCommandMenu.toggle()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: showingCommandMenu ? "xmark" : "line.3.horizontal")
-                            .font(.system(size: 13, weight: .bold))
-                        Text(showingCommandMenu ? "Tutup" : "Perintah")
-                            .font(.subheadline.weight(.semibold))
+                    Button {
+                        fitMissionArea()
+                    } label: {
+                        Image(systemName: "map")
+                            .font(.system(size: 13, weight: .semibold))
+                            .frame(width: 32, height: 32)
                     }
-                    .foregroundStyle(showingCommandMenu ? Color.secondary : KropsStyle.accent)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
+                    .buttonStyle(.plain)
+                    .flightDeckCard(cornerRadius: 16)
+                    .help("Tampilkan seluruh area kebun misi")
+
+                    // Burger Flight Commands Button
+                    Button {
+                        showingCommandMenu.toggle()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: showingCommandMenu ? "xmark" : "line.3.horizontal")
+                                .font(.system(size: 13, weight: .bold))
+                            Text(showingCommandMenu ? "Tutup" : "Perintah")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .foregroundStyle(showingCommandMenu ? Color.secondary : KropsStyle.accent)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.plain)
+                    .flightDeckCard(cornerRadius: 20)
+                    .help("Buka menu kontrol penerbangan")
                 }
-                .buttonStyle(.plain)
-                .flightDeckCard(cornerRadius: 20)
-                .help("Buka menu kontrol penerbangan")
             }
         }
     }
@@ -694,7 +688,7 @@ struct FlightWorkspaceView: View {
 
             // Bottom-Right: Autopilot Alert Badge + Camera Mini-Card
             VStack(alignment: .trailing, spacing: 8) {
-                if let alertMsg = activeDrone?.activeAlertMessage, !alertMsg.isEmpty {
+                if let alertMsg = visibleAlertMessage, !alertMsg.isEmpty {
                     autopilotAlertBadge(alertMsg)
                 }
 
@@ -704,22 +698,63 @@ struct FlightWorkspaceView: View {
     }
 
     private func autopilotAlertBadge(_ message: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
+        let isInfo = message.lowercased().hasPrefix("info:") || message.lowercased().hasPrefix("notice:")
+        return HStack(spacing: 8) {
+            Image(systemName: isInfo ? "info.circle.fill" : "exclamationmark.triangle.fill")
                 .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.orange)
+                .foregroundStyle(isInfo ? KropsStyle.accent : .orange)
 
             Text(message)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.primary)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
+
+            Button {
+                alertDismissTask?.cancel()
+                withAnimation(.easeOut(duration: 0.2)) {
+                    visibleAlertMessage = nil
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16, height: 16)
+            }
+            .buttonStyle(.plain)
+            .help("Tutup notifikasi")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .frame(maxWidth: 280, alignment: .leading)
+        .frame(maxWidth: 300, alignment: .leading)
         .flightDeckCard(cornerRadius: 10)
         .transition(.move(edge: .trailing).combined(with: .opacity))
+    }
+
+    private func presentAndScheduleAlertDismissal(for newKey: String?) {
+        guard let newKey, !newKey.isEmpty else {
+            alertDismissTask?.cancel()
+            withAnimation(.easeOut(duration: 0.2)) {
+                visibleAlertMessage = nil
+            }
+            return
+        }
+        guard newKey != lastPresentedAlertKey else { return }
+        lastPresentedAlertKey = newKey
+
+        guard let message = activeDrone?.activeAlertMessage, !message.isEmpty else { return }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            visibleAlertMessage = message
+        }
+
+        alertDismissTask?.cancel()
+        alertDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.25)) {
+                visibleAlertMessage = nil
+            }
+        }
     }
 
     private func compactTelemetryHUD(_ drone: ConnectedDrone) -> some View {
