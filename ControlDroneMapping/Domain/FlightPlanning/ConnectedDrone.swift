@@ -129,6 +129,9 @@ public struct ConnectedDrone: Identifiable, Codable, Equatable {
     public let communicationLost: Bool
     public let sensorNames: [String]
     public let sensorStatus: [String]
+    public let prearmError: String?
+    public let armingProblems: [String]
+    public let latestError: String?
     public let telemetry: DroneTelemetry
     public let battery: DroneBatteryInfo
     public let gps: DroneGPSInfo
@@ -152,6 +155,9 @@ public struct ConnectedDrone: Identifiable, Codable, Equatable {
         communicationLost: Bool = false,
         sensorNames: [String] = [],
         sensorStatus: [String] = [],
+        prearmError: String? = nil,
+        armingProblems: [String] = [],
+        latestError: String? = nil,
         telemetry: DroneTelemetry = DroneTelemetry(),
         battery: DroneBatteryInfo = DroneBatteryInfo(),
         gps: DroneGPSInfo = DroneGPSInfo(),
@@ -174,6 +180,9 @@ public struct ConnectedDrone: Identifiable, Codable, Equatable {
         self.communicationLost = communicationLost
         self.sensorNames = sensorNames
         self.sensorStatus = sensorStatus
+        self.prearmError = prearmError
+        self.armingProblems = armingProblems
+        self.latestError = latestError
         self.telemetry = telemetry
         self.battery = battery
         self.gps = gps
@@ -199,10 +208,20 @@ public struct ConnectedDrone: Identifiable, Codable, Equatable {
         self.communicationLost = (try? c.decodeIfPresent(Bool.self, forKey: .communicationLost)) ?? false
         self.sensorNames = (try? c.decodeIfPresent([String].self, forKey: .sensorNames)) ?? []
         self.sensorStatus = (try? c.decodeIfPresent([String].self, forKey: .sensorStatus)) ?? []
+        self.prearmError = try? c.decodeIfPresent(String.self, forKey: .prearmError)
+        self.armingProblems = (try? c.decodeIfPresent([String].self, forKey: .armingProblems)) ?? []
+        self.latestError = try? c.decodeIfPresent(String.self, forKey: .latestError)
         self.telemetry = (try? c.decodeIfPresent(DroneTelemetry.self, forKey: .telemetry)) ?? DroneTelemetry()
         self.battery = (try? c.decodeIfPresent(DroneBatteryInfo.self, forKey: .battery)) ?? DroneBatteryInfo()
         self.gps = (try? c.decodeIfPresent(DroneGPSInfo.self, forKey: .gps)) ?? DroneGPSInfo()
         self.link = (try? c.decodeIfPresent(DroneLinkInfo.self, forKey: .link)) ?? DroneLinkInfo()
+    }
+
+    public var activeAlertMessage: String? {
+        if let latestError, !latestError.isEmpty { return latestError }
+        if let prearmError, !prearmError.isEmpty { return prearmError }
+        if let firstProblem = armingProblems.first, !firstProblem.isEmpty { return firstProblem }
+        return nil
     }
 
     public var displayTitle: String {
@@ -248,4 +267,5 @@ public enum DroneFlightCommand: String, Codable {
     case startMission = "start_mission"
     case emergencyStop = "emergency_stop"
     case setActive = "set_active"
+    case setHome = "set_home"
 }

@@ -599,9 +599,24 @@ struct FlightWorkspaceView: View {
 
             Spacer()
 
-            // Bottom-Right Camera Mini-Card
-            cameraShutterMiniCard
+
+    private func autopilotAlertBadge(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.orange)
+
+            Text(message)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: 280, alignment: .leading)
+        .flightDeckCard(cornerRadius: 10)
+        .transition(.move(edge: .trailing).combined(with: .opacity))
     }
 
     private func compactTelemetryHUD(_ drone: ConnectedDrone) -> some View {

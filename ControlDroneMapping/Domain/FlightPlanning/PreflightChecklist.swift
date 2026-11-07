@@ -5,7 +5,7 @@ import Foundation
 ///
 /// State for these items is strictly transient in-memory and never persisted to disk.
 /// Any modification to flight, boundary, or geofence parameters revokes all checked items.
-enum PreflightChecklistItem: String, CaseIterable, Identifiable, Hashable, Sendable {
+enum PreflightChecklistItem: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
     case boundaryConfirmed
     case dronePlacedAtTakeoff
     case geofenceConfigured
