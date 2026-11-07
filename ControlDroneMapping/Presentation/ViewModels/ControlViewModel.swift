@@ -94,8 +94,14 @@ final class ControlViewModel: ObservableObject {
         link = transport ?? LocalLink(camera: false, enabled: !demo)
         plan.guidedMode = true
         plan.durationSeconds = 600
-        missionLibrary = MissionLibrary()
-        libraryReady = true
+        do {
+            missionLibrary = try libraryRepository.load()
+            libraryReady = true
+        } catch {
+            missionLibrary = MissionLibrary()
+            libraryReady = true
+            missionStorageError = "Pustaka misi: " + error.localizedDescription
+        }
         do {
             if let draft = try self.drafts.load(), let savedPlan = draft.plan {
                 plan = savedPlan
@@ -392,9 +398,20 @@ final class ControlViewModel: ObservableObject {
         }.sorted { $0.createdAt > $1.createdAt }
     }
     @discardableResult private func saveLibrary(_ updated: MissionLibrary) -> Bool {
-        missionLibrary = updated
-        missionStorageError = nil
-        return true
+        do {
+            try libraryRepository.save(updated)
+            missionLibrary = updated
+            missionStorageError = nil
+            return true
+        } catch {
+            missionStorageError = "Pustaka misi belum tersimpan: " + error.localizedDescription
+            errorMessage = missionStorageError
+            return false
+        }
+    }
+
+    func saveCurrentMissionPlan() {
+        persistDraft()
     }
 
     func markMissionCompleted(_ id: UUID) {
@@ -634,8 +651,10 @@ final class ControlViewModel: ObservableObject {
         // Obsolete: local photo records must not synthesize phantom missions into CloudKit mission list.
     }
     func retryMissionSaving() {
-        missionStorageError = nil
-        errorMessage = nil
+        _ = saveLibrary(missionLibrary)
+        if missionStorageError == nil {
+            errorMessage = nil
+        }
     }
     func retryDraft() {
         guard hasLocalDraft, draftNeedsRetry, canOperate, !editingLocked else { return }

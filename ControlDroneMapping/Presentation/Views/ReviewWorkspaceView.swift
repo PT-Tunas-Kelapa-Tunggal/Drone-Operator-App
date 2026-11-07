@@ -29,6 +29,7 @@ struct ReviewWorkspaceView: View {
     @ObservedObject var location: OperatorLocationViewModel
     @ObservedObject var planner: FlightPlannerViewModel
     @ObservedObject var processing: OrthomosaicViewModel
+    @ObservedObject private var engineManager = QGCEngineManager.shared
     let search: String
     let openPlanner: () -> Void
     let createMission: () -> Void
@@ -42,6 +43,7 @@ struct ReviewWorkspaceView: View {
     @State private var variResult: VariScanResult?
     @State private var isProcessingVari = false
     @State private var variError: String?
+    @State private var showSavedConfirmation = false
 
     init(
         model: ControlViewModel, link: LocalLink, farms: FarmAreaViewModel,
@@ -180,6 +182,15 @@ struct ReviewWorkspaceView: View {
             if phase == .completed { tab = .imagery }
         }
         .onChange(of: processing.selectedID) { _, _ in resolveImportedProject() }
+        .onChange(of: planner.activeRecoveryMissionID) { _, recoveryID in
+            guard let recoveryID else { return }
+            if model.selectedMissionID != recoveryID || !model.missionDetailVisible {
+                model.openMission(recoveryID)
+            }
+            if isDroneActiveInAir {
+                tab = .capture
+            }
+        }
         .onChange(of: link.receivedMissionID) { _, id in
             guard let id, record?.id == id else { return }
             model.refreshLocalDatasets()
@@ -328,6 +339,10 @@ struct ReviewWorkspaceView: View {
 
     private var inMissionDetail: Bool { model.step == .mission && model.hasMissionDetail }
 
+    private var canSaveRoute: Bool {
+        planner.draft.waypoints.count >= 3 && !planner.draft.isPlanLocked
+    }
+
     /// Engine and iPhone state as quiet indicators; details live in their tooltips.
     private var missionStatus: some View {
         HStack(spacing: 10) {
@@ -342,10 +357,27 @@ struct ReviewWorkspaceView: View {
             .buttonStyle(.plain)
             .help(model.iphoneCaptureStatus + " · buka Kamera & uji")
             .accessibilityLabel(model.iphoneCaptureStatus)
-            Button("Ekspor rute", systemImage: "square.and.arrow.up", action: openPlanner)
-                .kropsToolbarAction(size: .large)
-                .disabled(model.editingLocked)
-                .help("Ekspor rute .plan untuk QGroundControl")
+            Button(
+                showSavedConfirmation ? "Tersimpan" : "Simpan Rute",
+                systemImage: showSavedConfirmation ? "checkmark.circle.fill" : "square.and.arrow.down"
+            ) {
+                planner.saveRouteCheckpoint()
+                model.saveCurrentMissionPlan()
+                showSavedConfirmation = true
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 1_800_000_000)
+                    showSavedConfirmation = false
+                }
+            }
+            .kropsToolbarAction(size: .large)
+            .disabled(!canSaveRoute || model.editingLocked)
+            .help(
+                planner.draft.isPlanLocked
+                    ? "Rute sudah disimpan dan dikunci"
+                    : (canSaveRoute
+                        ? "Simpan konfigurasi rute, parameter terbang, dan checklist misi ini"
+                        : "Tentukan batas area kebun (minimal 3 titik) untuk menyimpan rute")
+            )
         }
     }
 
