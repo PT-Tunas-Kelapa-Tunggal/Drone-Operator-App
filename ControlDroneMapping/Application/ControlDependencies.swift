@@ -19,7 +19,9 @@ struct ControlDependencies {
             ? MockWaypointGenerator()
             : QGCWaypointGenerator(baseURL: BundledQGCEngine.baseURL)
         planner = FlightPlannerViewModel(
-            repository: InMemoryFlightRouteRepository(),
+            trailRepository: FileFlightTrailRepository(
+                url: support.appendingPathComponent(demo ? "demo-flight-trails.json" : "flight-trails.json")
+            ),
             waypointGenerator: waypointGenerator
         )
         let repository = DatasetStore()

@@ -57,6 +57,10 @@ struct FlightWorkspaceView: View {
         engineManager.activeVehicle
     }
 
+    private var flightPath: [CLLocationCoordinate2D] {
+        planner.flightTrail(for: mission?.id ?? planner.draft.missionID).map(\.clCoordinate)
+    }
+
     private var isMissionChecklistComplete: Bool {
         planner.isSOPChecklistComplete && model.geometry.reviewed
     }
@@ -812,15 +816,14 @@ struct FlightWorkspaceView: View {
     private func updateDronePositionAndTrail() {
         guard let coord = droneLiveCoordinate else { return }
 
-        // Append to flight trail if moved (> 1m)
-        if let last = flightPath.last {
-            let lastLoc = CLLocation(latitude: last.latitude, longitude: last.longitude)
-            let newLoc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
-            if newLoc.distance(from: lastLoc) > 1.0 {
-                flightPath.append(coord)
-            }
-        } else {
-            flightPath.append(coord)
+        if let drone = activeDrone,
+            drone.isReachable && (drone.armed || drone.flying),
+            let missionID = mission?.id ?? planner.draft.missionID
+        {
+            planner.appendTrailCoordinate(
+                MapCoordinate(latitude: coord.latitude, longitude: coord.longitude),
+                for: missionID
+            )
         }
 
         // Auto follow camera if active
