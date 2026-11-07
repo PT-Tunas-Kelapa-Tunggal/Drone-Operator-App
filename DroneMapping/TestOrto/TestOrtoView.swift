@@ -455,7 +455,8 @@ struct TestOrtoView: View {
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
                                 .background(
-                                    selected ? Color.accentColor.opacity(0.22) : Color.secondary.opacity(0.12),
+                                    selected
+                                        ? Color.accentColor.opacity(0.22) : Color.secondary.opacity(0.12),
                                     in: RoundedRectangle(cornerRadius: 10)
                                 )
                             }

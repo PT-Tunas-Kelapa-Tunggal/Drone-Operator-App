@@ -14,17 +14,24 @@ struct ControlDependencies {
         location = OperatorLocationViewModel(service: MacLocationService())
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("DroneControl")
-        let waypointGenerator: any WaypointGenerator = demo
+        let waypointGenerator: any WaypointGenerator =
+            demo
             ? MockWaypointGenerator()
             : QGCWaypointGenerator(baseURL: BundledQGCEngine.baseURL)
         planner = FlightPlannerViewModel(
-            repository: InMemoryFlightRouteRepository(),
+            repository: FileFlightRouteRepository(
+                url: support.appendingPathComponent(demo ? "demo-flight-routes.json" : "flight-routes.json")
+            ),
+            trailRepository: FileFlightTrailRepository(
+                url: support.appendingPathComponent(demo ? "demo-flight-trails.json" : "flight-trails.json")
+            ),
             waypointGenerator: waypointGenerator
         )
         let repository = DatasetStore()
         let link = LocalLink(camera: false, enabled: !demo, store: repository)
         self.link = link
-        let reviewRepository: any OperatorReviewRepository = demo
+        let reviewRepository: any OperatorReviewRepository =
+            demo
             ? InMemoryOperatorReviewRepository()
             : CloudKitOperatorReviewRepository.shared
         self.reviews = reviewRepository
@@ -37,7 +44,8 @@ struct ControlDependencies {
         self.variProcessor = demo ? MockVariProcessor() : LocalVariProcessor()
     }
 
-    static func exportViewModel(record: MissionRecord, store: any DatasetRepository) -> WebODMExportViewModel {
+    static func exportViewModel(record: MissionRecord, store: any DatasetRepository) -> WebODMExportViewModel
+    {
         WebODMExportViewModel(record: record, service: WebODMExporter(store: store))
     }
 

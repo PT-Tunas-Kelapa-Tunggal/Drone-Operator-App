@@ -94,8 +94,14 @@ final class ControlViewModel: ObservableObject {
         link = transport ?? LocalLink(camera: false, enabled: !demo)
         plan.guidedMode = true
         plan.durationSeconds = 600
-        missionLibrary = MissionLibrary()
-        libraryReady = true
+        do {
+            missionLibrary = try libraryRepository.load()
+            libraryReady = true
+        } catch {
+            missionLibrary = MissionLibrary()
+            libraryReady = true
+            missionStorageError = "Pustaka misi: " + error.localizedDescription
+        }
         do {
             if let draft = try self.drafts.load(), let savedPlan = draft.plan {
                 plan = savedPlan
@@ -234,7 +240,8 @@ final class ControlViewModel: ObservableObject {
 
     var settingsApplied: Bool { appliedSettings == plan.camera && telemetry.settings == plan.camera }
     func createMission(name: String) {
-        errorMessage = "Pembuatan misi manual dinonaktifkan. Gunakan permintaan pemetaan dari petani via CloudKit."
+        errorMessage =
+            "Pembuatan misi manual dinonaktifkan. Gunakan permintaan pemetaan dari petani via CloudKit."
     }
 
     func startReviewRequestsObservation() {
@@ -279,8 +286,12 @@ final class ControlViewModel: ObservableObject {
             if missionLibrary.hiddenRemoteIDs.contains(request.id) {
                 continue
             }
-            let existing = missionLibrary.missions.first(where: { $0.id == request.id || $0.remoteID == request.id })
-            let areaPoints = request.boundary.map { FarmArea.Point(latitude: $0.latitude, longitude: $0.longitude) }
+            let existing = missionLibrary.missions.first(where: {
+                $0.id == request.id || $0.remoteID == request.id
+            })
+            let areaPoints = request.boundary.map {
+                FarmArea.Point(latitude: $0.latitude, longitude: $0.longitude)
+            }
             let area = FarmArea(id: request.garden.id, name: request.garden.name, points: areaPoints)
             let phase: MissionPhase = request.status == .completed ? .completed : (existing?.phase ?? .idle)
 
@@ -342,7 +353,8 @@ final class ControlViewModel: ObservableObject {
             }
 
             guard let request = allRequests.first(where: { $0.id == targetID }) else {
-                errorMessage = "Permintaan peninjauan (\(targetID.uuidString)) tidak ditemukan di CloudKit container aktif."
+                errorMessage =
+                    "Permintaan peninjauan (\(targetID.uuidString)) tidak ditemukan di CloudKit container aktif."
                 return
             }
 
@@ -386,13 +398,25 @@ final class ControlViewModel: ObservableObject {
         }.sorted { $0.createdAt > $1.createdAt }
     }
     @discardableResult private func saveLibrary(_ updated: MissionLibrary) -> Bool {
-        missionLibrary = updated
-        missionStorageError = nil
-        return true
+        do {
+            try libraryRepository.save(updated)
+            missionLibrary = updated
+            missionStorageError = nil
+            return true
+        } catch {
+            missionStorageError = "Pustaka misi belum tersimpan: " + error.localizedDescription
+            errorMessage = missionStorageError
+            return false
+        }
+    }
+
+    func saveCurrentMissionPlan() {
+        persistDraft()
     }
 
     func markMissionCompleted(_ id: UUID) {
-        guard let index = missionLibrary.missions.firstIndex(where: { $0.id == id || $0.remoteID == id }) else { return }
+        guard let index = missionLibrary.missions.firstIndex(where: { $0.id == id || $0.remoteID == id })
+        else { return }
         var updated = missionLibrary
         updated.missions[index].phase = .completed
         _ = saveLibrary(updated)
@@ -503,7 +527,9 @@ final class ControlViewModel: ObservableObject {
         Set(missionLibrary.missions.flatMap { [$0.id] + ($0.remoteID.map { [$0] } ?? []) })
     }
 
-    func cleanDeletedMissionFiles(legacyIDs: Set<UUID> = [], removeAssociatedFiles: (Set<UUID>) throws -> Void) {
+    func cleanDeletedMissionFiles(
+        legacyIDs: Set<UUID> = [], removeAssociatedFiles: (Set<UUID>) throws -> Void
+    ) {
         guard libraryReady, missionStorageError == nil, !editingLocked else { return }
         let liveIDs = Set(missionLibrary.missions.flatMap { [$0.id] + ($0.remoteID.map { [$0] } ?? []) })
         let deleted = (missionLibrary.deletedFileIDs ?? []).union(legacyIDs).subtracting(liveIDs)
@@ -566,7 +592,9 @@ final class ControlViewModel: ObservableObject {
         missionDetailVisible = true
         step = .mission
         errorMessage = nil
-        append("Percobaan capture baru dibuat. Periksa rencana dan ulangi persiapan kamera; foto sebelumnya tetap tersimpan.")
+        append(
+            "Percobaan capture baru dibuat. Periksa rencana dan ulangi persiapan kamera; foto sebelumnya tetap tersimpan."
+        )
         return true
     }
 
@@ -623,8 +651,10 @@ final class ControlViewModel: ObservableObject {
         // Obsolete: local photo records must not synthesize phantom missions into CloudKit mission list.
     }
     func retryMissionSaving() {
-        missionStorageError = nil
-        errorMessage = nil
+        _ = saveLibrary(missionLibrary)
+        if missionStorageError == nil {
+            errorMessage = nil
+        }
     }
     func retryDraft() {
         guard hasLocalDraft, draftNeedsRetry, canOperate, !editingLocked else { return }
@@ -798,7 +828,8 @@ final class ControlViewModel: ObservableObject {
         if let records = packet.missions {
             let local = link.store.records().filter { saved in !records.contains(where: { $0.id == saved.id })
             }
-            self.records = (records + local).filter { !missionLibrary.hiddenRemoteIDs.contains($0.id) }.sorted { $0.createdAt > $1.createdAt }
+            self.records = (records + local).filter { !missionLibrary.hiddenRemoteIDs.contains($0.id) }.sorted
+            { $0.createdAt > $1.createdAt }
         }
         // Restore the authoritative mission only once per identity. Never overwrite
         // unsent edits on each heartbeat or a draft that belongs to this Mac.
@@ -823,7 +854,9 @@ final class ControlViewModel: ObservableObject {
             records[index].saved = telemetry.saved
             records[index].missed = telemetry.missed
         }
-        if let id = telemetry.missionID, let mIndex = missionLibrary.missions.firstIndex(where: { $0.id == id || $0.remoteID == id }) {
+        if let id = telemetry.missionID,
+            let mIndex = missionLibrary.missions.firstIndex(where: { $0.id == id || $0.remoteID == id })
+        {
             missionLibrary.missions[mIndex].saved = telemetry.saved
             missionLibrary.missions[mIndex].phase = telemetry.phase
         }

@@ -65,7 +65,9 @@ struct AppSettingsView: View {
                     Text(reason).font(.caption).foregroundStyle(.red)
                 }
 
-                Button(qgcEngine.status == .stopped ? "Mulai Companion Engine" : "Mulai ulang Companion Engine") {
+                Button(
+                    qgcEngine.status == .stopped ? "Mulai Companion Engine" : "Mulai ulang Companion Engine"
+                ) {
                     qgcEngine.restartEngine()
                 }
                 .disabled(qgcEngine.status == .starting)

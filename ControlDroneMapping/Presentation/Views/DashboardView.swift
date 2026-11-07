@@ -49,30 +49,32 @@ struct DashboardView: View {
         }
     }
 
-
     private var summary: some View {
         HStack(spacing: 14) {
             DashboardSummaryCard(
                 title: "Perlu tindakan", value: model.dashboardAttentionCount, detail: "misi",
-                icon: "exclamationmark.circle", colors: [
+                icon: "exclamationmark.circle",
+                colors: [
                     Color(red: 0.64, green: 0.40, blue: 0.87),
-                    Color(red: 0.49, green: 0.28, blue: 0.75)
+                    Color(red: 0.49, green: 0.28, blue: 0.75),
                 ]
             ) { model.showMissionList(filter: .attention) }
 
             DashboardSummaryCard(
                 title: "Dibuat hari ini", value: model.dashboardTodayCount, detail: "misi",
-                icon: "sun.max", colors: [
+                icon: "sun.max",
+                colors: [
                     Color(red: 1, green: 0.82, blue: 0.18),
-                    Color(red: 0.96, green: 0.64, blue: 0.02)
+                    Color(red: 0.96, green: 0.64, blue: 0.02),
                 ], foreground: Color(red: 0.25, green: 0.16, blue: 0.02)
             ) { model.showMissionList(filter: .today) }
 
             DashboardSummaryCard(
                 title: "Hasil tersedia", value: model.dashboardAvailableCount, detail: "dataset",
-                icon: "photo.stack", colors: [
+                icon: "photo.stack",
+                colors: [
                     Color(red: 0.35, green: 0.49, blue: 0.88),
-                    Color(red: 0.22, green: 0.35, blue: 0.74)
+                    Color(red: 0.22, green: 0.35, blue: 0.74),
                 ]
             ) { model.showDatasets(filter: .withPhotos) }
         }
@@ -132,10 +134,12 @@ struct DashboardView: View {
                                 .font(.system(size: 28)).foregroundStyle(KropsStyle.accent)
                             Text(search.isEmpty ? "Menunggu Permintaan Petani" : "Misi tidak ditemukan")
                                 .font(.headline)
-                            Text(search.isEmpty
-                                ? "Permintaan peninjauan dari CloudKit akan muncul di sini secara otomatis."
-                                : "Coba nama misi atau ID yang lain.")
-                                .font(.callout).foregroundStyle(.secondary)
+                            Text(
+                                search.isEmpty
+                                    ? "Permintaan peninjauan dari CloudKit akan muncul di sini secara otomatis."
+                                    : "Coba nama misi atau ID yang lain."
+                            )
+                            .font(.callout).foregroundStyle(.secondary)
                             if search.isEmpty {
                                 Button("Buat misi") { createMission("") }
                                     .kropsPrimaryAction()
@@ -145,7 +149,9 @@ struct DashboardView: View {
                         .frame(maxWidth: .infinity, minHeight: 228)
                     } else {
                         ForEach(filtered) { mission in
-                            Button { model.openMission(mission.id) } label: {
+                            Button {
+                                model.openMission(mission.id)
+                            } label: {
                                 missionRow(mission, width: width)
                             }
                             .buttonStyle(.plain)
@@ -221,8 +227,11 @@ struct DashboardView: View {
                 .background(KropsStyle.canvas, in: RoundedRectangle(cornerRadius: 12))
             VStack(alignment: .leading, spacing: 4) {
                 Text("Kesiapan perangkat").font(.callout.weight(.semibold))
-                Text(fresh ? "iPhone terhubung dan siap diperiksa" : "Hubungkan iPhone untuk menyiapkan capture")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(
+                    fresh
+                        ? "iPhone terhubung dan siap diperiksa" : "Hubungkan iPhone untuk menyiapkan capture"
+                )
+                .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
             Circle().fill(fresh ? Color.green : Color.orange).frame(width: 7, height: 7)
@@ -243,7 +252,9 @@ struct DashboardView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button { importingArea = true } label: {
+                Button {
+                    importingArea = true
+                } label: {
                     Image(systemName: "plus").frame(width: 32, height: 32)
                         .background(KropsStyle.canvas, in: Circle())
                 }
@@ -264,11 +275,15 @@ struct DashboardView: View {
                 .disabled(location.sample == nil)
                 .help("Radius kebun dari lokasi Mac")
                 Spacer(minLength: 0)
-                Button { location.request() } label: {
+                Button {
+                    location.request()
+                } label: {
                     Label("Lokasi saya", systemImage: "location")
                 }
                 .help("Pusatkan peta pada perkiraan lokasi Mac")
-                Button { openPlanner(selectedArea) } label: {
+                Button {
+                    openPlanner(selectedArea)
+                } label: {
                     Image(systemName: "point.topleft.down.to.point.bottomright.curvepath")
                 }
                 .help("Rencanakan waypoint")
@@ -278,24 +293,25 @@ struct DashboardView: View {
 
             FarmMap(
                 areas: nearbyAreas, selected: $farms.selectedArea,
-                operatorLocation: location.sample, focusRequest: location.focusRequest)
-                .overlay(alignment: .bottomLeading) {
-                    if let area = selectedArea {
-                        mapSelection(area)
-                    } else if farms.areas.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Kebunmu muncul di sini").font(.headline)
-                            Text("Impor batas GeoJSON untuk mulai menjelajahi area pemetaan.")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Button("Impor GeoJSON") { importingArea = true }
-                        }
-                        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(KropsStyle.surface, in: RoundedRectangle(cornerRadius: 16))
-                        .padding(.leading, 14).padding(.trailing, 64).padding(.bottom, 20)
+                operatorLocation: location.sample, focusRequest: location.focusRequest
+            )
+            .overlay(alignment: .bottomLeading) {
+                if let area = selectedArea {
+                    mapSelection(area)
+                } else if farms.areas.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Kebunmu muncul di sini").font(.headline)
+                        Text("Impor batas GeoJSON untuk mulai menjelajahi area pemetaan.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Button("Impor GeoJSON") { importingArea = true }
                     }
+                    .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(KropsStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                    .padding(.leading, 14).padding(.trailing, 64).padding(.bottom, 20)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .padding(.horizontal, 8)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .padding(.horizontal, 8)
 
             Label(location.status, systemImage: "location.circle")
                 .font(.caption).foregroundStyle(.secondary).lineLimit(2)
@@ -315,8 +331,12 @@ struct DashboardView: View {
             HStack {
                 Text(area.name).font(.headline).lineLimit(2)
                 Spacer()
-                Button { farms.selectedArea = nil } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.plain).accessibilityLabel("Tutup detail kebun")
+                Button {
+                    farms.selectedArea = nil
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain).accessibilityLabel("Tutup detail kebun")
             }
             Button("Rencanakan waypoint") { openPlanner(area) }
             Button("Buat misi untuk kebun ini") { createMission(area.name) }
@@ -363,7 +383,8 @@ private struct DashboardSummaryCard: View {
             .frame(height: 196)
             .background(
                 LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing),
-                in: RoundedRectangle(cornerRadius: 30))
+                in: RoundedRectangle(cornerRadius: 30)
+            )
             .overlay {
                 RoundedRectangle(cornerRadius: 30).fill(.white.opacity(isHovered ? 0.08 : 0))
             }

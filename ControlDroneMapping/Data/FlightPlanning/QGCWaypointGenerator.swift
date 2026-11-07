@@ -29,7 +29,8 @@ final class QGCWaypointGenerator: WaypointGenerator {
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             if let errObj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let message = errObj["message"] as? String {
+                let message = errObj["message"] as? String
+            {
                 throw MappingError.invalid(message)
             }
             throw MappingError.invalid("Gagal membuat jalur survei dari mesin QGC.")

@@ -98,8 +98,8 @@ struct WebODMExportView: View {
                 Spacer()
                 if model.result != nil { Button("Buka Images") { model.openImages() } }
                 Button("Buat folder WebODM") { model.export() }.kropsPrimaryAction()
-                .disabled(
-                    model.working || (model.corrected && (!model.confirmed || model.referenceID == nil)))
+                    .disabled(
+                        model.working || (model.corrected && (!model.confirmed || model.referenceID == nil)))
             }
         }.padding(24).frame(width: 680)
             .onAppear { model.load() }

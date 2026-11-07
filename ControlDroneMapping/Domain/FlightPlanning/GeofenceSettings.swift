@@ -33,7 +33,7 @@ enum GeofenceBreachAction: String, CaseIterable, Identifiable, Codable, Equatabl
 }
 
 /// Input parameters sent to the QGC engine to configure its GeoFenceController.
-struct GeofenceSettings: Equatable, Sendable {
+struct GeofenceSettings: Codable, Equatable, Sendable {
     var enabled: Bool = true
     var type: GeofenceType = .polygon
     var bufferMeters: Double = 20.0
@@ -42,7 +42,7 @@ struct GeofenceSettings: Equatable, Sendable {
     var breachAction: GeofenceBreachAction = .rtl
 }
 
-struct SafetyIssue: Equatable, Identifiable, Sendable {
+struct SafetyIssue: Codable, Equatable, Identifiable, Sendable {
     var id: String { code + ":" + message }
     let code: String
     let message: String
@@ -51,7 +51,7 @@ struct SafetyIssue: Equatable, Identifiable, Sendable {
 /// Output produced by the QGC engine's GeoFenceController and safety evaluator.
 /// The macOS app never computes geofence geometry or coverage locally; this struct
 /// holds the authoritative state returned by QGC.
-struct SurveySafetyResult: Equatable, Sendable {
+struct SurveySafetyResult: Codable, Equatable, Sendable {
     var enabled: Bool = false
     var type: GeofenceType = .polygon
     var bufferMeters: Double = 0.0

@@ -101,14 +101,14 @@ struct WaypointMap: NSViewRepresentable {
                     marker.coordinate = home.clCoordinate
                     map.addAnnotation(marker)
                 }
-                if let entry = route.surveyEntry, entry.isValid {
-                    let entryMarker = RouteMarker()
-                    entryMarker.kind = .surveyEntry
-                    entryMarker.title = "Titik Masuk Survei (Entry)"
-                    entryMarker.coordinate = entry.clCoordinate
-                    map.addAnnotation(entryMarker)
-                }
                 if !route.visualTransects.isEmpty {
+                    if let first = route.visualTransects.first, first.isValid {
+                        let entryMarker = RouteMarker()
+                        entryMarker.kind = .surveyEntry
+                        entryMarker.title = "Titik Masuk Survei (Entry)"
+                        entryMarker.coordinate = first.clCoordinate
+                        map.addAnnotation(entryMarker)
+                    }
                     if let last = route.visualTransects.last, last.isValid, route.visualTransects.count > 1 {
                         let exitMarker = RouteMarker()
                         exitMarker.kind = .surveyExit
@@ -117,17 +117,16 @@ struct WaypointMap: NSViewRepresentable {
                         map.addAnnotation(exitMarker)
                     }
                     let transectCoords = route.visualTransects.map(\.clCoordinate)
-                    let transectLine = SurveyTransectPolyline(coordinates: transectCoords, count: transectCoords.count)
+                    let transectLine = SurveyTransectPolyline(
+                        coordinates: transectCoords, count: transectCoords.count)
                     map.addOverlay(transectLine)
 
-                    if let home = route.home, home.isValid, let entry = route.surveyEntry, entry.isValid {
-                        let ingressCoords = [home.clCoordinate, entry.clCoordinate]
-                        map.addOverlay(SurveyTransitPolyline(coordinates: ingressCoords, count: 2))
-                        if let first = route.visualTransects.first, entry != first {
-                            let connectCoords = [entry.clCoordinate, first.clCoordinate]
-                            map.addOverlay(SurveyTransitPolyline(coordinates: connectCoords, count: 2))
+                    if let home = route.home, home.isValid {
+                        if let first = route.visualTransects.first, first.isValid {
+                            let ingressCoords = [home.clCoordinate, first.clCoordinate]
+                            map.addOverlay(SurveyTransitPolyline(coordinates: ingressCoords, count: 2))
                         }
-                        if let last = route.visualTransects.last, route.returnToHome {
+                        if let last = route.visualTransects.last, last.isValid, route.returnToHome {
                             let egressCoords = [last.clCoordinate, home.clCoordinate]
                             map.addOverlay(SurveyTransitPolyline(coordinates: egressCoords, count: 2))
                         }
@@ -140,7 +139,8 @@ struct WaypointMap: NSViewRepresentable {
                     case .polygon:
                         let fenceCoords = safety.polygonCoordinates.filter(\.isValid).map(\.clCoordinate)
                         if fenceCoords.count >= 3 {
-                            let fenceOverlay = GeofencePolygonOverlay(coordinates: fenceCoords, count: fenceCoords.count)
+                            let fenceOverlay = GeofencePolygonOverlay(
+                                coordinates: fenceCoords, count: fenceCoords.count)
                             fenceOverlay.isSafe = isFenceSafe
                             map.addOverlay(fenceOverlay)
                         }
@@ -217,14 +217,14 @@ struct WaypointMap: NSViewRepresentable {
         var editingEnabled: Bool
         var planningStep: FlightPlanningStep
     }
-final class SurveyTransectPolyline: MKPolyline {}
-final class SurveyTransitPolyline: MKPolyline {}
-final class GeofencePolygonOverlay: MKPolygon {
-    var isSafe: Bool = true
-}
-final class GeofenceCircleOverlay: MKCircle {
-    var isSafe: Bool = true
-}
+    final class SurveyTransectPolyline: MKPolyline {}
+    final class SurveyTransitPolyline: MKPolyline {}
+    final class GeofencePolygonOverlay: MKPolygon {
+        var isSafe: Bool = true
+    }
+    final class GeofenceCircleOverlay: MKCircle {
+        var isSafe: Bool = true
+    }
 
     final class RouteMarker: NSObject, MKAnnotation {
         enum Kind { case home, waypoint, boundary, operatorLocation, surveyEntry, surveyExit }
@@ -276,7 +276,9 @@ final class GeofenceCircleOverlay: MKCircle {
             let point = MapCoordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
             if parent.drawingBoundary {
                 parent.onBoundaryClick?(point)
-            } else if parent.planningStep == .boundary, parent.mode == .waypoint, let index = edgeIndex(near: position, in: map) {
+            } else if parent.planningStep == .boundary, parent.mode == .waypoint,
+                let index = edgeIndex(near: position, in: map)
+            {
                 parent.onInsertBoundary?(index, point)
             } else {
                 parent.onClick(point)
@@ -284,12 +286,16 @@ final class GeofenceCircleOverlay: MKCircle {
         }
         /// Index to insert at when a click lands within a few points of a boundary edge.
         private func edgeIndex(near position: CGPoint, in map: MKMapView) -> Int? {
-            let points = parent.route.waypoints.map { map.convert($0.coordinate.clCoordinate, toPointTo: map) }
+            let points = parent.route.waypoints.map {
+                map.convert($0.coordinate.clCoordinate, toPointTo: map)
+            }
             guard points.count >= 2 else { return nil }
             var best: (index: Int, distance: CGFloat)?
             for i in points.indices {
-                let a = points[i], b = points[(i + 1) % points.count]
-                let dx = b.x - a.x, dy = b.y - a.y
+                let a = points[i]
+                let b = points[(i + 1) % points.count]
+                let dx = b.x - a.x
+                let dy = b.y - a.y
                 let length = dx * dx + dy * dy
                 guard length > 0 else { continue }
                 let t = max(0, min(1, ((position.x - a.x) * dx + (position.y - a.y) * dy) / length))
@@ -361,9 +367,7 @@ final class GeofenceCircleOverlay: MKCircle {
             case .surveyEntry:
                 view.markerTintColor = .systemCyan
                 view.glyphText = "E"
-                view.isDraggable =
-                    parent.editingEnabled && parent.planningStep == .flight
-                    && !parent.drawingBoundary && parent.onEntryMove != nil
+                view.isDraggable = false
             case .surveyExit:
                 view.markerTintColor = .systemCyan
                 view.glyphText = "X"
@@ -438,7 +442,9 @@ final class PlanningMapView: MKMapView {
         if let cursorArea { removeTrackingArea(cursorArea) }
         let area = NSTrackingArea(
             rect: .zero,
-            options: [.mouseMoved, .cursorUpdate, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            options: [
+                .mouseMoved, .cursorUpdate, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect,
+            ],
             owner: self, userInfo: nil)
         addTrackingArea(area)
         cursorArea = area
@@ -448,8 +454,11 @@ final class PlanningMapView: MKMapView {
         updateCursor(at: event.locationInWindow)
     }
     override func cursorUpdate(with event: NSEvent) {
-        if isTopmost(at: event.locationInWindow) { applyCursor(at: event.locationInWindow) }
-        else { super.cursorUpdate(with: event) }
+        if isTopmost(at: event.locationInWindow) {
+            applyCursor(at: event.locationInWindow)
+        } else {
+            super.cursorUpdate(with: event)
+        }
     }
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)

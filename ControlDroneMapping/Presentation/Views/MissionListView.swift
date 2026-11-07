@@ -26,7 +26,11 @@ struct MissionListView: View {
             }
             if model.errorMessage?.hasPrefix("Sisa misi terhapus") == true {
                 Button("Coba bersihkan sisa misi lagi") {
-                    model.cleanDeletedMissionFiles(legacyIDs: processing.legacyDeletedFileIDs(liveIDs: model.liveMissionFileIDs, hiddenIDs: model.missionLibrary.hiddenRemoteIDs)) { ids in
+                    model.cleanDeletedMissionFiles(
+                        legacyIDs: processing.legacyDeletedFileIDs(
+                            liveIDs: model.liveMissionFileIDs, hiddenIDs: model.missionLibrary.hiddenRemoteIDs
+                        )
+                    ) { ids in
                         try processing.removeMissionFiles(ids)
                         planner.removeMissionRoutes(ids)
                     }
@@ -40,10 +44,12 @@ struct MissionListView: View {
                 ContentUnavailableView(
                     search.isEmpty ? "Belum ada misi di daftar ini" : "Misi tidak ditemukan",
                     systemImage: search.isEmpty ? "map" : "magnifyingglass",
-                    description: Text(search.isEmpty
-                        ? "Menunggu permintaan peninjauan dari CloudKit."
-                        : "Coba nama atau ID misi lain."))
-                    .frame(maxWidth: .infinity).padding(.vertical, 50)
+                    description: Text(
+                        search.isEmpty
+                            ? "Menunggu permintaan peninjauan dari CloudKit."
+                            : "Coba nama atau ID misi lain.")
+                )
+                .frame(maxWidth: .infinity).padding(.vertical, 50)
             } else {
                 LazyVStack(spacing: 12) {
                     ForEach(missions) { mission in
@@ -103,9 +109,11 @@ struct MissionListView: View {
                     Text(planner.storageError == nil ? "Belum ada waypoint" : "Rute belum tersedia")
                         .font(.callout).foregroundStyle(.secondary)
                 }
-                Text(mission.createdAt.formatted(
-                    .dateTime.day().month(.abbreviated).year().locale(Locale(identifier: "id_ID"))))
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(
+                    mission.createdAt.formatted(
+                        .dateTime.day().month(.abbreviated).year().locale(Locale(identifier: "id_ID")))
+                )
+                .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 16)
             Text(mission.phase == .idle ? "Draft" : mission.phase.dashboardTitle)
@@ -165,11 +173,13 @@ private struct MissionRouteThumbnail: View {
                     let maxX = points.map(\.x).max() ?? 0
                     let minY = points.map(\.y).min() ?? 0
                     let maxY = points.map(\.y).max() ?? 0
-                    let scale = min((size.width - 28) / max(maxX - minX, 1),
-                                    (size.height - 28) / max(maxY - minY, 1))
+                    let scale = min(
+                        (size.width - 28) / max(maxX - minX, 1),
+                        (size.height - 28) / max(maxY - minY, 1))
                     let projected = points.map {
-                        CGPoint(x: size.width / 2 + ($0.x - (minX + maxX) / 2) * scale,
-                                y: size.height / 2 + ($0.y - (minY + maxY) / 2) * scale)
+                        CGPoint(
+                            x: size.width / 2 + ($0.x - (minX + maxX) / 2) * scale,
+                            y: size.height / 2 + ($0.y - (minY + maxY) / 2) * scale)
                     }
                     if let first = projected.first {
                         var path = Path()

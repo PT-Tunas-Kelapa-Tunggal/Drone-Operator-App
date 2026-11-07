@@ -2,28 +2,28 @@ import Foundation
 
 // MARK: - Repository Transfer DTO (CloudKit record representation)
 public struct PlantationScanRequestRecordDTO: Sendable {
-    public let recordName: String              // Request UUID
+    public let recordName: String  // Request UUID
     public let farmerName: String
     public let farmerPhone: String
     public let farmerAddress: String
-    public let gardenID: String                // Garden UUID
+    public let gardenID: String  // Garden UUID
     public let gardenName: String
     public let locationName: String
     public let areaHectares: Double
 
     // Serialized Data Blobs (Stored as Strings in CloudKit)
-    public let boundaryJSON: String            // Encoded [CoordinatePointDTO]
-    public let agronomicJSON: String           // Encoded AgronomicProfileDTO
-    public let resultJSON: String?             // Encoded PlantationReviewResultDTO
+    public let boundaryJSON: String  // Encoded [CoordinatePointDTO]
+    public let agronomicJSON: String  // Encoded AgronomicProfileDTO
+    public let resultJSON: String?  // Encoded PlantationReviewResultDTO
 
     // Status Code & Milestones
-    public let statusCode: Int                 // 0: submitted, 1: scheduled, 2: inReview, 3: completed
+    public let statusCode: Int  // 0: submitted, 1: scheduled, 2: inReview, 3: completed
     public let submittedAt: Date
     public let scheduledFor: Date?
     public let inReviewAt: Date?
     public let completedAt: Date?
     public let operatorNotes: String?
-    public let orthomosaicAssetURL: URL?       // Managed via CKAsset
+    public let orthomosaicAssetURL: URL?  // Managed via CKAsset
 
     public init(
         recordName: String,
@@ -84,7 +84,9 @@ public struct AgronomicProfileDTO: Codable, Sendable {
     public let fertilizers: [FertilizerUsageDTO]
     public let harvest: HarvestYieldDTO?
 
-    public init(year: Int, month: Int?, soil: String, fertilizers: [FertilizerUsageDTO], harvest: HarvestYieldDTO?) {
+    public init(
+        year: Int, month: Int?, soil: String, fertilizers: [FertilizerUsageDTO], harvest: HarvestYieldDTO?
+    ) {
         self.year = year
         self.month = month
         self.soil = soil

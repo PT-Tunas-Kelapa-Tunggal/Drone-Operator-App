@@ -6,7 +6,9 @@ public struct PlantationDomainMapper {
 
     public init() {}
 
-    public func toDTO(from domain: PlantationReviewRequest, assetURL: URL? = nil) throws -> PlantationScanRequestRecordDTO {
+    public func toDTO(from domain: PlantationReviewRequest, assetURL: URL? = nil) throws
+        -> PlantationScanRequestRecordDTO
+    {
         let boundaryDTOs = domain.boundary.map { CoordinatePointDTO(lat: $0.latitude, lon: $0.longitude) }
         let boundaryData = try encoder.encode(boundaryDTOs)
         let boundaryJSON = String(decoding: boundaryData, as: UTF8.self)
@@ -35,8 +37,12 @@ public struct PlantationDomainMapper {
         if let result = domain.result {
             let resultDTO = PlantationReviewResultDTO(
                 completedAt: result.completedAt,
-                nutrients: result.nutrients.map { NutrientMetricDTO(name: $0.name, current: $0.current, target: $0.target) },
-                costs: result.costs.map { CostEstimateDTO(name: $0.name, quantity: $0.quantity, cost: $0.cost) },
+                nutrients: result.nutrients.map {
+                    NutrientMetricDTO(name: $0.name, current: $0.current, target: $0.target)
+                },
+                costs: result.costs.map {
+                    CostEstimateDTO(name: $0.name, quantity: $0.quantity, cost: $0.cost)
+                },
                 totalCostFormatted: result.totalCostFormatted,
                 areas: result.allocationAreas.map { area in
                     AreaPlanDTO(
@@ -81,8 +87,8 @@ public struct PlantationDomainMapper {
 
     public func toDomain(from dto: PlantationScanRequestRecordDTO) throws -> PlantationReviewRequest {
         guard let id = UUID(uuidString: dto.recordName),
-              let gardenID = UUID(uuidString: dto.gardenID),
-              let status = ReviewStatus(rawValue: dto.statusCode)
+            let gardenID = UUID(uuidString: dto.gardenID),
+            let status = ReviewStatus(rawValue: dto.statusCode)
         else {
             throw DomainMappingError.invalidIdentifiers
         }
@@ -115,7 +121,9 @@ public struct PlantationDomainMapper {
             let resDTO = try decoder.decode(PlantationReviewResultDTO.self, from: Data(resultJSON.utf8))
             result = PlantationReviewResult(
                 completedAt: resDTO.completedAt,
-                nutrients: resDTO.nutrients.map { NutrientMetric(name: $0.name, current: $0.current, target: $0.target) },
+                nutrients: resDTO.nutrients.map {
+                    NutrientMetric(name: $0.name, current: $0.current, target: $0.target)
+                },
                 costs: resDTO.costs.map { CostEstimate(name: $0.name, quantity: $0.quantity, cost: $0.cost) },
                 totalCostFormatted: resDTO.totalCostFormatted,
                 allocationAreas: resDTO.areas.map { area in
@@ -139,7 +147,9 @@ public struct PlantationDomainMapper {
         return PlantationReviewRequest(
             id: id,
             farmer: FarmerContact(name: dto.farmerName, phone: dto.farmerPhone, address: dto.farmerAddress),
-            garden: GardenSummary(id: gardenID, name: dto.gardenName, locationName: dto.locationName, areaHectares: dto.areaHectares),
+            garden: GardenSummary(
+                id: gardenID, name: dto.gardenName, locationName: dto.locationName,
+                areaHectares: dto.areaHectares),
             boundary: boundary,
             agronomy: agronomy,
             status: status,

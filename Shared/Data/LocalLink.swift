@@ -151,7 +151,9 @@ final class LocalLink: NSObject, ObservableObject, LocalTransport {
             return
         }
         guard index < files.count else {
-            finishTransfer("Transfer selesai: \(files.count) berkas dikirim ke Mac", transferID: transferID, succeeded: true)
+            finishTransfer(
+                "Transfer selesai: \(files.count) berkas dikirim ke Mac", transferID: transferID,
+                succeeded: true)
             return
         }
         transferStatus = "Mengirim \(index + 1)/\(files.count)"
@@ -164,18 +166,23 @@ final class LocalLink: NSObject, ObservableObject, LocalTransport {
                 let name = "\(mission.uuidString)|\(hash)|\(relative)|\(folder.lastPathComponent)"
                 DispatchQueue.main.async {
                     guard self.activeExportID == transferID else { return }
-                    self.exportProgress = self.session.sendResource(at: file, withName: name, toPeer: peer) { error in
+                    self.exportProgress = self.session.sendResource(at: file, withName: name, toPeer: peer) {
+                        error in
                         DispatchQueue.main.async {
                             guard self.activeExportID == transferID else { return }
                             if let error {
                                 self.finishTransfer(error.localizedDescription, transferID: transferID)
                             } else {
-                                self.sendNext(files, index: index + 1, mission: mission, peer: peer, transferID: transferID)
+                                self.sendNext(
+                                    files, index: index + 1, mission: mission, peer: peer,
+                                    transferID: transferID)
                             }
                         }
                     }
                     if self.exportProgress == nil {
-                        self.finishTransfer("Berkas gagal dikirim. Hubungkan kembali lalu transfer ulang.", transferID: transferID)
+                        self.finishTransfer(
+                            "Berkas gagal dikirim. Hubungkan kembali lalu transfer ulang.",
+                            transferID: transferID)
                     }
                 }
             } catch {

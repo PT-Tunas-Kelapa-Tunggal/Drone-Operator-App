@@ -128,7 +128,8 @@ struct MissionAreaMap: NSViewRepresentable {
                 guard let vertex = view.annotation as? Vertex else { return }
                 parent.movePoint(
                     vertex.index,
-                    MapCoordinate(latitude: vertex.coordinate.latitude, longitude: vertex.coordinate.longitude))
+                    MapCoordinate(
+                        latitude: vertex.coordinate.latitude, longitude: vertex.coordinate.longitude))
             case .canceling:
                 view.dragState = .none
             default:

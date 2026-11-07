@@ -22,28 +22,31 @@ public struct BundledVariEngine {
     }
 
     public static func validateEmbedded() throws {
-        guard let _ = embeddedDirectory,
-              let manifest = Bundle.main.url(forResource: "vari-engine", withExtension: "json")
+        guard embeddedDirectory != nil,
+            let manifest = Bundle.main.url(forResource: "vari-engine", withExtension: "json")
         else {
             throw MappingError.invalid("Build aplikasi belum menyertakan VariEngine siap pakai.")
         }
         let metadata = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: manifest))
         let expectedHelperID = AppConfiguration.current.variHelperIdentifier
         guard metadata.formatVersion == 1,
-              metadata.architecture == "arm64",
-              metadata.pythonIdentifier == expectedHelperID
+            metadata.architecture == "arm64",
+            metadata.pythonIdentifier == expectedHelperID
         else {
-            throw MappingError.invalid("Metadata paket VariEngine tidak sesuai (expected \(expectedHelperID)).")
+            throw MappingError.invalid(
+                "Metadata paket VariEngine tidak sesuai (expected \(expectedHelperID)).")
         }
 
         if let teamID = signingInformation()?[kSecCodeInfoTeamIdentifier as String] as? String {
             guard teamID == metadata.teamIdentifier else {
-                throw MappingError.invalid("Identitas paket VariEngine tidak sesuai dengan aplikasi (Team ID mismatch).")
+                throw MappingError.invalid(
+                    "Identitas paket VariEngine tidak sesuai dengan aplikasi (Team ID mismatch).")
             }
         }
 
         guard let helper = helperExecutable, FileManager.default.isExecutableFile(atPath: helper.path) else {
-            throw MappingError.invalid("Helper binary VariPython belum disertakan atau belum dapat dieksekusi.")
+            throw MappingError.invalid(
+                "Helper binary VariPython belum disertakan atau belum dapat dieksekusi.")
         }
     }
 
@@ -65,10 +68,12 @@ public struct BundledVariEngine {
         process.waitUntilExit()
 
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let output =
+            String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
         guard process.terminationStatus == 0 else {
-            throw MappingError.invalid("VariEngine check gagal (status \(process.terminationStatus)): \(output)")
+            throw MappingError.invalid(
+                "VariEngine check gagal (status \(process.terminationStatus)): \(output)")
         }
 
         return output.isEmpty ? "VARI engine siap" : output
@@ -78,10 +83,13 @@ public struct BundledVariEngine {
         var code: SecCode?
         guard SecCodeCopySelf([], &code) == errSecSuccess, let code else { return nil }
         var staticCode: SecStaticCode?
-        guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode else { return nil }
+        guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode else {
+            return nil
+        }
         var information: CFDictionary?
-        guard SecCodeCopySigningInformation(
-            staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &information) == errSecSuccess
+        guard
+            SecCodeCopySigningInformation(
+                staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &information) == errSecSuccess
         else { return nil }
         return information as? [String: Any]
     }

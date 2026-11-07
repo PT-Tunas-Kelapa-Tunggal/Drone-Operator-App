@@ -155,6 +155,40 @@ struct FlightRoute: Codable, Equatable, Identifiable {
     var surveyStatistics: SurveyScanStatistics? = nil
     var safetyResult: SurveySafetyResult? = nil
     var rawPlanJSON: Data? = nil
+    var isAreaConfirmed: Bool = false
+    var checkedSOPItems: Set<PreflightChecklistItem> = []
+    var isReviewed: Bool = false
+    var isPlanLocked: Bool = false
+    var isUploadedToDrone: Bool = false
+    var uploadedVehicleID: Int? = nil
+    var wasVehicleArmedSinceUpload: Bool = false
+    var lastSavedAt: Date? = nil
+
+    /// Compares all boundary, home/entry, flight parameter, camera, and geofence fields.
+    /// Metadata changes (checklist, lock state, upload state, timestamps) do not count as geometry edits.
+    func hasSameFlightPlanGeometry(as other: FlightRoute) -> Bool {
+        firmware == other.firmware
+            && home == other.home
+            && homeAltitudeAMSL == other.homeAltitudeAMSL
+            && surveyEntry == other.surveyEntry
+            && defaultAltitude == other.defaultAltitude
+            && takeoffAltitude == other.takeoffAltitude
+            && speed == other.speed
+            && ascentSpeed == other.ascentSpeed
+            && descentSpeed == other.descentSpeed
+            && holdSeconds == other.holdSeconds
+            && returnToHome == other.returnToHome
+            && waypoints == other.waypoints
+            && gridAngle == other.gridAngle
+            && lineSpacing == other.lineSpacing
+            && triggerDistance == other.triggerDistance
+            && turnaroundDistance == other.turnaroundDistance
+            && entryLocation == other.entryLocation
+            && sideOverlap == other.sideOverlap
+            && frontalOverlap == other.frontalOverlap
+            && cameraResolution == other.cameraResolution
+            && geofence == other.geofence
+    }
 
     func validateForExport() throws {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, name.count <= 100 else {
@@ -223,7 +257,15 @@ struct FlightRoute: Codable, Equatable, Identifiable {
         visualTransects: [MapCoordinate] = [],
         surveyStatistics: SurveyScanStatistics? = nil,
         safetyResult: SurveySafetyResult? = nil,
-        rawPlanJSON: Data? = nil
+        rawPlanJSON: Data? = nil,
+        isAreaConfirmed: Bool = false,
+        checkedSOPItems: Set<PreflightChecklistItem> = [],
+        isReviewed: Bool = false,
+        isPlanLocked: Bool = false,
+        isUploadedToDrone: Bool = false,
+        uploadedVehicleID: Int? = nil,
+        wasVehicleArmedSinceUpload: Bool = false,
+        lastSavedAt: Date? = nil
     ) {
         self.id = id
         self.name = name
@@ -255,13 +297,25 @@ struct FlightRoute: Codable, Equatable, Identifiable {
         self.surveyStatistics = surveyStatistics
         self.safetyResult = safetyResult
         self.rawPlanJSON = rawPlanJSON
+        self.isAreaConfirmed = isAreaConfirmed
+        self.checkedSOPItems = checkedSOPItems
+        self.isReviewed = isReviewed
+        self.isPlanLocked = isPlanLocked
+        self.isUploadedToDrone = isUploadedToDrone
+        self.uploadedVehicleID = uploadedVehicleID
+        self.wasVehicleArmedSinceUpload = wasVehicleArmedSinceUpload
+        self.lastSavedAt = lastSavedAt
     }
 
-    /// Only non-QGC identity/boundary metadata is listed in CodingKeys; QGC-derived
-    /// parameters, transects, statistics, geofence geometry, and .plan payloads are never persisted.
     private enum CodingKeys: String, CodingKey {
         case id, name, farmID, missionID, createdAt, firmware, home, homeAltitudeAMSL
-        case surveyEntry, defaultAltitude, takeoffAltitude, speed, returnToHome, waypoints
+        case surveyEntry, defaultAltitude, takeoffAltitude, speed, ascentSpeed, descentSpeed
+        case holdSeconds, returnToHome, waypoints, gridAngle, lineSpacing, triggerDistance
+        case turnaroundDistance, entryLocation, sideOverlap, frontalOverlap, cameraResolution
+        case geofence, calculatedLineSpacing, calculatedTriggerDistance, groundResolutionCmPerPx
+        case visualTransects, surveyStatistics, safetyResult, rawPlanJSON
+        case isAreaConfirmed, checkedSOPItems, isReviewed, isPlanLocked
+        case isUploadedToDrone, uploadedVehicleID, wasVehicleArmedSinceUpload, lastSavedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -278,8 +332,35 @@ struct FlightRoute: Codable, Equatable, Identifiable {
         defaultAltitude = try container.decodeIfPresent(Double.self, forKey: .defaultAltitude) ?? 30.0
         takeoffAltitude = try container.decodeIfPresent(Double.self, forKey: .takeoffAltitude) ?? 20.0
         speed = try container.decodeIfPresent(Double.self, forKey: .speed) ?? 5.0
+        ascentSpeed = try container.decodeIfPresent(Double.self, forKey: .ascentSpeed) ?? 2.5
+        descentSpeed = try container.decodeIfPresent(Double.self, forKey: .descentSpeed) ?? 1.5
+        holdSeconds = try container.decodeIfPresent(Double.self, forKey: .holdSeconds) ?? 0.0
         returnToHome = try container.decodeIfPresent(Bool.self, forKey: .returnToHome) ?? true
         waypoints = try container.decodeIfPresent([FlightWaypoint].self, forKey: .waypoints) ?? []
+        gridAngle = try container.decodeIfPresent(Double.self, forKey: .gridAngle) ?? 0.0
+        lineSpacing = try container.decodeIfPresent(Double.self, forKey: .lineSpacing) ?? 10.7
+        triggerDistance = try container.decodeIfPresent(Double.self, forKey: .triggerDistance) ?? 6.7
+        turnaroundDistance = try container.decodeIfPresent(Double.self, forKey: .turnaroundDistance) ?? 10.0
+        entryLocation = try container.decodeIfPresent(Int.self, forKey: .entryLocation) ?? 0
+        sideOverlap = try container.decodeIfPresent(Double.self, forKey: .sideOverlap) ?? 70.0
+        frontalOverlap = try container.decodeIfPresent(Double.self, forKey: .frontalOverlap) ?? 75.0
+        cameraResolution = try container.decodeIfPresent(CameraOpticalSpec.Resolution.self, forKey: .cameraResolution) ?? .res24MP
+        geofence = try container.decodeIfPresent(GeofenceSettings.self, forKey: .geofence) ?? GeofenceSettings()
+        calculatedLineSpacing = try container.decodeIfPresent(Double.self, forKey: .calculatedLineSpacing)
+        calculatedTriggerDistance = try container.decodeIfPresent(Double.self, forKey: .calculatedTriggerDistance)
+        groundResolutionCmPerPx = try container.decodeIfPresent(Double.self, forKey: .groundResolutionCmPerPx)
+        visualTransects = try container.decodeIfPresent([MapCoordinate].self, forKey: .visualTransects) ?? []
+        surveyStatistics = try container.decodeIfPresent(SurveyScanStatistics.self, forKey: .surveyStatistics)
+        safetyResult = try container.decodeIfPresent(SurveySafetyResult.self, forKey: .safetyResult)
+        rawPlanJSON = try container.decodeIfPresent(Data.self, forKey: .rawPlanJSON)
+        isAreaConfirmed = try container.decodeIfPresent(Bool.self, forKey: .isAreaConfirmed) ?? false
+        checkedSOPItems = try container.decodeIfPresent(Set<PreflightChecklistItem>.self, forKey: .checkedSOPItems) ?? []
+        isReviewed = try container.decodeIfPresent(Bool.self, forKey: .isReviewed) ?? false
+        isPlanLocked = try container.decodeIfPresent(Bool.self, forKey: .isPlanLocked) ?? false
+        isUploadedToDrone = try container.decodeIfPresent(Bool.self, forKey: .isUploadedToDrone) ?? false
+        uploadedVehicleID = try container.decodeIfPresent(Int.self, forKey: .uploadedVehicleID)
+        wasVehicleArmedSinceUpload = try container.decodeIfPresent(Bool.self, forKey: .wasVehicleArmedSinceUpload) ?? false
+        lastSavedAt = try container.decodeIfPresent(Date.self, forKey: .lastSavedAt)
     }
 }
 

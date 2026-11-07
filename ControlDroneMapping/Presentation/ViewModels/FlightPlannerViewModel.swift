@@ -22,12 +22,24 @@ enum FlightPlanningStep: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum PlanLockState: Equatable {
+    case unlocked
+    case softLocked(vehicleID: Int)
+    case hardLockedActiveFlight(vehicleID: Int)
+    case commsLostNeverArmed(vehicleID: Int)
+    case commsLostWasArmed(vehicleID: Int)
+}
+
 final class FlightPlannerViewModel: ObservableObject {
     @Published private(set) var routes: [FlightRoute] = []
+    @Published private(set) var flightTrails: [UUID: [MapCoordinate]] = [:]
+    @Published var activeRecoveryMissionID: UUID? = nil
+    @Published var lastCheckpointSavedAt: Date? = nil
     @Published var draft = FlightRoute() {
         didSet {
-            guard !switching, oldValue != draft else { return }
-            if !undoing && !continuousEdit {
+            guard !switching, !syncingMetadata, oldValue != draft else { return }
+            let geometryChanged = !oldValue.hasSameFlightPlanGeometry(as: draft)
+            if geometryChanged && !undoing && !continuousEdit {
                 undoStack.append(oldValue)
                 if undoStack.count > 50 { undoStack.removeFirst() }
                 redoStack = []
@@ -35,8 +47,16 @@ final class FlightPlannerViewModel: ObservableObject {
             if oldValue.waypoints != draft.waypoints {
                 isAreaConfirmed = false
             }
-            checkedSOPItems.removeAll()
-            reviewed = false
+            if geometryChanged {
+                resetChecklist()
+                syncingMetadata = true
+                draft.isUploadedToDrone = false
+                draft.isPlanLocked = false
+                draft.checkedSOPItems = []
+                draft.isReviewed = false
+                draft.isAreaConfirmed = isAreaConfirmed
+                syncingMetadata = false
+            }
             exportedURL = nil
             if !continuousEdit { persist() }
         }
@@ -48,12 +68,37 @@ final class FlightPlannerViewModel: ObservableObject {
                 checkedSOPItems.removeAll()
                 reviewed = false
             }
+            guard !switching, !syncingMetadata else { return }
+            syncingMetadata = true
+            draft.isAreaConfirmed = isAreaConfirmed
+            if !isAreaConfirmed {
+                draft.checkedSOPItems = []
+                draft.isReviewed = false
+            }
+            syncingMetadata = false
+            persist()
         }
     }
     @Published var mode: FlightMapEditMode = .inspect
     @Published var selectedWaypointID: UUID?
-    @Published var checkedSOPItems: Set<PreflightChecklistItem> = []
-    @Published var reviewed = false
+    @Published var checkedSOPItems: Set<PreflightChecklistItem> = [] {
+        didSet {
+            guard !switching, !syncingMetadata, draft.checkedSOPItems != checkedSOPItems else { return }
+            syncingMetadata = true
+            draft.checkedSOPItems = checkedSOPItems
+            syncingMetadata = false
+            persist()
+        }
+    }
+    @Published var reviewed = false {
+        didSet {
+            guard !switching, !syncingMetadata, draft.isReviewed != reviewed else { return }
+            syncingMetadata = true
+            draft.isReviewed = reviewed
+            syncingMetadata = false
+            persist()
+        }
+    }
 
     func resetChecklist() {
         if !checkedSOPItems.isEmpty {
@@ -81,21 +126,44 @@ final class FlightPlannerViewModel: ObservableObject {
     @Published private(set) var redoStack: [FlightRoute] = []
     @Published public private(set) var isGeneratingWaypoints = false
     private let repository: any FlightRouteRepository
+    private let trailRepository: any FlightTrailRepository
     private let waypointGenerator: any WaypointGenerator
     private var switching = false
+    private var syncingMetadata = false
     private var continuousEdit = false
     private var undoing = false
     private var storageReady = false
+    private var vehicleCancellable: AnyCancellable?
+    private var previouslyArmedVehicleIDs: Set<Int> = []
 
     init(
         repository: any FlightRouteRepository = InMemoryFlightRouteRepository(),
+        trailRepository: any FlightTrailRepository = InMemoryFlightTrailRepository(),
         waypointGenerator: any WaypointGenerator = MockWaypointGenerator()
     ) {
         self.repository = repository
+        self.trailRepository = trailRepository
         self.waypointGenerator = waypointGenerator
         routes = (try? repository.load()) ?? []
+        flightTrails = (try? trailRepository.load()) ?? [:]
         storageReady = true
-        if let last = routes.last { draft = last }
+        if let last = routes.last {
+            switching = true
+            draft = last
+            isAreaConfirmed = last.isAreaConfirmed || (!last.visualTransects.isEmpty && last.waypoints.count >= 3)
+            checkedSOPItems = last.checkedSOPItems
+            reviewed = last.isReviewed
+            planningStep = (last.visualTransects.isEmpty && !isAreaConfirmed) ? .boundary : .flight
+            switching = false
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.vehicleCancellable = QGCEngineManager.shared.$vehicles
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] vehicles in
+                    self?.observeVehicles(vehicles)
+                }
+        }
     }
     private var missionScope: UUID?
     @Published private(set) var currentFarm: FarmArea?
@@ -113,7 +181,8 @@ final class FlightPlannerViewModel: ObservableObject {
             name: draft.name,
             farmID: farm.id,
             missionID: missionScope,
-            defaultAltitude: draft.defaultAltitude.isFinite && draft.defaultAltitude > 0 ? draft.defaultAltitude : 80,
+            defaultAltitude: draft.defaultAltitude.isFinite && draft.defaultAltitude > 0
+                ? draft.defaultAltitude : 80,
             speed: draft.speed.isFinite && draft.speed > 0 ? draft.speed : 5
         )
         let alt = route.defaultAltitude
@@ -167,7 +236,8 @@ final class FlightPlannerViewModel: ObservableObject {
         guard let farm = currentFarm, farm.points.count >= 2 else { return }
         let alt = draft.defaultAltitude > 0 ? draft.defaultAltitude : 80
         draft.waypoints = farm.points.map {
-            FlightWaypoint(coordinate: MapCoordinate(latitude: $0.latitude, longitude: $0.longitude), altitude: alt)
+            FlightWaypoint(
+                coordinate: MapCoordinate(latitude: $0.latitude, longitude: $0.longitude), altitude: alt)
         }
         draft.visualTransects = []
         draft.surveyStatistics = nil
@@ -181,17 +251,27 @@ final class FlightPlannerViewModel: ObservableObject {
         farm: FarmArea?, name: String = "Rute baru", altitude: Double = 80, speed: Double = 5,
         missionID: UUID? = nil
     ) {
+        let sameActiveMission =
+            missionID != nil
+            && draft.missionID == missionID
+            && routes.contains(where: { $0.id == draft.id })
         missionScope = missionID
         currentFarm = farm
+        if sameActiveMission {
+            if !draft.visualTransects.isEmpty || draft.isAreaConfirmed || isAreaConfirmed {
+                planningStep = .flight
+            }
+            return
+        }
         if let saved = routes.last(where: {
             $0.missionID == missionID && (missionID != nil || $0.farmID == farm?.id)
         }) {
             if let farm, farm.points.count >= 2 {
-                let matchesFarmCount = saved.waypoints.count == farm.points.count
                 let farmHome = Self.defaultHomeLocation(for: farm.points)
                 let isNearFarm = saved.home.map { $0.distance(to: farmHome) < 5_000 } ?? true
+                let hasValidBoundary = saved.waypoints.count >= 2
 
-                if matchesFarmCount && isNearFarm {
+                if hasValidBoundary && isNearFarm {
                     select(saved.id)
                 } else {
                     newRoute(
@@ -205,8 +285,6 @@ final class FlightPlannerViewModel: ObservableObject {
             newRoute(
                 farm: farm, name: farm.map { "Rute " + $0.name } ?? name, altitude: altitude, speed: speed)
         }
-        planningStep = draft.visualTransects.isEmpty ? .boundary : .flight
-        isAreaConfirmed = !draft.visualTransects.isEmpty && draft.waypoints.count >= 3
     }
     func newRoute(farm: FarmArea?, name: String, altitude: Double, speed: Double) {
         guard routes.count < 256 else {
@@ -231,12 +309,13 @@ final class FlightPlannerViewModel: ObservableObject {
             route.returnToHome = true
         }
         draft = route
-        switching = false
-        selectedWaypointID = nil
-        mode = .inspect
         checkedSOPItems.removeAll()
         reviewed = false
         isAreaConfirmed = false
+        planningStep = .boundary
+        switching = false
+        selectedWaypointID = nil
+        mode = .inspect
         exportedURL = nil
         undoStack = []
         redoStack = []
@@ -248,17 +327,176 @@ final class FlightPlannerViewModel: ObservableObject {
         guard let route = routes.first(where: { $0.id == id }) else { return }
         switching = true
         draft = route
+        let restoredConfirmed =
+            route.isAreaConfirmed || (!route.visualTransects.isEmpty && route.waypoints.count >= 3)
+        isAreaConfirmed = restoredConfirmed
+        checkedSOPItems = route.checkedSOPItems
+        reviewed = route.isReviewed
+        planningStep = (route.visualTransects.isEmpty && !restoredConfirmed) ? .boundary : .flight
         switching = false
         selectedWaypointID = nil
         mode = .inspect
-        checkedSOPItems.removeAll()
-        reviewed = false
-        isAreaConfirmed = !route.visualTransects.isEmpty && route.waypoints.count >= 3
         exportedURL = nil
         undoStack = []
         redoStack = []
         error = nil
         fitRequest = UUID()
+    }
+
+    // MARK: - Plan Persistence, Two-Tier Locking & Flight Trail Recovery
+
+    func saveRouteCheckpoint() {
+        syncingMetadata = true
+        draft.isAreaConfirmed = isAreaConfirmed
+        draft.checkedSOPItems = checkedSOPItems
+        draft.isReviewed = reviewed
+        draft.lastSavedAt = Date()
+        syncingMetadata = false
+        lastCheckpointSavedAt = draft.lastSavedAt
+        persist()
+    }
+
+    func markUploadedAndLock(vehicleID: Int) {
+        syncingMetadata = true
+        draft.isAreaConfirmed = isAreaConfirmed
+        draft.checkedSOPItems = checkedSOPItems
+        draft.isReviewed = reviewed
+        draft.isUploadedToDrone = true
+        draft.isPlanLocked = true
+        draft.uploadedVehicleID = vehicleID
+        draft.wasVehicleArmedSinceUpload = false
+        draft.lastSavedAt = Date()
+        syncingMetadata = false
+        selectedWaypointID = nil
+        mode = .inspect
+        if let missionID = draft.missionID ?? missionScope {
+            clearFlightTrail(for: missionID)
+        }
+        persist()
+    }
+
+    func unlockPlan() {
+        syncingMetadata = true
+        draft.isPlanLocked = false
+        draft.isUploadedToDrone = false
+        draft.wasVehicleArmedSinceUpload = false
+        syncingMetadata = false
+        persist()
+    }
+
+    func planLockState(in vehicles: [ConnectedDrone]) -> PlanLockState {
+        guard draft.isPlanLocked else { return .unlocked }
+        let targetID =
+            draft.uploadedVehicleID
+            ?? vehicles.first(where: \.active)?.id
+            ?? vehicles.first?.id
+            ?? 1
+        if let drone = vehicles.first(where: { $0.id == targetID }), drone.isReachable {
+            if drone.armed || drone.flying {
+                return .hardLockedActiveFlight(vehicleID: drone.id)
+            } else {
+                return .softLocked(vehicleID: drone.id)
+            }
+        } else {
+            if draft.wasVehicleArmedSinceUpload {
+                return .commsLostWasArmed(vehicleID: targetID)
+            } else {
+                return .commsLostNeverArmed(vehicleID: targetID)
+            }
+        }
+    }
+
+    func flightTrail(for missionID: UUID?) -> [MapCoordinate] {
+        guard let id = missionID ?? draft.missionID ?? missionScope else { return [] }
+        return flightTrails[id] ?? []
+    }
+
+    func appendTrailCoordinate(_ coord: MapCoordinate, for missionID: UUID) {
+        guard coord.isValid, coord.latitude != 0 || coord.longitude != 0 else { return }
+        var current = flightTrails[missionID] ?? []
+        if let last = current.last {
+            guard last.distance(to: coord) > 1.0 else { return }
+        }
+        current.append(coord)
+        flightTrails[missionID] = current
+        try? trailRepository.save(flightTrails)
+    }
+
+    func clearFlightTrail(for missionID: UUID) {
+        flightTrails.removeValue(forKey: missionID)
+        try? trailRepository.save(flightTrails)
+    }
+
+    func observeVehicles(_ vehicles: [ConnectedDrone]) {
+        var routesChanged = false
+        var updatedRoutes = routes
+
+        for drone in vehicles {
+            let matchingIndex =
+                updatedRoutes.lastIndex(where: {
+                    $0.isPlanLocked && $0.uploadedVehicleID == drone.id
+                })
+                ?? updatedRoutes.lastIndex(where: {
+                    $0.isPlanLocked && $0.uploadedVehicleID == nil
+                })
+
+            let wasPreviouslyArmed = previouslyArmedVehicleIDs.contains(drone.id)
+
+            if drone.isReachable && (drone.armed || drone.flying) {
+                previouslyArmedVehicleIDs.insert(drone.id)
+                if let idx = matchingIndex {
+                    let routeMissionID = updatedRoutes[idx].missionID
+                    if !wasPreviouslyArmed && drone.armed && !updatedRoutes[idx].wasVehicleArmedSinceUpload,
+                        let mID = routeMissionID
+                    {
+                        clearFlightTrail(for: mID)
+                    }
+                    if !updatedRoutes[idx].wasVehicleArmedSinceUpload {
+                        updatedRoutes[idx].wasVehicleArmedSinceUpload = true
+                        routesChanged = true
+                    }
+                    if let mID = routeMissionID {
+                        activeRecoveryMissionID = mID
+                        if drone.telemetry.latitude != 0 || drone.telemetry.longitude != 0 {
+                            appendTrailCoordinate(
+                                MapCoordinate(
+                                    latitude: drone.telemetry.latitude,
+                                    longitude: drone.telemetry.longitude
+                                ),
+                                for: mID
+                            )
+                        }
+                    }
+                } else if let fallbackMissionID = draft.missionID ?? missionScope {
+                    activeRecoveryMissionID = fallbackMissionID
+                    if drone.telemetry.latitude != 0 || drone.telemetry.longitude != 0 {
+                        appendTrailCoordinate(
+                            MapCoordinate(
+                                latitude: drone.telemetry.latitude,
+                                longitude: drone.telemetry.longitude
+                            ),
+                            for: fallbackMissionID
+                        )
+                    }
+                }
+            } else if drone.isReachable && !drone.armed && !drone.flying {
+                previouslyArmedVehicleIDs.remove(drone.id)
+                if let idx = matchingIndex, updatedRoutes[idx].wasVehicleArmedSinceUpload {
+                    updatedRoutes[idx].wasVehicleArmedSinceUpload = false
+                    routesChanged = true
+                }
+            }
+        }
+
+        if routesChanged {
+            routes = updatedRoutes
+            try? repository.save(updatedRoutes)
+            if let currentIdx = updatedRoutes.firstIndex(where: { $0.id == draft.id }) {
+                syncingMetadata = true
+                draft.wasVehicleArmedSinceUpload = updatedRoutes[currentIdx].wasVehicleArmedSinceUpload
+                syncingMetadata = false
+            }
+        }
     }
     func activeBoundaryCoordinates() -> [MapCoordinate] {
         if draft.waypoints.count >= 3 {
@@ -433,7 +671,7 @@ final class FlightPlannerViewModel: ObservableObject {
             switching = false
             selectedWaypointID = nil
             undoStack = []
-        redoStack = []
+            redoStack = []
         }
     }
 
@@ -482,8 +720,9 @@ final class FlightPlannerViewModel: ObservableObject {
         isGeneratingWaypoints = true
         error = nil
 
+        draft.surveyEntry = nil
         let resolvedEntryLocation: Int
-        if let entry = draft.surveyEntry {
+        if let home = draft.home, home.isValid {
             let lats = activeBoundary.map(\.latitude)
             let lons = activeBoundary.map(\.longitude)
             let minLat = lats.min() ?? 0
@@ -492,12 +731,12 @@ final class FlightPlannerViewModel: ObservableObject {
             let maxLon = lons.max() ?? 0
 
             let corners = [
-                MapCoordinate(latitude: maxLat, longitude: minLon), // 0: TopLeft
-                MapCoordinate(latitude: maxLat, longitude: maxLon), // 1: TopRight
-                MapCoordinate(latitude: minLat, longitude: minLon), // 2: BottomLeft
-                MapCoordinate(latitude: minLat, longitude: maxLon)  // 3: BottomRight
+                MapCoordinate(latitude: maxLat, longitude: minLon),  // 0: TopLeft
+                MapCoordinate(latitude: maxLat, longitude: maxLon),  // 1: TopRight
+                MapCoordinate(latitude: minLat, longitude: minLon),  // 2: BottomLeft
+                MapCoordinate(latitude: minLat, longitude: maxLon),  // 3: BottomRight
             ]
-            let distances = corners.map { $0.distance(to: entry) }
+            let distances = corners.map { $0.distance(to: home) }
             resolvedEntryLocation = distances.enumerated().min(by: { $0.element < $1.element })?.offset ?? 0
         } else {
             resolvedEntryLocation = entryLocation
@@ -586,10 +825,11 @@ final class FlightPlannerViewModel: ObservableObject {
                         "vehicleType": 2,
                         "cruiseSpeed": draft.speed,
                         "hoverSpeed": draft.speed,
-                        "items": []
-                    ] as [String: Any]
+                        "items": [],
+                    ] as [String: Any],
                 ]
-                data = try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
+                data = try JSONSerialization.data(
+                    withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
             }
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }

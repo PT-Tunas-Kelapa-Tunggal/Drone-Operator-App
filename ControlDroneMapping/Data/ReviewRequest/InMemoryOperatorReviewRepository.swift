@@ -20,7 +20,9 @@ public final class InMemoryOperatorReviewRepository: OperatorReviewRepository, @
         }
     }
 
-    public func dispatchResult(requestID: UUID, result: PlantationReviewResult, previewAssetURL: URL?) async throws {
+    public func dispatchResult(requestID: UUID, result: PlantationReviewResult, previewAssetURL: URL?)
+        async throws
+    {
         lock.withLock {
             guard let index = requests.firstIndex(where: { $0.id == requestID }) else { return }
             requests[index].status = .completed

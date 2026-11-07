@@ -29,13 +29,13 @@ public final class MockVariProcessor: VariProcessing, @unchecked Sendable {
         let targetDir = outputFolder ?? FileManager.default.temporaryDirectory
         let mockURL = targetDir.appendingPathComponent("vari_result.json")
         let dummyJSON = """
-        {
-          "schema": 1,
-          "image": { "trees": 128 },
-          "zones": [{}, {}, {}, {}],
-          "summary": { "reference_zone_mean_vari": 0.42 }
-        }
-        """
+            {
+              "schema": 1,
+              "image": { "trees": 128 },
+              "zones": [{}, {}, {}, {}],
+              "summary": { "reference_zone_mean_vari": 0.42 }
+            }
+            """
         try? dummyJSON.write(to: mockURL, atomically: true, encoding: .utf8)
 
         return VariScanResult(

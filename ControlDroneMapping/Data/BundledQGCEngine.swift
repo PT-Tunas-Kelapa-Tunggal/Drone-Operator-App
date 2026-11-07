@@ -71,8 +71,9 @@ public enum BundledQGCEngine {
             }
 
             if let data = try? Data(contentsOf: healthURL),
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               json["status"] as? String == "ok" {
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                json["status"] as? String == "ok"
+            {
                 healthy = true
                 break
             }

@@ -37,7 +37,8 @@ final class CameraViewModel: ObservableObject {
         }
         engine.onStatus = { [weak self] status in
             guard let self else { return }
-            let datasetChanged = self.telemetry.missionID != status.missionID
+            let datasetChanged =
+                self.telemetry.missionID != status.missionID
                 || self.telemetry.saved != status.saved || self.telemetry.phase != status.phase
             self.telemetry = status
             if datasetChanged { self.records = self.link.store.records() }
