@@ -52,12 +52,10 @@ enum PreflightChecklistItem: String, CaseIterable, Identifiable, Codable, Hashab
         case .boundaryConfirmed:
             return "Titik batas kebun sesuai kondisi fisik di lapangan."
         case .dronePlacedAtTakeoff:
-            if let home = route.home, home.isValid, let entry = route.surveyEntry, entry.isValid {
-                return "Posisi fisik drone sesuai titik Home (H) dan titik Entry (E) sudah ditaruh."
-            } else if route.home?.isValid != true {
-                return "Taruh titik Home (H) di peta sesuai lokasi fisik lepas landas."
+            if let home = route.home, home.isValid {
+                return "Posisi fisik drone sesuai titik Home (H) di peta."
             } else {
-                return "Tentukan titik awal survei (Entry) di peta terlebih dahulu."
+                return "Taruh titik Home (H) di peta sesuai lokasi fisik lepas landas."
             }
         case .geofenceConfigured:
             if let safety = route.safetyResult, safety.enabled {
@@ -108,8 +106,6 @@ enum PreflightChecklistItem: String, CaseIterable, Identifiable, Codable, Hashab
     /// Evaluates whether the QGC engine and planning state satisfy the prerequisite for this item.
     func precondition(isAreaConfirmed: Bool, route: FlightRoute) -> (met: Bool, blockerReason: String?) {
         let hasSurveyCalculation = !route.visualTransects.isEmpty && route.surveyStatistics != nil
-        let hasEntry = route.surveyEntry?.isValid == true
-        let hasCalculatedPath = hasSurveyCalculation && hasEntry
 
         switch self {
         case .boundaryConfirmed:
@@ -121,9 +117,6 @@ enum PreflightChecklistItem: String, CaseIterable, Identifiable, Codable, Hashab
         case .dronePlacedAtTakeoff:
             guard let home = route.home, home.isValid else {
                 return (false, "Taruh titik Home (H) di peta terlebih dahulu.")
-            }
-            guard let entry = route.surveyEntry, entry.isValid else {
-                return (false, "Tentukan titik awal survei (Entry) di peta terlebih dahulu.")
             }
             return (true, nil)
 
@@ -161,22 +154,10 @@ enum PreflightChecklistItem: String, CaseIterable, Identifiable, Codable, Hashab
             }
             return (true, nil)
 
-        case .altitudeSafeForContour:
+        case .altitudeSafeForContour, .takeoffAreaClear, .weatherAndWindSafe, .gnssAndCompassReady,
+            .batterySufficient, .cameraAndStorageReady:
             guard hasSurveyCalculation else {
                 return (false, "Hitung jalur survei terlebih dahulu.")
-            }
-            guard hasEntry else {
-                return (false, "Tentukan titik awal survei (Entry) di peta terlebih dahulu.")
-            }
-            return (true, nil)
-
-        case .takeoffAreaClear, .weatherAndWindSafe, .gnssAndCompassReady, .batterySufficient,
-            .cameraAndStorageReady:
-            guard hasSurveyCalculation else {
-                return (false, "Hitung jalur survei terlebih dahulu.")
-            }
-            guard hasEntry else {
-                return (false, "Tentukan titik awal survei (Entry) di peta terlebih dahulu.")
             }
             return (true, nil)
         }

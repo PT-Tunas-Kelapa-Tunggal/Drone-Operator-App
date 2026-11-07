@@ -103,8 +103,8 @@ struct FlightWorkspaceView: View {
     }
 
     private var entryCoordinate: CLLocationCoordinate2D? {
-        guard let entry = planner.draft.surveyEntry, entry.isValid else { return nil }
-        return entry.clCoordinate
+        guard let first = planner.draft.visualTransects.first, first.isValid else { return nil }
+        return first.clCoordinate
     }
 
     private var exitCoordinate: CLLocationCoordinate2D? {
@@ -226,20 +226,16 @@ struct FlightWorkspaceView: View {
                     .foregroundStyle(Color.green.opacity(0.18))
             }
 
-            // 3. Planned ingress/egress transit lines (Home -> Entry -> First Transect & Exit -> Home)
+            // 3. Planned ingress/egress transit lines (Home -> First Transect & Exit -> Home)
             if !surveyTransectCoordinates.isEmpty,
-                let home = planner.draft.home, home.isValid,
-                let entry = planner.draft.surveyEntry, entry.isValid
+                let home = planner.draft.home, home.isValid
             {
-                MapPolyline(coordinates: [home.clCoordinate, entry.clCoordinate])
-                    .stroke(Color.cyan.opacity(0.85), style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
-
-                if let first = planner.draft.visualTransects.first, entry != first {
-                    MapPolyline(coordinates: [entry.clCoordinate, first.clCoordinate])
+                if let first = planner.draft.visualTransects.first, first.isValid {
+                    MapPolyline(coordinates: [home.clCoordinate, first.clCoordinate])
                         .stroke(Color.cyan.opacity(0.85), style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
                 }
 
-                if let last = planner.draft.visualTransects.last, planner.draft.returnToHome {
+                if let last = planner.draft.visualTransects.last, last.isValid, planner.draft.returnToHome {
                     MapPolyline(coordinates: [last.clCoordinate, home.clCoordinate])
                         .stroke(Color.cyan.opacity(0.85), style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
                 }
@@ -257,14 +253,14 @@ struct FlightWorkspaceView: View {
                     .stroke(Color.cyan, lineWidth: 2.8)
             }
 
-            // 6. Entry (E) marker
+            // 6. Entry (E) marker (read-only at first transect waypoint)
             if let entry = entryCoordinate {
                 Annotation("Entry", coordinate: entry) {
                     routePinBadge("E", color: .cyan)
                 }
             }
 
-            // 7. Exit (X) marker
+            // 7. Exit (X) marker (read-only at last transect waypoint)
             if let exit = exitCoordinate {
                 Annotation("Exit", coordinate: exit) {
                     routePinBadge("X", color: .cyan)

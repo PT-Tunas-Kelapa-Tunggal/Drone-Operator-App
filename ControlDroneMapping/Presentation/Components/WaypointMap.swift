@@ -101,14 +101,14 @@ struct WaypointMap: NSViewRepresentable {
                     marker.coordinate = home.clCoordinate
                     map.addAnnotation(marker)
                 }
-                if let entry = route.surveyEntry, entry.isValid {
-                    let entryMarker = RouteMarker()
-                    entryMarker.kind = .surveyEntry
-                    entryMarker.title = "Titik Masuk Survei (Entry)"
-                    entryMarker.coordinate = entry.clCoordinate
-                    map.addAnnotation(entryMarker)
-                }
                 if !route.visualTransects.isEmpty {
+                    if let first = route.visualTransects.first, first.isValid {
+                        let entryMarker = RouteMarker()
+                        entryMarker.kind = .surveyEntry
+                        entryMarker.title = "Titik Masuk Survei (Entry)"
+                        entryMarker.coordinate = first.clCoordinate
+                        map.addAnnotation(entryMarker)
+                    }
                     if let last = route.visualTransects.last, last.isValid, route.visualTransects.count > 1 {
                         let exitMarker = RouteMarker()
                         exitMarker.kind = .surveyExit
@@ -121,14 +121,12 @@ struct WaypointMap: NSViewRepresentable {
                         coordinates: transectCoords, count: transectCoords.count)
                     map.addOverlay(transectLine)
 
-                    if let home = route.home, home.isValid, let entry = route.surveyEntry, entry.isValid {
-                        let ingressCoords = [home.clCoordinate, entry.clCoordinate]
-                        map.addOverlay(SurveyTransitPolyline(coordinates: ingressCoords, count: 2))
-                        if let first = route.visualTransects.first, entry != first {
-                            let connectCoords = [entry.clCoordinate, first.clCoordinate]
-                            map.addOverlay(SurveyTransitPolyline(coordinates: connectCoords, count: 2))
+                    if let home = route.home, home.isValid {
+                        if let first = route.visualTransects.first, first.isValid {
+                            let ingressCoords = [home.clCoordinate, first.clCoordinate]
+                            map.addOverlay(SurveyTransitPolyline(coordinates: ingressCoords, count: 2))
                         }
-                        if let last = route.visualTransects.last, route.returnToHome {
+                        if let last = route.visualTransects.last, last.isValid, route.returnToHome {
                             let egressCoords = [last.clCoordinate, home.clCoordinate]
                             map.addOverlay(SurveyTransitPolyline(coordinates: egressCoords, count: 2))
                         }
@@ -369,9 +367,7 @@ struct WaypointMap: NSViewRepresentable {
             case .surveyEntry:
                 view.markerTintColor = .systemCyan
                 view.glyphText = "E"
-                view.isDraggable =
-                    parent.editingEnabled && parent.planningStep == .flight
-                    && !parent.drawingBoundary && parent.onEntryMove != nil
+                view.isDraggable = false
             case .surveyExit:
                 view.markerTintColor = .systemCyan
                 view.glyphText = "X"

@@ -415,11 +415,6 @@ struct MissionWorkspaceView: View {
                     .popover(isPresented: $showingHomeOptions, arrowEdge: .bottom) {
                         homeOptionsPopover
                     }
-                    PlanToolButton(
-                        title: "Entry", compact: compact, systemImage: "arrow.right.to.line", shortcut: "E",
-                        selected: planner.mode == .entry,
-                        help: "Taruh titik masuk survei di garis batas", tint: .cyan
-                    ) { selectTool(.entry) }
                 }
             }
             .disabled(!canEditRoute)
@@ -498,7 +493,7 @@ struct MissionWorkspaceView: View {
             Text(
                 planner.planningStep == .boundary
                     ? "Sesuaikan titik sudut agar sama dengan batas kebun di lapangan."
-                    : "Atur parameter lalu hitung jalur. Taruh Home (H) dan Entry (E) di peta."
+                    : "Atur parameter lalu hitung jalur. Taruh Home (H) di peta."
             )
             .font(.caption).foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
@@ -951,13 +946,10 @@ struct MissionWorkspaceView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
-                        PlanSectionTitle("Lepas landas & masuk")
+                        PlanSectionTitle("Lepas landas & kembali")
                         PlanStatusRow(
                             "Home", glyph: "H", color: .green, placed: planner.draft.home != nil,
                             status: planner.draft.home == nil ? "Belum · tekan H" : "Sudah ditaruh")
-                        PlanStatusRow(
-                            "Entry", glyph: "E", color: .cyan, placed: planner.draft.surveyEntry != nil,
-                            status: planner.draft.surveyEntry == nil ? "Belum · tekan E" : "Sudah ditaruh")
                         PlanSummaryRow("Kembali ke Home", planner.draft.returnToHome ? "Ya" : "Tidak")
                     }
 
@@ -1189,7 +1181,7 @@ struct MissionWorkspaceView: View {
                     "Geser pin untuk memindah · klik pin untuk memilih · seret peta untuk menggeser"
                 )
             } else {
-                return ("cursorarrow", "Taruh Home (H) dan Entry (E) · geser peta untuk navigasi")
+                return ("cursorarrow", "Taruh Home (H) · geser peta untuk navigasi")
             }
         }
     }
@@ -1210,13 +1202,13 @@ struct MissionWorkspaceView: View {
     }
 
     /// Tools behave like a design app: Titik stays active for repeated clicks,
-    /// Home and Entry place once and return to Pilih.
+    /// Home places once and returns to Pilih.
     private func selectTool(_ mode: FlightMapEditMode) {
         guard canEditRoute || mode == .inspect else { return }
         if planner.planningStep == .boundary {
             guard mode == .inspect || mode == .waypoint else { return }
         } else {
-            guard mode == .inspect || mode == .home || mode == .entry else { return }
+            guard mode == .inspect || mode == .home else { return }
         }
         planner.mode = mode
     }
@@ -1279,8 +1271,6 @@ struct MissionWorkspaceView: View {
             if planner.planningStep == .boundary { selectTool(.waypoint) }
         case "h":
             if planner.planningStep == .flight { showingHomeOptions.toggle() }
-        case "e":
-            if planner.planningStep == .flight { selectTool(.entry) }
         default:
             return false
         }

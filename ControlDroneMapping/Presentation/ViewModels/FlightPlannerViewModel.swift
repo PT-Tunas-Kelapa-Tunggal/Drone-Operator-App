@@ -720,8 +720,9 @@ final class FlightPlannerViewModel: ObservableObject {
         isGeneratingWaypoints = true
         error = nil
 
+        draft.surveyEntry = nil
         let resolvedEntryLocation: Int
-        if let entry = draft.surveyEntry {
+        if let home = draft.home, home.isValid {
             let lats = activeBoundary.map(\.latitude)
             let lons = activeBoundary.map(\.longitude)
             let minLat = lats.min() ?? 0
@@ -735,7 +736,7 @@ final class FlightPlannerViewModel: ObservableObject {
                 MapCoordinate(latitude: minLat, longitude: minLon),  // 2: BottomLeft
                 MapCoordinate(latitude: minLat, longitude: maxLon),  // 3: BottomRight
             ]
-            let distances = corners.map { $0.distance(to: entry) }
+            let distances = corners.map { $0.distance(to: home) }
             resolvedEntryLocation = distances.enumerated().min(by: { $0.element < $1.element })?.offset ?? 0
         } else {
             resolvedEntryLocation = entryLocation
