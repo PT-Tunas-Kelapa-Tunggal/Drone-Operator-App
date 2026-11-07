@@ -242,13 +242,21 @@ struct ReviewWorkspaceView: View {
         }
     }
 
+    private var isDroneActiveInAir: Bool {
+        guard let drone = engineManager.activeVehicle else { return false }
+        return drone.armed || drone.flying
+    }
+
     private var isFlightUnlocked: Bool {
-        planner.isSOPChecklistComplete && model.geometry.reviewed
+        planner.draft.isPlanLocked
+            || (planner.isSOPChecklistComplete && (model.geometry.reviewed || planner.reviewed))
+            || isDroneActiveInAir
     }
 
     private var landingTab: ReviewTab {
         if model.step == .datasets || mission?.phase == .completed { return .imagery }
-        if model.selectedMissionIsCurrent && model.isActiveMission { return .capture }
+        if isDroneActiveInAir || (model.selectedMissionIsCurrent && model.isActiveMission) { return .capture }
+        if planner.draft.isPlanLocked { return .capture }
         return model.geometry.reviewed ? .camera : .mission
     }
 

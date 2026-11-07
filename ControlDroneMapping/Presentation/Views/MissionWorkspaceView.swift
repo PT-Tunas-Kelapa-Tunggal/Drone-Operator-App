@@ -9,6 +9,7 @@ struct MissionWorkspaceView: View {
     @ObservedObject var farms: FarmAreaViewModel
     @ObservedObject var location: OperatorLocationViewModel
     @ObservedObject var planner: FlightPlannerViewModel
+    @ObservedObject private var engineManager = QGCEngineManager.shared
     var onStartFlight: (() -> Void)? = nil
     @State private var focusOperator = false
     @State private var requestedLocation = false
@@ -18,12 +19,39 @@ struct MissionWorkspaceView: View {
     @State private var keyMonitor: Any?
     @State private var replanPending = false
     @State private var replanDebounceTask: Task<Void, Never>? = nil
+    @State private var showingHomeOptions = false
+    @State private var isUploadingMission = false
+    @State private var uploadErrorMessage: String? = nil
+    @State private var showingUploadErrorAlert = false
+    @State private var showingCommsLostNeverArmedAlert = false
+    @State private var showingCommsLostWasArmedSheet = false
+    @State private var commsLostVehicleID: Int = 1
+    @State private var commsLostCountdownRemaining: Int = 10
+    @State private var commsLostCountdownTask: Task<Void, Never>? = nil
 
     private var routeMatchesMission: Bool {
         model.selectedMissionID != nil && planner.draft.missionID == model.selectedMissionID
     }
+    private var currentPlanLockState: PlanLockState {
+        planner.planLockState(in: engineManager.vehicles)
+    }
+    private var isAssignedOrActiveDroneArmed: Bool {
+        if let uploadedID = planner.draft.uploadedVehicleID,
+            let v = engineManager.vehicles.first(where: { $0.id == uploadedID }),
+            v.isReachable && (v.armed || v.flying)
+        {
+            return true
+        }
+        if let active = engineManager.activeVehicle, active.isReachable && (active.armed || active.flying) {
+            return true
+        }
+        return false
+    }
     private var canEditRoute: Bool {
-        routeMatchesMission && !model.editingLocked
+        routeMatchesMission
+            && !planner.draft.isPlanLocked
+            && !isAssignedOrActiveDroneArmed
+            && !model.editingLocked
             && model.selectedMission?.preparationRequested != true
             && model.selectedMission?.phase != .completed
     }
@@ -52,6 +80,7 @@ struct MissionWorkspaceView: View {
                     planner.draft.home = coordinate
                     replanDebounced()
                 }
+                syncHomeToQGC(coordinate: coordinate)
             },
             onEntryMove: { coordinate in
                 editRoute {
@@ -96,6 +125,11 @@ struct MissionWorkspaceView: View {
             planner.open(
                 farm: mission.area, name: "Rute " + mission.plan.name,
                 altitude: model.geometry.heightAGL, speed: model.geometry.speed, missionID: mission.id)
+            if planner.reviewed && !model.geometry.reviewed {
+                model.geometry.reviewed = true
+            } else if model.geometry.reviewed && planner.isSOPChecklistComplete && !planner.reviewed {
+                planner.reviewed = true
+            }
             // Default to inspect (Pilih) mode so operator can pan and select without accidental point additions.
             planner.mode = .inspect
             installKeyMonitor()
@@ -103,6 +137,24 @@ struct MissionWorkspaceView: View {
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
             keyMonitor = nil
+            commsLostCountdownTask?.cancel()
+            commsLostCountdownTask = nil
+        }
+        .alert(
+            "Komunikasi Drone #\(commsLostVehicleID) Terputus",
+            isPresented: $showingCommsLostNeverArmedAlert
+        ) {
+            Button("Tetap Buka Kunci & Edit Rencana") {
+                planner.unlockPlan()
+            }
+            Button("Batal", role: .cancel) { }
+        } message: {
+            Text(
+                "Drone #\(commsLostVehicleID) saat ini kehilangan koneksi telemetri (tidak terjangkau). Karena drone belum pernah di-Arm sejak rute diunggah, sebaiknya pulihkan koneksi drone terlebih dahulu, atau pilih 'Tetap Buka Kunci & Edit Rencana' untuk kembali merencanakan rute."
+            )
+        }
+        .sheet(isPresented: $showingCommsLostWasArmedSheet) {
+            commsLostWasArmedSafetySheet
         }
         .onChange(of: planner.selectedWaypointID) { _, id in
             if id != nil && planner.planningStep == .boundary {
@@ -126,26 +178,186 @@ struct MissionWorkspaceView: View {
 
     /// Tools, history and view controls sit together between the panels; tool labels
     /// drop away when the map is too narrow for them.
+    /// When the plan is locked, all editing/view toolbars disappear completely and only the unlock control remains.
+    @ViewBuilder
     private func centerIslands(compact: Bool) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            toolPalette(compact: compact)
-            historyIsland
-            HStack(spacing: 2) {
-                PlanIconButton(systemImage: "location", help: "Ke lokasi saya") {
-                    requestedLocation = true
-                    location.request()
+        if planner.draft.isPlanLocked {
+            lockedPlanToolbarIsland(compact: compact)
+                .fixedSize()
+        } else {
+            HStack(alignment: .top, spacing: 10) {
+                toolPalette(compact: compact)
+                historyIsland
+                HStack(spacing: 2) {
+                    PlanIconButton(systemImage: "location", help: "Ke lokasi saya") {
+                        requestedLocation = true
+                        location.request()
+                    }
+                    PlanIconButton(
+                        systemImage: "arrow.up.left.and.arrow.down.right", help: "Tampilkan seluruh rute"
+                    ) {
+                        focusOperator = false
+                        planner.fitRoute()
+                    }
                 }
-                PlanIconButton(
-                    systemImage: "arrow.up.left.and.arrow.down.right", help: "Tampilkan seluruh rute"
-                ) {
-                    focusOperator = false
-                    planner.fitRoute()
+                .padding(5)
+                .kropsFloatingControl(in: Capsule())
+            }
+            .fixedSize()
+        }
+    }
+
+    @ViewBuilder
+    private func lockedPlanToolbarIsland(compact: Bool) -> some View {
+        switch currentPlanLockState {
+        case .hardLockedActiveFlight(let vehicleID):
+            HStack(spacing: 8) {
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.orange)
+                Text(
+                    compact
+                        ? "Misi Aktif · Terkunci"
+                        : "Misi Aktif (Drone #\(vehicleID)) · Terkunci Permanen"
+                )
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.primary)
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 36)
+            .padding(4)
+            .kropsFloatingControl(in: Capsule())
+            .help("Rencana tidak dapat diubah selama drone sedang Armed atau menjalankan misi di udara. Daratkan dan Disarm drone terlebih dahulu.")
+
+        case .softLocked, .commsLostNeverArmed, .commsLostWasArmed, .unlocked:
+            PlanHoldToUnlockCapsule(
+                compact: compact,
+                holdDuration: 1.5
+            ) {
+                handleUnlockHoldCompleted()
+            }
+        }
+    }
+
+    private func handleUnlockHoldCompleted() {
+        switch currentPlanLockState {
+        case .unlocked, .hardLockedActiveFlight:
+            break
+        case .softLocked:
+            planner.unlockPlan()
+        case .commsLostNeverArmed(let vehicleID):
+            commsLostVehicleID = vehicleID
+            showingCommsLostNeverArmedAlert = true
+        case .commsLostWasArmed(let vehicleID):
+            commsLostVehicleID = vehicleID
+            startCommsLostCountdown()
+            showingCommsLostWasArmedSheet = true
+        }
+    }
+
+    private func startCommsLostCountdown() {
+        commsLostCountdownTask?.cancel()
+        commsLostCountdownRemaining = 10
+        commsLostCountdownTask = Task { @MainActor in
+            while !Task.isCancelled && commsLostCountdownRemaining > 0 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { break }
+                if commsLostCountdownRemaining > 0 {
+                    commsLostCountdownRemaining -= 1
                 }
             }
-            .padding(5)
-            .kropsFloatingControl(in: Capsule())
         }
-        .fixedSize()
+    }
+
+    private var isTargetDroneReconnectedAndUnarmed: Bool {
+        if case .softLocked = currentPlanLockState {
+            return true
+        }
+        return false
+    }
+
+    private var commsLostWasArmedSafetySheet: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color.red.opacity(0.14))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "exclamationmark.shield.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(.red)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Peringatan Keamanan: Drone Pernah Arm & Komms Terputus")
+                        .font(.headline)
+                    Text("Drone #\(commsLostVehicleID) kehilangan koneksi setelah sebelumnya berstatus Armed.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Label(
+                    "Pastikan wahana sudah mendarat dan dalam kondisi Disarmed secara fisik.",
+                    systemImage: "1.circle.fill"
+                )
+                Label(
+                    "Pulihkan koneksi telemetri antara Drone #\(commsLostVehicleID) dan QGC Engine.",
+                    systemImage: "2.circle.fill"
+                )
+                Label(
+                    "Demi keselamatan penerbangan, perubahan rencana hanya diizinkan saat drone tidak Armed.",
+                    systemImage: "3.circle.fill"
+                )
+            }
+            .font(.callout)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.25), lineWidth: 1))
+
+            if isTargetDroneReconnectedAndUnarmed {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Koneksi Drone #\(commsLostVehicleID) pulih & terkonfirmasi Disarmed.")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.green)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+            }
+
+            HStack {
+                Button("Batal") {
+                    commsLostCountdownTask?.cancel()
+                    showingCommsLostWasArmedSheet = false
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                let canUnlockNow = isTargetDroneReconnectedAndUnarmed || commsLostCountdownRemaining == 0
+                Button {
+                    commsLostCountdownTask?.cancel()
+                    showingCommsLostWasArmedSheet = false
+                    planner.unlockPlan()
+                } label: {
+                    Text(
+                        canUnlockNow
+                            ? "Disarm Terkonfirmasi · Buka Kunci Rencana"
+                            : "Tunggu \(commsLostCountdownRemaining) dtk untuk Buka Kunci..."
+                    )
+                    .fontWeight(.semibold)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(canUnlockNow ? .orange : .secondary)
+                .disabled(!canUnlockNow)
+            }
+        }
+        .padding(24)
+        .frame(width: 480)
     }
 
     private func panelToggle(_ edge: HorizontalEdge) -> some View {
@@ -195,9 +407,14 @@ struct MissionWorkspaceView: View {
                 } else {
                     PlanToolButton(
                         title: "Home", compact: compact, systemImage: "house", shortcut: "H",
-                        selected: planner.mode == .home,
-                        help: "Taruh titik lepas landas & mendarat", tint: .green
-                    ) { selectTool(.home) }
+                        selected: planner.mode == .home || showingHomeOptions,
+                        help: "Pengaturan titik lepas landas & mendarat", tint: .green
+                    ) {
+                        showingHomeOptions.toggle()
+                    }
+                    .popover(isPresented: $showingHomeOptions, arrowEdge: .bottom) {
+                        homeOptionsPopover
+                    }
                     PlanToolButton(
                         title: "Entry", compact: compact, systemImage: "arrow.right.to.line", shortcut: "E",
                         selected: planner.mode == .entry,
@@ -793,6 +1010,7 @@ struct MissionWorkspaceView: View {
                             onChecklistChanged: {
                                 if !planner.isSOPChecklistComplete {
                                     model.geometry.reviewed = false
+                                    planner.reviewed = false
                                 }
                             }
                         )
@@ -800,22 +1018,30 @@ struct MissionWorkspaceView: View {
                         Divider()
                         Toggle(
                             isOn: Binding(
-                                get: { model.geometry.reviewed && planner.isSOPChecklistComplete },
+                                get: {
+                                    planner.draft.isPlanLocked
+                                        || ((model.geometry.reviewed || planner.reviewed)
+                                            && planner.isSOPChecklistComplete)
+                                },
                                 set: { val in
                                     guard planner.isSOPChecklistComplete else {
                                         model.geometry.reviewed = false
+                                        planner.reviewed = false
                                         return
                                     }
                                     model.geometry.reviewed = val
+                                    planner.reviewed = val
                                 }
                             )
                         ) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Rencana sudah diperiksa").font(.body.weight(.medium))
                                 Text(
-                                    planner.isSOPChecklistComplete
-                                        ? "Seluruh checklist SOP telah diverifikasi."
-                                        : "Selesaikan seluruh 11 item checklist SOP di atas untuk mengaktifkan."
+                                    planner.draft.isPlanLocked
+                                        ? "Rencana telah dikunci dan siap diterbangkan."
+                                        : (planner.isSOPChecklistComplete
+                                            ? "Seluruh checklist SOP telah diverifikasi."
+                                            : "Selesaikan seluruh 11 item checklist SOP di atas untuk mengaktifkan.")
                                 )
                                 .font(.caption).foregroundStyle(.secondary)
                             }
@@ -823,18 +1049,85 @@ struct MissionWorkspaceView: View {
                         .toggleStyle(.checkbox)
                         .disabled(model.editingLocked || !canEditRoute || !planner.isSOPChecklistComplete)
 
-                        if model.geometry.reviewed && planner.isSOPChecklistComplete {
-                            Button {
-                                onStartFlight?()
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "airplane.departure")
-                                    Text("Lanjut ke Penerbangan")
-                                        .fontWeight(.semibold)
+                        if planner.draft.isPlanLocked
+                            || ((model.geometry.reviewed || planner.reviewed) && planner.isSOPChecklistComplete)
+                        {
+                            VStack(spacing: 8) {
+                                if planner.draft.isUploadedToDrone || planner.draft.isPlanLocked {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: planner.draft.isPlanLocked ? "lock.fill" : "checkmark.circle.fill")
+                                            .foregroundStyle(.green)
+                                        Text(
+                                            planner.draft.isPlanLocked
+                                                ? "Rencana Terkunci & Tersinkronisasi"
+                                                : "Misi Tersinkronisasi ke Drone"
+                                        )
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.green)
+                                        Spacer()
+                                        if !planner.draft.isPlanLocked {
+                                            Button("Unggah Ulang") {
+                                                uploadMissionToDrone()
+                                            }
+                                            .font(.caption2)
+                                            .buttonStyle(.plain)
+                                            .foregroundStyle(.secondary)
+                                            .disabled(isUploadingMission || isAssignedOrActiveDroneArmed)
+                                        }
+                                    }
+                                    .padding(8)
+                                    .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                                } else {
+                                    Button {
+                                        uploadMissionToDrone()
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            if isUploadingMission {
+                                                ProgressView()
+                                                    .controlSize(.small)
+                                                Text("Mengunggah Misi...")
+                                                    .fontWeight(.semibold)
+                                            } else {
+                                                Image(systemName: "arrow.up.circle.fill")
+                                                Text("Unggah Misi ke Drone")
+                                                    .fontWeight(.semibold)
+                                            }
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 32)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(.blue)
+                                    .disabled(
+                                        isUploadingMission
+                                            || engineManager.activeVehicle == nil
+                                            || isAssignedOrActiveDroneArmed
+                                    )
+
+                                    if engineManager.activeVehicle == nil {
+                                        Text("Hubungkan drone ke QGC Engine untuk mengunggah misi.")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    } else if isAssignedOrActiveDroneArmed {
+                                        Text("Daratkan dan Disarm drone terlebih dahulu sebelum mengunggah misi.")
+                                            .font(.caption2)
+                                            .foregroundStyle(.orange)
+                                    }
                                 }
-                                .frame(maxWidth: .infinity)
+
+                                Button {
+                                    onStartFlight?()
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "airplane.departure")
+                                        Text("Lanjut ke Penerbangan")
+                                            .fontWeight(.semibold)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                }
+                                .kropsPrimaryAction(size: .large)
+                                .padding(.top, 2)
                             }
-                            .kropsPrimaryAction(size: .large)
                             .padding(.top, 4)
                         }
                     }
@@ -845,6 +1138,11 @@ struct MissionWorkspaceView: View {
         }
         .frame(width: 290)
         .kropsFloatingPanel()
+        .alert("Gagal Mengunggah Misi", isPresented: $showingUploadErrorAlert) {
+            Button("Tutup", role: .cancel) { }
+        } message: {
+            Text(uploadErrorMessage ?? "Terjadi kesalahan saat mengunggah rute ke drone.")
+        }
     }
 
     // MARK: - Hint
@@ -929,10 +1227,14 @@ struct MissionWorkspaceView: View {
         case .waypoint:
             editRoute { planner.addWaypoint(coordinate) }
         case .home, .entry:
+            let wasHome = planner.mode == .home
             editRoute {
                 planner.mapClick(coordinate)
                 planner.mode = .inspect
                 replanDebounced()
+            }
+            if wasHome {
+                syncHomeToQGC(coordinate: coordinate)
             }
         case .inspect:
             break
@@ -976,7 +1278,7 @@ struct MissionWorkspaceView: View {
         case "p", "b":
             if planner.planningStep == .boundary { selectTool(.waypoint) }
         case "h":
-            if planner.planningStep == .flight { selectTool(.home) }
+            if planner.planningStep == .flight { showingHomeOptions.toggle() }
         case "e":
             if planner.planningStep == .flight { selectTool(.entry) }
         default:
@@ -1225,6 +1527,102 @@ struct MissionWorkspaceView: View {
 private struct InspectorHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+private struct PlanHoldToUnlockCapsule: View {
+    var compact = false
+    var holdDuration: TimeInterval = 1.5
+    let onUnlock: () -> Void
+
+    @State private var isHolding = false
+    @State private var progress: Double = 0.0
+    @State private var holdTask: Task<Void, Never>? = nil
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ZStack {
+                if isHolding {
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(KropsStyle.accent, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(KropsStyle.accent)
+                }
+            }
+            .frame(width: 18, height: 18)
+
+            Text(
+                isHolding
+                    ? "Membuka kunci... \(Int(progress * 100))%"
+                    : (compact ? "Terkunci · Tahan Buka" : "Rencana Terkunci · Tahan untuk Buka Kunci")
+            )
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(.primary)
+            .monospacedDigit()
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 36)
+        .background(alignment: .leading) {
+            GeometryReader { geo in
+                if isHolding {
+                    Capsule()
+                        .fill(KropsStyle.accent.opacity(0.24))
+                        .frame(width: max(0, min(geo.size.width * progress, geo.size.width)))
+                        .animation(.linear(duration: 0.05), value: progress)
+                }
+            }
+        }
+        .padding(4)
+        .kropsFloatingControl(in: Capsule())
+        .contentShape(Capsule())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    if !isHolding {
+                        startHold()
+                    }
+                }
+                .onEnded { _ in
+                    cancelHold()
+                }
+        )
+        .help("Tahan tombol ini selama 1,5 detik untuk membuka kunci rencana dan mengubah parameter.")
+    }
+
+    private func startHold() {
+        isHolding = true
+        progress = 0.0
+        holdTask?.cancel()
+
+        let stepInterval: TimeInterval = 0.03
+        let totalSteps = max(1, Int(holdDuration / stepInterval))
+
+        holdTask = Task { @MainActor in
+            for step in 1...totalSteps {
+                try? await Task.sleep(nanoseconds: UInt64(stepInterval * 1_000_000_000))
+                guard !Task.isCancelled, isHolding else { return }
+                progress = Double(step) / Double(totalSteps)
+            }
+            guard !Task.isCancelled, isHolding else { return }
+            isHolding = false
+            progress = 0.0
+            NSSound.beep()
+            onUnlock()
+        }
+    }
+
+    private func cancelHold() {
+        holdTask?.cancel()
+        holdTask = nil
+        withAnimation(.easeOut(duration: 0.15)) {
+            isHolding = false
+            progress = 0.0
+        }
+    }
 }
 
 private struct PlanIconButton: View {

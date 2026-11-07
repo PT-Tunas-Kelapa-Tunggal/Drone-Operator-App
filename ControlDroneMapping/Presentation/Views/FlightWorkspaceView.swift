@@ -50,7 +50,7 @@ struct FlightWorkspaceView: View {
     @State private var showingCommandMenu = false
     @State private var showingSensorDetails = false
     @State private var commandError: String? = nil
-    @State private var flightPath: [CLLocationCoordinate2D] = []
+    @State private var showingCommandAlert = false
     @State private var followDrone = true
 
     private var activeDrone: ConnectedDrone? {
@@ -62,20 +62,30 @@ struct FlightWorkspaceView: View {
     }
 
     private var isMissionChecklistComplete: Bool {
-        planner.isSOPChecklistComplete && model.geometry.reviewed
+        planner.draft.isPlanLocked
+            || (planner.isSOPChecklistComplete && (model.geometry.reviewed || planner.reviewed))
     }
 
+    /// Pre-flight ground-to-air commands (Arming from disarmed, Takeoff from ground)
     private var canExecuteFlightCommands: Bool {
         guard let drone = activeDrone else { return false }
         return drone.isReachable && isMissionChecklistComplete
     }
 
+    /// In-flight and safety recovery commands (Hold/Loiter, RTL, Land, Disarm, Resume/Start Mission while armed)
+    /// Following QGC's GuidedActionsController pattern, an armed or flying vehicle never blocks operator control on checklists.
+    private var canExecuteActiveOrRecoveryCommands: Bool {
+        guard let drone = activeDrone, drone.isReachable else { return false }
+        return drone.armed || drone.flying || isMissionChecklistComplete
+    }
+
     private var boundaryCoordinates: [CLLocationCoordinate2D] {
+        let routeBoundary = planner.draft.waypoints.filter { $0.coordinate.isValid }.map(\.coordinate.clCoordinate)
+        if routeBoundary.count >= 3 {
+            return routeBoundary
+        }
         if let missionArea = mission?.area, missionArea.coordinates.count >= 3 {
             return missionArea.coordinates
-        }
-        if planner.draft.waypoints.count >= 3 {
-            return planner.draft.waypoints.filter { $0.coordinate.isValid }.map { $0.coordinate.clCoordinate }
         }
         return []
     }
@@ -85,7 +95,21 @@ struct FlightWorkspaceView: View {
     }
 
     private var homeCoordinate: CLLocationCoordinate2D? {
-        planner.draft.home?.clCoordinate
+        guard let home = planner.draft.home, home.isValid else { return nil }
+        return home.clCoordinate
+    }
+
+    private var entryCoordinate: CLLocationCoordinate2D? {
+        guard let entry = planner.draft.surveyEntry, entry.isValid else { return nil }
+        return entry.clCoordinate
+    }
+
+    private var exitCoordinate: CLLocationCoordinate2D? {
+        guard planner.draft.visualTransects.count > 1,
+            let last = planner.draft.visualTransects.last,
+            last.isValid
+        else { return nil }
+        return last.clCoordinate
     }
 
     private var droneLiveCoordinate: CLLocationCoordinate2D? {
@@ -113,12 +137,6 @@ struct FlightWorkspaceView: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 14)
 
-                if let commandError {
-                    commandErrorBanner(commandError)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 10)
-                }
-
                 Spacer()
 
                 bottomControlsRow
@@ -141,10 +159,27 @@ struct FlightWorkspaceView: View {
             }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showingCommandMenu)
+        .alert("Perintah Ditolak oleh Drone", isPresented: $showingCommandAlert) {
+            Button("Tutup", role: .cancel) { }
+        } message: {
+            Text(commandError ?? "Terjadi kesalahan saat mengeksekusi perintah pada wahana.")
+        }
         .onAppear {
+            if let mission, planner.draft.missionID != mission.id {
+                planner.open(
+                    farm: mission.area,
+                    name: "Rute " + mission.plan.name,
+                    altitude: model.geometry.heightAGL,
+                    speed: model.geometry.speed,
+                    missionID: mission.id
+                )
+            }
             initializeMapRegion()
         }
         .onChange(of: activeDrone?.telemetry.latitude) { _, _ in
+            updateDronePositionAndTrail()
+        }
+        .onChange(of: activeDrone?.telemetry.longitude) { _, _ in
             updateDronePositionAndTrail()
         }
     }
@@ -153,41 +188,86 @@ struct FlightWorkspaceView: View {
 
     private var mapLayer: some View {
         Map(position: $cameraPosition) {
-            // Palm oil plot boundary polygon
-            if boundaryCoordinates.count >= 3 {
-                MapPolygon(coordinates: boundaryCoordinates)
-                    .stroke(Color.orange, lineWidth: 2)
-                    .foregroundStyle(Color.orange.opacity(0.12))
+            // 1. Geofence safety envelope (dashed orange/red, matching 1. Rencana)
+            if let safety = planner.draft.safetyResult, safety.enabled {
+                let fenceColor: Color = (safety.coversMission && safety.ceilingOk) ? .orange : .red
+                switch safety.type {
+                case .polygon:
+                    let fenceCoords = safety.polygonCoordinates.filter(\.isValid).map(\.clCoordinate)
+                    if fenceCoords.count >= 3 {
+                        MapPolygon(coordinates: fenceCoords)
+                            .stroke(fenceColor, style: StrokeStyle(lineWidth: 2, dash: [8, 5]))
+                            .foregroundStyle(fenceColor.opacity(0.08))
+                    }
+                case .circle:
+                    if let center = safety.circleCenter, center.isValid, safety.circleRadiusMeters > 0 {
+                        MapCircle(center: center.clCoordinate, radius: safety.circleRadiusMeters)
+                            .stroke(fenceColor, style: StrokeStyle(lineWidth: 2, dash: [8, 5]))
+                            .foregroundStyle(fenceColor.opacity(0.08))
+                    }
+                }
             }
 
-            // Planned survey transect lines
+            // 2. Operator-configured survey boundary polygon (green, matching 1. Rencana)
+            if boundaryCoordinates.count >= 3 {
+                MapPolygon(coordinates: boundaryCoordinates)
+                    .stroke(Color.green, lineWidth: 2)
+                    .foregroundStyle(Color.green.opacity(0.18))
+            }
+
+            // 3. Planned ingress/egress transit lines (Home -> Entry -> First Transect & Exit -> Home)
+            if !surveyTransectCoordinates.isEmpty,
+                let home = planner.draft.home, home.isValid,
+                let entry = planner.draft.surveyEntry, entry.isValid
+            {
+                MapPolyline(coordinates: [home.clCoordinate, entry.clCoordinate])
+                    .stroke(Color.cyan.opacity(0.85), style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+
+                if let first = planner.draft.visualTransects.first, entry != first {
+                    MapPolyline(coordinates: [entry.clCoordinate, first.clCoordinate])
+                        .stroke(Color.cyan.opacity(0.85), style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                }
+
+                if let last = planner.draft.visualTransects.last, planner.draft.returnToHome {
+                    MapPolyline(coordinates: [last.clCoordinate, home.clCoordinate])
+                        .stroke(Color.cyan.opacity(0.85), style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                }
+            }
+
+            // 4. Planned survey transect lines
             if !surveyTransectCoordinates.isEmpty {
                 MapPolyline(coordinates: surveyTransectCoordinates)
                     .stroke(Color.yellow, style: StrokeStyle(lineWidth: 2, dash: [6, 3]))
             }
 
-            // Historical live flight trail
+            // 5. Historical live flight trail (blue/cyan trailing line)
             if flightPath.count > 1 {
                 MapPolyline(coordinates: flightPath)
-                    .stroke(Color.cyan, lineWidth: 2.5)
+                    .stroke(Color.cyan, lineWidth: 2.8)
             }
 
-            // Home marker
-            if let home = homeCoordinate {
-                Annotation("Home", coordinate: home) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.orange)
-                            .frame(width: 24, height: 24)
-                            .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                        Text("H")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.white)
-                    }
+            // 6. Entry (E) marker
+            if let entry = entryCoordinate {
+                Annotation("Entry", coordinate: entry) {
+                    routePinBadge("E", color: .cyan)
                 }
             }
 
-            // Live Drone Annotation with rotating heading
+            // 7. Exit (X) marker
+            if let exit = exitCoordinate {
+                Annotation("Exit", coordinate: exit) {
+                    routePinBadge("X", color: .cyan)
+                }
+            }
+
+            // 8. Home (H) marker
+            if let home = homeCoordinate {
+                Annotation("Home", coordinate: home) {
+                    routePinBadge("H", color: .green)
+                }
+            }
+
+            // 9. Live Drone Annotation with rotating heading
             if let coord = droneLiveCoordinate, let drone = activeDrone {
                 Annotation(
                     "Drone #\(drone.id)",
@@ -203,6 +283,19 @@ struct FlightWorkspaceView: View {
             MapCompass()
             MapZoomStepper()
             MapScaleView()
+        }
+    }
+
+    private func routePinBadge(_ label: String, color: Color) -> some View {
+        ZStack {
+            Circle()
+                .fill(color)
+                .frame(width: 24, height: 24)
+                .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                .shadow(color: .black.opacity(0.25), radius: 2, x: 0, y: 1)
+            Text(label)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.white)
         }
     }
 
@@ -317,7 +410,7 @@ struct FlightWorkspaceView: View {
                         )
 
                     // SOP Checklist Warning Pill
-                    if !isMissionChecklistComplete {
+                    if !isMissionChecklistComplete && !drone.armed && !drone.flying {
                         Text("·").foregroundStyle(.tertiary)
                         Button {
                             activeTab = .mission
@@ -466,7 +559,7 @@ struct FlightWorkspaceView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.red.opacity(0.25), lineWidth: 1))
-                } else if !isMissionChecklistComplete {
+                } else if !isMissionChecklistComplete && !drone.armed && !drone.flying {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(alignment: .top, spacing: 8) {
                             Image(systemName: "shield.slash.fill")
@@ -509,7 +602,7 @@ struct FlightWorkspaceView: View {
                         HoldToConfirmButton(
                             drone.armed ? "Disarm Drone" : "Arm Drone",
                             systemImage: drone.armed ? "bolt.slash.fill" : "bolt.fill",
-                            disabled: !canExecuteFlightCommands
+                            disabled: drone.armed ? !drone.isReachable : !canExecuteFlightCommands
                         ) {
                             executeCommand(drone.armed ? .disarm : .arm)
                         }
@@ -527,7 +620,7 @@ struct FlightWorkspaceView: View {
                         HoldToConfirmButton(
                             "Mulai Misi Survei",
                             systemImage: "play.fill",
-                            disabled: !canExecuteFlightCommands || !drone.armed
+                            disabled: !canExecuteActiveOrRecoveryCommands || !drone.armed
                         ) {
                             executeCommand(.startMission)
                         }
@@ -536,7 +629,7 @@ struct FlightWorkspaceView: View {
                         HoldToConfirmButton(
                             "Tahan Posisi (Hold / Loiter)",
                             systemImage: "pause.circle.fill",
-                            disabled: !canExecuteFlightCommands
+                            disabled: !canExecuteActiveOrRecoveryCommands
                         ) {
                             executeCommand(.pause)
                         }
@@ -545,7 +638,7 @@ struct FlightWorkspaceView: View {
                         HoldToConfirmButton(
                             "Kembali ke Home (RTL)",
                             systemImage: "house.fill",
-                            disabled: !canExecuteFlightCommands
+                            disabled: !canExecuteActiveOrRecoveryCommands
                         ) {
                             executeCommand(.rtl)
                         }
@@ -554,7 +647,7 @@ struct FlightWorkspaceView: View {
                         HoldToConfirmButton(
                             "Mendarat di Posisi (Land)",
                             systemImage: "airplane.arrival",
-                            disabled: !canExecuteFlightCommands
+                            disabled: !canExecuteActiveOrRecoveryCommands
                         ) {
                             executeCommand(.land)
                         }
@@ -599,6 +692,16 @@ struct FlightWorkspaceView: View {
 
             Spacer()
 
+            // Bottom-Right: Autopilot Alert Badge + Camera Mini-Card
+            VStack(alignment: .trailing, spacing: 8) {
+                if let alertMsg = activeDrone?.activeAlertMessage, !alertMsg.isEmpty {
+                    autopilotAlertBadge(alertMsg)
+                }
+
+                cameraShutterMiniCard
+            }
+        }
+    }
 
     private func autopilotAlertBadge(_ message: String) -> some View {
         HStack(spacing: 8) {
@@ -799,20 +902,6 @@ struct FlightWorkspaceView: View {
         .frame(width: 260)
     }
 
-    private func commandErrorBanner(_ error: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
-            Text(error)
-                .font(.subheadline.weight(.medium))
-            Spacer()
-            Button("Tutup") { self.commandError = nil }
-                .font(.caption.weight(.semibold))
-        }
-        .padding(10)
-        .flightDeckCard(cornerRadius: 10)
-    }
-
     // MARK: - Logic & Actions
 
     private func executeCommand(_ cmd: DroneFlightCommand) {
@@ -823,6 +912,7 @@ struct FlightWorkspaceView: View {
             } catch {
                 await MainActor.run {
                     self.commandError = error.localizedDescription
+                    self.showingCommandAlert = true
                 }
             }
         }
@@ -866,7 +956,10 @@ struct FlightWorkspaceView: View {
     }
 
     private func fitMissionArea() {
-        var allCoords = boundaryCoordinates
+        var allCoords = boundaryCoordinates + surveyTransectCoordinates
+        if let fenceCoords = planner.draft.safetyResult?.polygonCoordinates.filter(\.isValid).map(\.clCoordinate) {
+            allCoords.append(contentsOf: fenceCoords)
+        }
         if let home = homeCoordinate { allCoords.append(home) }
         if let droneCoord = droneLiveCoordinate { allCoords.append(droneCoord) }
 
