@@ -155,8 +155,31 @@ struct ContentView: View {
         .onChange(of: link.receivedMissionID) { _, id in
             if id != nil { model.refreshLocalDatasets() }
         }
+        .onChange(of: planner.activeRecoveryMissionID) { _, recoveryID in
+            attemptMidFlightRecovery(recoveryID: recoveryID)
+        }
+        .onChange(of: model.missionLibrary.missions) { _, _ in
+            attemptMidFlightRecovery(recoveryID: planner.activeRecoveryMissionID)
+        }
         .onChange(of: model.step) { _, _ in search = "" }
         .onChange(of: model.selectedDatasetID) { _, _ in search = "" }
+    }
+
+    private func attemptMidFlightRecovery(recoveryID: UUID?) {
+        guard let activeDrone = QGCEngineManager.shared.activeVehicle,
+            activeDrone.isReachable && (activeDrone.armed || activeDrone.flying)
+        else { return }
+        let targetID =
+            recoveryID
+            ?? planner.routes.last(where: { $0.isPlanLocked })?.missionID
+            ?? model.selectedMissionID
+            ?? model.missionLibrary.missions.first?.id
+        guard let targetID, model.missionLibrary.missions.contains(where: { $0.id == targetID }) else {
+            return
+        }
+        if model.selectedMissionID != targetID || !model.missionDetailVisible || model.step != .mission {
+            model.openMission(targetID)
+        }
     }
     private var cleanupDeferred: Bool {
         orthomosaic.busy || orthomosaic.workingID != nil || orthomosaic.engineInstalling
