@@ -15,8 +15,7 @@ enum ReviewTab: String, CaseIterable, Identifiable {
 
 private enum ReviewResultLayer: String, CaseIterable, Identifiable {
     case orthomosaic = "Orthomosaic"
-    case vari = "VARI"
-    case nutrients = "HARA"
+    case variAndHara = "VARI & HARA"
     case rainfall = "Curah Hujan"
     var id: String { rawValue }
 }
@@ -626,6 +625,15 @@ struct ReviewWorkspaceView: View {
                         Button("Simpan TIFF") {
                             OrthomosaicFilePanels.save(output: output, model: processing)
                         }.disabled(processing.busy)
+                    } else if resultLayer == .variAndHara, let result = variResult {
+                        Button {
+                            VariFilePanels.saveJSON(
+                                from: result.resultJSONURL,
+                                suggestedName: "vari_hara_hasil.json"
+                            )
+                        } label: {
+                            Label("Unduh JSON", systemImage: "arrow.down.doc")
+                        }
                     } else {
                         Button {
                         } label: {
@@ -646,7 +654,7 @@ struct ReviewWorkspaceView: View {
                         Spacer()
                         Button("Buka hasil") { processing.showOutput(output) }
                     }.padding(16)
-                } else if resultLayer == .vari {
+                } else if resultLayer == .variAndHara {
                     variView
                 } else {
                     ContentUnavailableView(
@@ -667,7 +675,7 @@ struct ReviewWorkspaceView: View {
             checkForCachedVariResult()
         }
         .onChange(of: resultLayer) { _, newLayer in
-            if newLayer == .vari {
+            if newLayer == .variAndHara {
                 checkForCachedVariResult()
             }
         }
@@ -681,7 +689,7 @@ struct ReviewWorkspaceView: View {
                     .foregroundStyle(.orange)
             } description: {
                 Text(
-                    "Indeks VARI memerlukan hasil olah citra orthomosaic gabungan. Silakan selesaikan pengolahan foto pemetaan pada tab Orthomosaic terlebih dahulu."
+                    "Indeks VARI & HARA memerlukan hasil olah citra orthomosaic gabungan. Silakan selesaikan pengolahan foto pemetaan pada tab Orthomosaic terlebih dahulu."
                 )
             } actions: {
                 Button("Menuju Tab Orthomosaic") {
@@ -693,82 +701,35 @@ struct ReviewWorkspaceView: View {
         } else if isProcessingVari {
             VStack(spacing: 16) {
                 ProgressView().controlSize(.large)
-                Text("Menjalankan Analisis Indeks VARI...").font(.headline)
+                Text("Menjalankan Analisis VARI & HARA...").font(.headline)
                 Text(
-                    "Mendeteksi tajuk pohon kelapa sawit dan menghitung indeks vegetasi VARI dari citra orthomosaic."
+                    "Mendeteksi tajuk pohon kelapa sawit, menghitung indeks vegetasi VARI, serta rekomendasi pupuk hara."
                 )
                 .font(.caption).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let result = variResult {
-            VStack(spacing: 20) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 48))
-                    .foregroundStyle(Color.green)
-                Text("Analisis VARI Selesai").font(.title2.weight(.bold))
-                HStack(spacing: 24) {
-                    VStack {
-                        Text("\(result.treeCount)").font(.title.weight(.semibold))
-                        Text("Pohon Terdeteksi").font(.caption).foregroundStyle(.secondary)
-                    }
-                    Divider().frame(height: 40)
-                    VStack {
-                        Text("\(result.zoneCount)").font(.title.weight(.semibold))
-                        Text("Zona Dibuat").font(.caption).foregroundStyle(.secondary)
-                    }
-                    if let mean = result.referenceMeanVari {
-                        Divider().frame(height: 40)
-                        VStack {
-                            Text(String(format: "%.2f", mean)).font(.title.weight(.semibold))
-                            Text("Rerata VARI").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                .padding()
-                .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
-
-                Text("Hasil tersimpan di: \(result.resultJSONURL.lastPathComponent)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                HStack(spacing: 12) {
-                    Button {
-                        let missionName = mission?.plan.name ?? record?.plan.name ?? "hasil"
-                        let safeName = missionName.replacingOccurrences(of: " ", with: "_").lowercased()
-                        VariFilePanels.saveJSON(
-                            from: result.resultJSONURL, suggestedName: "vari_\(safeName).json")
-                    } label: {
-                        Label("Unduh Hasil JSON", systemImage: "arrow.down.doc")
-                    }
-                    .buttonStyle(.borderedProminent)
-
-                    Button("Buka di Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([result.resultJSONURL])
-                    }
-                    if let output {
-                        Button("Jalankan Ulang") {
-                            runVariScan(on: output.image, outputFolder: output.folder)
-                        }
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VariReportWorkspaceView(
+                result: result,
+                initialSection: .vari,
+                onRerun: output.map { out in { runVariScan(on: out.image, outputFolder: out.folder) } }
+            )
         } else {
             ContentUnavailableView {
-                Label("Analisis Indeks VARI", systemImage: "leaf.fill")
+                Label("Analisis VARI & HARA", systemImage: "leaf.fill")
             } description: {
                 if let variError {
                     Text("Error: \(variError)").foregroundStyle(.red)
                 } else if let output {
                     Text(
-                        "Orthomosaic siap diolah (\(output.width) × \(output.height) px). Mulai proses deteksi tajuk pohon sawit dan penghitungan indeks vegetasi VARI."
+                        "Orthomosaic siap diolah (\(output.width) × \(output.height) px). Mulai proses deteksi tajuk pohon sawit, indeks vegetasi VARI, dan kalkulasi rekomendasi pupuk hara."
                     )
                 } else {
                     Text("Belum ada citra orthomosaic yang tersedia untuk dianalisis.")
                 }
             } actions: {
                 if let output {
-                    Button("Jalankan Analisis VARI") {
+                    Button("Jalankan Analisis VARI & HARA") {
                         runVariScan(on: output.image, outputFolder: output.folder)
                     }
                     .buttonStyle(.borderedProminent)
@@ -784,8 +745,17 @@ struct ReviewWorkspaceView: View {
         variError = nil
         Task {
             do {
+                let farmName = mission?.plan.name ?? record?.plan.name ?? "Kebun Kelapa Sawit"
+                let submission = VariEngineSubmissionRequest.defaultSample(
+                    farmName: farmName,
+                    areaHa: 1.0,
+                    budgetRp: 5_000_000
+                )
                 let result = try await variProcessor.process(
-                    photoURL: imageURL, plotID: nil, outputFolder: outputFolder)
+                    photoURL: imageURL,
+                    submission: submission,
+                    outputFolder: outputFolder
+                )
                 await MainActor.run {
                     self.variResult = result
                     self.isProcessingVari = false
