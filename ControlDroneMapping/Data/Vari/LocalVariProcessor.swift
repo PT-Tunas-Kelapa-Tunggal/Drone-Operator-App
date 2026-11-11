@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 
 /// Executes the bundled VariEngine to process an image into VARI and nutrient analysis.
 public struct LocalVariProcessor: VariProcessing {
@@ -22,6 +23,31 @@ public struct LocalVariProcessor: VariProcessing {
             outputFolder ?? FileManager.default.temporaryDirectory.appendingPathComponent("VariScans")
         try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
 
+        guard photoURL.isFileURL, FileManager.default.fileExists(atPath: photoURL.path) else {
+            throw MappingError.invalid("Berkas citra tidak ditemukan di: \(photoURL.path)")
+        }
+
+        let effectiveImageURL: URL
+        let ext = photoURL.pathExtension.lowercased()
+        if ext == "tif" || ext == "tiff" {
+            let targetJPEGURL = photoURL.deletingPathExtension().appendingPathExtension("jpeg")
+            effectiveImageURL = try TIFFToJPEGConverter.convert(
+                from: photoURL,
+                to: targetJPEGURL,
+                quality: 0.5 // somehow this value is the closest and produce best result
+            )
+        } else if ext == "jpeg" || ext == "jpg" {
+            guard let imageSource = CGImageSourceCreateWithURL(photoURL as CFURL, nil),
+                  CGImageSourceGetCount(imageSource) > 0 else {
+                throw MappingError.invalid("Berkas JPEG rusak atau tidak dapat dibaca: \(photoURL.lastPathComponent)")
+            }
+            effectiveImageURL = photoURL
+        } else {
+            throw MappingError.invalid(
+                "Format citra '.\(photoURL.pathExtension)' tidak didukung untuk analisis VARI. Harap sediakan citra TIFF (.tif/.tiff) atau JPEG (.jpg/.jpeg)."
+            )
+        }
+
         let req = submission ?? VariEngineSubmissionRequest.defaultSample()
         let jsonString = try req.toJSONString()
 
@@ -29,7 +55,7 @@ public struct LocalVariProcessor: VariProcessing {
         process.executableURL = helper
         let args = [
             "-m", "krops_vari.main",
-            "--image", photoURL.path,
+            "--image", effectiveImageURL.path,
             "--user-request-submission-json", jsonString,
             "--output-dir", destinationFolder.path,
         ]
