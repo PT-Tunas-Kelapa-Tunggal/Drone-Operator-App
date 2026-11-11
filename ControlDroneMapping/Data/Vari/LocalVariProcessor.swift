@@ -179,18 +179,22 @@ public struct LocalVariProcessor: VariProcessing {
         }
 
         // Product mass and bag rows
+        // Source: vari_result.json → fertilizer_product_mass_conversions (one row per zone_id × product)
         var products: [VariProductRow] = []
         let rawProducts = json["fertilizer_product_mass_conversions"] as? [[String: Any]] ?? []
         for (idx, p) in rawProducts.enumerated() {
-            let zoneLabel = p["zone"] as? String ?? "Z\(idx + 1)"
             let zoneID = p["zone_id"] as? Int
+            let zoneLabel = zoneID.map { "Z\($0)" } ?? "-"
             let prodName = p["product"] as? String ?? ""
             let nutrient = p["nutrient"] as? String
-            let supp = p["supplement_kg_per_zone_per_year"] as? Double ?? 0.0
+            // Suplemen VARI (kg)   ← product_kg_per_zone_per_year        (null → 0)
+            let supp = p["product_kg_per_zone_per_year"] as? Double ?? 0.0
+            // Dosis Dasar (kg)     ← base_product_kg_per_zone_per_year   (null → 0, e.g. N products)
             let base = p["base_product_kg_per_zone_per_year"] as? Double ?? 0.0
-            let comb = p["combined_product_kg_per_zone_per_year"] as? Double ?? (supp + base)
-            let estBags = p["estimated_bags"] as? Double ?? (comb / 50.0)
-            let fullBags = p["full_bags_needed"] as? Int ?? Int(ceil(estBags))
+            // Total Gabungan (kg)  ← supplement + base
+            let comb = supp + base
+            let estBags = comb / 50.0
+            let fullBags = Int(ceil(estBags))
 
             products.append(
                 VariProductRow(
@@ -212,22 +216,96 @@ public struct LocalVariProcessor: VariProcessing {
         var budgetSummary: VariBudgetSummary?
         if let combinedCalc = json["combined_fertilizer_calculations"] as? [String: Any],
            let npkAnalysis = combinedCalc["field_wide_npk_baseline_comparison"] as? [String: Any] {
-            let targetBudget = npkAnalysis["target_annual_budget_idr"] as? Double
-            let topupCost = npkAnalysis["selected_zone_topup_cost_idr"] as? Double
-            let closestOpt = npkAnalysis["closest_option"] as? String
+            let rankingDict = npkAnalysis["closest_to_budget_ranking"] as? [String: Any]
+            let rankingTargetBudget = (rankingDict?["annual_budget_rp"] as? NSNumber)?.doubleValue
+            let rankingTopupCost = (rankingDict?["selected_zone_mg_urea_whole_bag_cost_farm_year_rp"] as? NSNumber)?.doubleValue
+            let rankingClosestOpt = rankingDict?["closest_blend_option"] as? String
+
+            var targetBudget = (npkAnalysis["target_annual_budget_idr"] as? NSNumber)?.doubleValue ?? rankingTargetBudget
+            var topupCost = (npkAnalysis["selected_zone_topup_cost_idr"] as? NSNumber)?.doubleValue ?? rankingTopupCost
+            let closestOpt = npkAnalysis["closest_option"] as? String ?? rankingClosestOpt
 
             var candidates: [VariBudgetCandidate] = []
-            if let candidateList = npkAnalysis["candidate_comparison_table"] as? [[String: Any]] {
+
+            if let estimateList = npkAnalysis["blend_purchase_price_estimates"] as? [[String: Any]], !estimateList.isEmpty {
+                for (idx, item) in estimateList.enumerated() {
+                    let blend = item["blend_option"] as? String ?? "Option \(idx + 1)"
+
+                    // Label ratio e.g. "15.0-15.0-15.0-0.0"
+                    let ratio: String
+                    if let labelDict = item["label_percent_n_p2o5_k2o_mgo"] as? [String: Any] {
+                        let n = (labelDict["N"] as? NSNumber)?.doubleValue ?? 0.0
+                        let p = (labelDict["P2O5"] as? NSNumber)?.doubleValue ?? 0.0
+                        let k = (labelDict["K2O"] as? NSNumber)?.doubleValue ?? 0.0
+                        let mg = (labelDict["MgO"] as? NSNumber)?.doubleValue ?? 0.0
+                        ratio = String(format: "%.1f-%.1f-%.1f-%.1f", n, p, k, mg)
+                    } else if let ratioStr = item["label_ratio"] as? String {
+                        ratio = ratioStr
+                    } else {
+                        ratio = "-"
+                    }
+
+                    let ageCap = item["age_budget_cap"] as? [String: Any]
+                    let capBudget = (ageCap?["budget_rp"] as? NSNumber)?.doubleValue
+                    let capZoneCost = (ageCap?["fixed_zone_boost_cost_rp"] as? NSNumber)?.doubleValue
+
+                    if targetBudget == nil, let capBudget {
+                        targetBudget = capBudget
+                    }
+                    if topupCost == nil, let capZoneCost {
+                        topupCost = capZoneCost
+                    }
+
+                    // Full bags: age-adjusted -> estimated_npk_full_bags_for_farm -> baseline
+                    let fullBags = (item["age_adjusted_full_bags_per_ha_year"] as? NSNumber)?.intValue
+                        ?? (ageCap?["estimated_npk_full_bags_for_farm"] as? NSNumber)?.intValue
+                        ?? (ageCap?["baseline_full_bags_for_farm_year"] as? NSNumber)?.intValue
+                        ?? (item["baseline_full_bags_per_ha_year"] as? NSNumber)?.intValue
+                        ?? 0
+
+                    // NPK Cost: age-adjusted -> baseline
+                    let npkCost = (item["age_adjusted_full_bag_cost_rp_per_ha_year"] as? NSNumber)?.doubleValue
+                        ?? (item["baseline_full_bag_cost_rp_per_ha_year"] as? NSNumber)?.doubleValue
+                        ?? 0.0
+
+                    // Zone Mg/Urea Cost
+                    let zoneCost = capZoneCost ?? topupCost ?? 0.0
+
+                    // Combined Cost: estimated_combined_whole_bag_cost_rp -> baseline_combined_whole_bag_cost_rp -> (npkCost + zoneCost)
+                    let combinedCost = (ageCap?["estimated_combined_whole_bag_cost_rp"] as? NSNumber)?.doubleValue
+                        ?? (ageCap?["baseline_combined_whole_bag_cost_rp"] as? NSNumber)?.doubleValue
+                        ?? (npkCost + zoneCost)
+
+                    let effectiveTarget = capBudget ?? targetBudget ?? 0.0
+                    let delta = combinedCost - effectiveTarget
+                    let isClose = (closestOpt == blend)
+
+                    candidates.append(
+                        VariBudgetCandidate(
+                            id: "\(blend)_\(idx)",
+                            blendOption: blend,
+                            labelRatio: ratio,
+                            npkFullBags: fullBags,
+                            npkCostRp: npkCost,
+                            zoneTopupCostRp: zoneCost,
+                            combinedCostRp: combinedCost,
+                            budgetTargetRp: effectiveTarget,
+                            budgetDifferenceRp: delta,
+                            isClosest: isClose
+                        )
+                    )
+                }
+            } else if let candidateList = npkAnalysis["candidate_comparison_table"] as? [[String: Any]] {
                 for (cIdx, c) in candidateList.enumerated() {
                     let blend = c["blend_option"] as? String ?? c["blendOption"] as? String ?? "Option \(cIdx + 1)"
                     let ratio = c["label_ratio"] as? String ?? c["labelRatio"] as? String ?? ""
-                    let fullBags = c["npk_full_bags"] as? Int ?? 0
-                    let npkCost = c["npk_cost_rp"] as? Double ?? 0.0
-                    let topup = c["zone_topup_cost_rp"] as? Double ?? (topupCost ?? 0.0)
-                    let combinedCost = c["combined_cost_rp"] as? Double ?? (npkCost + topup)
-                    let target = c["budget_target_rp"] as? Double ?? (targetBudget ?? 0.0)
-                    let delta = c["budget_difference_rp"] as? Double ?? (combinedCost - target)
-                    let isClose = c["is_closest"] as? Bool ?? (closestOpt == blend)
+                    let fullBags = (c["npk_full_bags"] as? NSNumber)?.intValue ?? 0
+                    let npkCost = (c["npk_cost_rp"] as? NSNumber)?.doubleValue ?? 0.0
+                    let topup = (c["zone_topup_cost_rp"] as? NSNumber)?.doubleValue ?? (topupCost ?? 0.0)
+                    let combinedCost = (c["combined_cost_rp"] as? NSNumber)?.doubleValue ?? (npkCost + topup)
+                    let target = (c["budget_target_rp"] as? NSNumber)?.doubleValue ?? (targetBudget ?? 0.0)
+                    let delta = (c["budget_difference_rp"] as? NSNumber)?.doubleValue ?? (combinedCost - target)
+                    let isClose = (c["is_closest"] as? Bool) ?? (closestOpt == blend)
 
                     candidates.append(
                         VariBudgetCandidate(

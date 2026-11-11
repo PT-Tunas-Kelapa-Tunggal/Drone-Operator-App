@@ -162,12 +162,19 @@ public struct VariReportWorkspaceView: View {
                 color: .indigo
             )
             metricCard(
+                title: "Batas Anggaran Petani",
+                value: result.budget?.targetBudgetRp.map { formatRupiah($0) } ?? "Rp 0",
+                unit: "anggaran modal",
+                systemImage: "banknote",
+                color: .purple
+            )
+            metricCard(
                 title: "Estimasi Biaya Pupuk",
                 value: result.budget?.candidates.first(where: { $0.isClosest }).map { formatRupiah($0.combinedCostRp) }
                     ?? (result.budget?.targetBudgetRp.map { formatRupiah($0) } ?? "Rp 0"),
                 unit: "rekap tahunan",
                 systemImage: "banknote.fill",
-                color: .purple
+                color: .mint
             )
         }
     }
@@ -424,6 +431,7 @@ public struct VariReportWorkspaceView: View {
                     Text("Suplemen VARI (kg)").frame(width: 140, alignment: .trailing)
                     Text("Dosis Dasar (kg)").frame(width: 120, alignment: .trailing)
                     Text("Total Gabungan (kg)").frame(width: 140, alignment: .trailing)
+                    Text("Total Dibulatkan (kg)").frame(width: 150, alignment: .trailing)
                     Spacer()
                     Text("Estimasi Karung (50kg)").frame(width: 160, alignment: .trailing)
                 }
@@ -464,6 +472,9 @@ public struct VariReportWorkspaceView: View {
                             Text(String(format: "%.2f", row.combinedKg))
                                 .font(.callout.monospacedDigit().weight(isTotalRow ? .bold : .regular))
                                 .frame(width: 140, alignment: .trailing)
+                            Text(String(format: "%.1f", row.roundedCombinedKg))
+                                .font(.callout.monospacedDigit().weight(isTotalRow ? .bold : .semibold))
+                                .frame(width: 150, alignment: .trailing)
                             Spacer()
                             HStack(spacing: 4) {
                                 Text("\(row.fullBagsNeeded) karung")
@@ -518,82 +529,96 @@ public struct VariReportWorkspaceView: View {
                 }
             }
 
-            VStack(spacing: 0) {
-                // Table Header
-                HStack {
-                    Text("Opsi Blend NPK").frame(width: 140, alignment: .leading)
-                    Text("Formula Rasio").frame(width: 110, alignment: .leading)
-                    Text("Karung NPK").frame(width: 85, alignment: .trailing)
-                    Text("Biaya NPK").frame(width: 110, alignment: .trailing)
-                    Text("Top-up Mg/Urea").frame(width: 110, alignment: .trailing)
-                    Text("Total Estimasi").frame(width: 120, alignment: .trailing)
-                    Text("Selisih Budget").frame(width: 120, alignment: .trailing)
-                    Spacer()
-                    Text("Kesesuaian").frame(width: 140, alignment: .center)
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(KropsStyle.canvas)
-
-                Divider()
-
-                ForEach(budget.candidates) { candidate in
+            ScrollView(.horizontal, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    // Table Header
                     HStack {
-                        Text(candidate.blendOption)
-                            .font(.callout.weight(candidate.isClosest ? .bold : .regular))
+                        Text("Blend\noption")
                             .frame(width: 140, alignment: .leading)
-                        Text(candidate.labelRatio)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 110, alignment: .leading)
-                        Text("\(candidate.npkFullBags) karung")
-                            .font(.callout.monospacedDigit())
-                            .frame(width: 85, alignment: .trailing)
-                        Text(formatRupiah(candidate.npkCostRp))
-                            .font(.callout.monospacedDigit())
+                        Text("Label N-P₂O₅-K₂O-MgO\n(%)")
+                            .frame(width: 145, alignment: .leading)
+                        Text("NPK full\nbags/farm/year")
                             .frame(width: 110, alignment: .trailing)
-                        Text(formatRupiah(candidate.zoneTopupCostRp))
-                            .font(.callout.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .frame(width: 110, alignment: .trailing)
-                        Text(formatRupiah(candidate.combinedCostRp))
-                            .font(.callout.monospacedDigit().weight(candidate.isClosest ? .bold : .medium))
-                            .frame(width: 120, alignment: .trailing)
-
-                        // Budget difference
-                        HStack(spacing: 2) {
-                            Text(candidate.budgetDifferenceRp >= 0 ? "+" : "")
-                            Text(formatRupiah(candidate.budgetDifferenceRp))
-                        }
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(candidate.budgetDifferenceRp <= 0 ? Color.green : Color.orange)
-                        .frame(width: 120, alignment: .trailing)
-
-                        Spacer()
-
-                        // Badge
-                        if candidate.isClosest {
-                            Text("PALING MENDEKATI")
-                                .font(.system(size: 9, weight: .bold))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Color.green, in: Capsule())
-                                .foregroundStyle(Color.white)
-                                .frame(width: 140, alignment: .center)
-                        } else {
-                            Text("-")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 140, alignment: .center)
-                        }
+                        Text("NPK cost")
+                            .frame(width: 115, alignment: .trailing)
+                        Text("Zone\nMg/Urea cost")
+                            .frame(width: 115, alignment: .trailing)
+                        Text("Combined\nestimate")
+                            .frame(width: 125, alignment: .trailing)
+                        Text("Budget\ntarget")
+                            .frame(width: 115, alignment: .trailing)
+                        Text("Budget\ndifference")
+                            .frame(width: 155, alignment: .trailing)
+                        Text("Budget fit")
+                            .frame(width: 130, alignment: .center)
                     }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(candidate.isClosest ? Color.green.opacity(0.06) : Color.clear)
+                    .background(KropsStyle.canvas)
+
                     Divider()
+
+                    ForEach(budget.candidates) { candidate in
+                        HStack {
+                            Text(candidate.blendOption)
+                                .font(.callout.weight(candidate.isClosest ? .semibold : .regular))
+                                .frame(width: 140, alignment: .leading)
+
+                            Text(candidate.labelRatio)
+                                .font(.callout.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .frame(width: 145, alignment: .leading)
+
+                            Text("\(candidate.npkFullBags)")
+                                .font(.callout.monospacedDigit())
+                                .frame(width: 110, alignment: .trailing)
+
+                            Text(formatRupiah(candidate.npkCostRp))
+                                .font(.callout.monospacedDigit())
+                                .frame(width: 115, alignment: .trailing)
+
+                            Text(formatRupiah(candidate.zoneTopupCostRp))
+                                .font(.callout.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .frame(width: 115, alignment: .trailing)
+
+                            Text(formatRupiah(candidate.combinedCostRp))
+                                .font(.callout.monospacedDigit().weight(candidate.isClosest ? .bold : .medium))
+                                .frame(width: 125, alignment: .trailing)
+
+                            Text(formatRupiah(candidate.budgetTargetRp))
+                                .font(.callout.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .frame(width: 115, alignment: .trailing)
+
+                            Text(formatBudgetDifference(candidate.budgetDifferenceRp))
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(candidate.budgetDifferenceRp <= 0 ? Color.green : Color.primary)
+                                .frame(width: 155, alignment: .trailing)
+
+                            Group {
+                                if candidate.isClosest {
+                                    Text("CLOSEST TO BUDGET")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(Color.green.opacity(0.18), in: Capsule())
+                                        .foregroundStyle(Color.green)
+                                } else {
+                                    Text("")
+                                }
+                            }
+                            .frame(width: 130, alignment: .center)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(candidate.isClosest ? Color.green.opacity(0.06) : Color.clear)
+                        Divider()
+                    }
                 }
+                .frame(minWidth: 1080)
             }
             .background(KropsStyle.surface)
             .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -712,10 +737,23 @@ public struct VariReportWorkspaceView: View {
 
     private func formatRupiah(_ value: Double) -> String {
         let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencySymbol = "Rp "
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
         formatter.maximumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: value)) ?? "Rp \(Int(value))"
+        let str = formatter.string(from: NSNumber(value: value)) ?? "\(Int(value))"
+        return "Rp\(str)"
+    }
+
+    private func formatBudgetDifference(_ delta: Double) -> String {
+        let absVal = abs(delta)
+        let formatted = formatRupiah(absVal)
+        if delta > 0 {
+            return "\(formatted) over budget"
+        } else if delta < 0 {
+            return "\(formatted) under budget"
+        } else {
+            return "on budget"
+        }
     }
 
     private func formatMinMax(min: Double?, max: Double?) -> String {
