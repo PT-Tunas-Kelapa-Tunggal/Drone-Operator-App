@@ -18,7 +18,7 @@ permissions:
 jobs:
   validate:
     name: Validate Deps, Schema & Build
-    runs-on: ${{ vars.MACOS_RUNNER || 'macos-26' }}
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-27' }}
     timeout-minutes: 45
     outputs:
       tag_name: ${{ steps.v.outputs.tag_name }}
@@ -67,7 +67,7 @@ jobs:
     name: Release Signed & Notarized DMG (${{ needs.validate.outputs.app_environment }})
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: validate
-    runs-on: ${{ vars.MACOS_RUNNER || 'macos-26' }}
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-27' }}
     environment: ${{ needs.validate.outputs.app_environment }}
     timeout-minutes: 150
     permissions:
