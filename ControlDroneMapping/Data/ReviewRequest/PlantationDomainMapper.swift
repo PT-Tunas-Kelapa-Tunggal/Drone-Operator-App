@@ -1,177 +1,301 @@
+import CloudKit
+import CoreLocation
 import Foundation
 
-public struct PlantationDomainMapper {
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
-
+/// Fault-tolerant mapper between `CloudKitContract.ScanRequestRecord` (`CKRecord`)
+/// and `PlantationReviewRequest`.
+public struct PlantationDomainMapper: Sendable {
     public init() {}
 
-    public func toDTO(from domain: PlantationReviewRequest, assetURL: URL? = nil) throws
-        -> PlantationScanRequestRecordDTO
-    {
-        let boundaryDTOs = domain.boundary.map { CoordinatePointDTO(lat: $0.latitude, lon: $0.longitude) }
-        let boundaryData = try encoder.encode(boundaryDTOs)
-        let boundaryJSON = String(decoding: boundaryData, as: UTF8.self)
-
-        let agroDTO = AgronomicProfileDTO(
-            year: domain.agronomy.plantingYear,
-            month: domain.agronomy.plantingMonth,
-            soil: domain.agronomy.soilType,
-            fertilizers: domain.agronomy.fertilizerRecords.map {
-                FertilizerUsageDTO(
-                    id: $0.id.uuidString,
-                    name: $0.name,
-                    bagKg: $0.bagWeightKg,
-                    bags: $0.bagCount,
-                    dosePerTree: $0.doseKgPerTree
-                )
-            },
-            harvest: domain.agronomy.harvestRecord.map {
-                HarvestYieldDTO(freq: $0.frequencyPerMonth, weightKg: $0.latestWeightKg)
-            }
-        )
-        let agroData = try encoder.encode(agroDTO)
-        let agronomicJSON = String(decoding: agroData, as: UTF8.self)
-
-        var resultJSON: String?
-        if let result = domain.result {
-            let resultDTO = PlantationReviewResultDTO(
-                completedAt: result.completedAt,
-                nutrients: result.nutrients.map {
-                    NutrientMetricDTO(name: $0.name, current: $0.current, target: $0.target)
-                },
-                costs: result.costs.map {
-                    CostEstimateDTO(name: $0.name, quantity: $0.quantity, cost: $0.cost)
-                },
-                totalCostFormatted: result.totalCostFormatted,
-                areas: result.allocationAreas.map { area in
-                    AreaPlanDTO(
-                        areaID: area.id,
-                        periods: area.periods.map { period in
-                            PeriodPlanDTO(
-                                title: period.title,
-                                dateRange: period.dateRange,
-                                lines: period.lines.map {
-                                    DoseLineDTO(name: $0.name, total: $0.total, dosage: $0.dosage)
-                                }
-                            )
-                        }
-                    )
-                }
-            )
-            let resultData = try encoder.encode(resultDTO)
-            resultJSON = String(decoding: resultData, as: UTF8.self)
-        }
-
-        return PlantationScanRequestRecordDTO(
-            recordName: domain.id.uuidString,
-            farmerName: domain.farmer.name,
-            farmerPhone: domain.farmer.phone,
-            farmerAddress: domain.farmer.address,
-            gardenID: domain.garden.id.uuidString,
-            gardenName: domain.garden.name,
-            locationName: domain.garden.locationName,
-            areaHectares: domain.garden.areaHectares,
-            boundaryJSON: boundaryJSON,
-            agronomicJSON: agronomicJSON,
-            statusCode: domain.status.rawValue,
-            submittedAt: domain.timeline.submittedAt,
-            scheduledFor: domain.timeline.scheduledFor,
-            inReviewAt: domain.timeline.inReviewAt,
-            completedAt: domain.timeline.completedAt,
-            operatorNotes: domain.operatorNotes,
-            resultJSON: resultJSON,
-            orthomosaicAssetURL: assetURL ?? domain.result?.orthomosaicImageURL
-        )
+    public func toDomain(from record: CKRecord) -> PlantationReviewRequest {
+        toDomain(from: ScanRequestRecord(record))
     }
 
-    public func toDomain(from dto: PlantationScanRequestRecordDTO) throws -> PlantationReviewRequest {
-        guard let id = UUID(uuidString: dto.recordName),
-            let gardenID = UUID(uuidString: dto.gardenID),
-            let status = ReviewStatus(rawValue: dto.statusCode)
-        else {
-            throw DomainMappingError.invalidIdentifiers
+    public func toDomain(from reader: ScanRequestRecord) -> PlantationReviewRequest {
+        var fieldErrors: [String: String] = [:]
+
+        func readField<T>(_ key: String, result: Result<T, FieldError>) -> T? {
+            switch result {
+            case .success(let value):
+                return value
+            case .failure(let error):
+                fieldErrors[key] = Self.describeFieldError(error)
+                return nil
+            }
         }
 
-        let boundaryDTOs = try decoder.decode([CoordinatePointDTO].self, from: Data(dto.boundaryJSON.utf8))
-        let boundary = boundaryDTOs.map { CoordinatePoint(latitude: $0.lat, longitude: $0.lon) }
-
-        let agroDTO = try decoder.decode(AgronomicProfileDTO.self, from: Data(dto.agronomicJSON.utf8))
-        let agronomy = AgronomicProfile(
-            plantingYear: agroDTO.year,
-            plantingMonth: agroDTO.month,
-            soilType: agroDTO.soil,
-            fertilizerRecords: agroDTO.fertilizers.compactMap {
-                guard let fID = UUID(uuidString: $0.id) else { return nil }
-                return FertilizerUsage(
-                    id: fID,
-                    name: $0.name,
-                    bagWeightKg: $0.bagKg,
-                    bagCount: $0.bags,
-                    doseKgPerTree: $0.dosePerTree
-                )
-            },
-            harvestRecord: agroDTO.harvest.map {
-                HarvestYield(frequencyPerMonth: $0.freq, latestWeightKg: $0.weightKg)
+        func readOptionalMacOSField<T>(
+            _ key: String,
+            result: Result<T, FieldError>,
+            expectPresent: Bool
+        ) -> T? {
+            switch result {
+            case .success(let value):
+                return value
+            case .failure(let error):
+                if !error.isMissing || expectPresent {
+                    fieldErrors[key] = Self.describeFieldError(error)
+                }
+                return nil
             }
-        )
+        }
 
-        var result: PlantationReviewResult?
-        if let resultJSON = dto.resultJSON {
-            let resDTO = try decoder.decode(PlantationReviewResultDTO.self, from: Data(resultJSON.utf8))
-            result = PlantationReviewResult(
-                completedAt: resDTO.completedAt,
-                nutrients: resDTO.nutrients.map {
-                    NutrientMetric(name: $0.name, current: $0.current, target: $0.target)
-                },
-                costs: resDTO.costs.map { CostEstimate(name: $0.name, quantity: $0.quantity, cost: $0.cost) },
-                totalCostFormatted: resDTO.totalCostFormatted,
-                allocationAreas: resDTO.areas.map { area in
-                    FertilizerAreaPlan(
-                        id: area.areaID,
-                        periods: area.periods.map { period in
-                            FertilizerPeriodPlan(
-                                title: period.title,
-                                dateRange: period.dateRange,
-                                lines: period.lines.map {
-                                    FertilizerDoseLine(name: $0.name, total: $0.total, dosage: $0.dosage)
-                                }
-                            )
-                        }
-                    )
-                },
-                orthomosaicImageURL: dto.orthomosaicAssetURL
+        let recordName = reader.record.recordID.recordName
+        let requestID = PlantationReviewRequest.stableUUID(forRecordName: recordName)
+        let schemaVersion = reader.schemaVersion()
+
+        // 1. Farmer Contact (iOS-Owned)
+        let farmerName = readField(
+            RecordKeys.iOSOwned.farmerContactName, result: reader.farmerContactName()) ?? ""
+        let farmerPhone = readField(
+            RecordKeys.iOSOwned.farmerPhoneNumber, result: reader.farmerPhoneNumber()) ?? ""
+        let farmerAddress = readField(
+            RecordKeys.iOSOwned.farmerHomeAddress, result: reader.farmerHomeAddress()) ?? ""
+
+        // 2. Garden Metadata & Boundary (iOS-Owned)
+        let farmName = readField(RecordKeys.iOSOwned.farmName, result: reader.farmName()) ?? ""
+        let farmAddress = readField(RecordKeys.iOSOwned.farmAddress, result: reader.farmAddress()) ?? ""
+        let farmSize = readField(RecordKeys.iOSOwned.farmSize, result: reader.farmSize()) ?? 0.0
+        let farmCircumference = readField(
+            RecordKeys.iOSOwned.farmCircumference, result: reader.farmCircumference()) ?? 0.0
+        let locations = readField(
+            RecordKeys.iOSOwned.farmBoundary, result: reader.farmBoundary()) ?? []
+        let boundary = locations.map {
+            CoordinatePoint(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude)
+        }
+
+        // 3. Agronomic Profile (iOS-Owned)
+        let submittedAt = readField(
+            RecordKeys.iOSOwned.submittedAt, result: reader.submittedAt())
+            ?? reader.record.creationDate
+            ?? Date()
+
+        let plantingDate = readField(
+            RecordKeys.iOSOwned.plantingMonthAndYear, result: reader.plantingMonthAndYear())
+        let calendar = Calendar(identifier: .gregorian)
+        let plantingYear = plantingDate.map { calendar.component(.year, from: $0) } ?? 0
+        let plantingMonth = plantingDate.map { calendar.component(.month, from: $0) }
+
+        let soilType = readField(
+            RecordKeys.iOSOwned.soilType, result: reader.soilType()) ?? .unknown("")
+
+        let freqPerYear = readField(
+            RecordKeys.iOSOwned.fertilizingFrequencyPerYear,
+            result: reader.fertilizingFrequencyPerYear()
+        ).map(Int.init) ?? 0
+
+        let budgetPerHa = readField(
+            RecordKeys.iOSOwned.fertilizationBudgetPerHa,
+            result: reader.fertilizationBudgetPerHa()) ?? 0
+
+        let contractCompositions = readField(
+            RecordKeys.iOSOwned.fertilizersCompositions,
+            result: reader.fertilizersCompositions()) ?? []
+        let fertilizerRecords = contractCompositions.enumerated().compactMap { index, item in
+            mapFertilizerUsage(
+                item,
+                index: index,
+                fieldKey: RecordKeys.iOSOwned.fertilizersCompositions,
+                fieldErrors: &fieldErrors
             )
         }
+
+        let harvestFreq = readField(
+            RecordKeys.iOSOwned.harvestFrequencyPerMonth,
+            result: reader.harvestFrequencyPerMonth()
+        ).map(Int.init)
+        let avgHarvestKg = readField(
+            RecordKeys.iOSOwned.averageHarvestWeightKg,
+            result: reader.averageHarvestWeightKg())
+        let harvestRecord: HarvestYield? =
+            if let harvestFreq, let avgHarvestKg {
+                HarvestYield(frequencyPerMonth: harvestFreq, latestWeightKg: avgHarvestKg)
+            } else {
+                nil
+            }
+
+        // 4. macOS-Owned Status & Deliverables (optional until finished)
+        let contractStatus = readOptionalMacOSField(
+            RecordKeys.MacOSOwned.progressionStatus,
+            result: reader.progressionStatus(),
+            expectPresent: false
+        ) ?? .sent
+        let status = ReviewStatus(progressionStatus: contractStatus)
+        let expectFinishedOutputs = status.isFinished
+
+        let detailEvents = (readOptionalMacOSField(
+            RecordKeys.MacOSOwned.progressionStatusDetail,
+            result: reader.progressionStatusDetail(),
+            expectPresent: false
+        ) ?? []).map { ReviewProgressionEvent(contractEvent: $0) }
+
+        let plannedVisitDate = readOptionalMacOSField(
+            RecordKeys.MacOSOwned.plannedOperatorVisitDate,
+            result: reader.plannedOperatorVisitDate(),
+            expectPresent: false
+        )
+        let resultSentAt = readOptionalMacOSField(
+            RecordKeys.MacOSOwned.resultSentAt,
+            result: reader.resultSentAt(),
+            expectPresent: expectFinishedOutputs
+        )
+
+        let orthomosaicAsset = readOptionalMacOSField(
+            RecordKeys.MacOSOwned.orthomosaicImage,
+            result: reader.orthomosaicImage(),
+            expectPresent: expectFinishedOutputs
+        )
+        let zones = readOptionalMacOSField(
+            RecordKeys.MacOSOwned.fertilizingZone,
+            result: reader.fertilizingZone(),
+            expectPresent: expectFinishedOutputs
+        ) ?? []
+        let trees = readOptionalMacOSField(
+            RecordKeys.MacOSOwned.treeIdentification,
+            result: reader.treeIdentification(),
+            expectPresent: expectFinishedOutputs
+        ) ?? []
+        let fertilizerNeeds = readOptionalMacOSField(
+            RecordKeys.MacOSOwned.fertilizerNeedPerZone,
+            result: reader.fertilizerNeedPerZone(),
+            expectPresent: expectFinishedOutputs
+        ) ?? []
+        let schedulePeriods = readOptionalMacOSField(
+            RecordKeys.MacOSOwned.fertilizationScheduling,
+            result: reader.fertilizationScheduling(),
+            expectPresent: expectFinishedOutputs
+        ) ?? []
+
+        let hasAnyResultData =
+            resultSentAt != nil
+            || orthomosaicAsset != nil
+            || !zones.isEmpty
+            || !trees.isEmpty
+            || !fertilizerNeeds.isEmpty
+            || !schedulePeriods.isEmpty
+
+        let reviewResult: PlantationReviewResult? =
+            if expectFinishedOutputs || hasAnyResultData {
+                PlantationReviewResult(
+                    completedAt: resultSentAt ?? reader.record.modificationDate ?? submittedAt,
+                    orthomosaicImageURL: orthomosaicAsset?.fileURL,
+                    zones: zones,
+                    trees: trees,
+                    fertilizerNeeds: fertilizerNeeds,
+                    schedulePeriods: schedulePeriods
+                )
+            } else {
+                nil
+            }
 
         return PlantationReviewRequest(
-            id: id,
-            farmer: FarmerContact(name: dto.farmerName, phone: dto.farmerPhone, address: dto.farmerAddress),
-            garden: GardenSummary(
-                id: gardenID, name: dto.gardenName, locationName: dto.locationName,
-                areaHectares: dto.areaHectares),
-            boundary: boundary,
-            agronomy: agronomy,
-            status: status,
-            timeline: ReviewTimeline(
-                submittedAt: dto.submittedAt,
-                scheduledFor: dto.scheduledFor,
-                inReviewAt: dto.inReviewAt,
-                completedAt: dto.completedAt
+            id: requestID,
+            recordName: recordName,
+            schemaVersion: schemaVersion,
+            farmer: FarmerContact(
+                name: farmerName,
+                phone: farmerPhone,
+                address: farmerAddress
             ),
-            operatorNotes: dto.operatorNotes,
-            result: result
+            garden: GardenSummary(
+                id: requestID,
+                name: farmName.isEmpty ? "Kebun Tanpa Nama" : farmName,
+                locationName: farmAddress,
+                areaHectares: farmSize,
+                circumferenceMeters: farmCircumference
+            ),
+            boundary: boundary,
+            agronomy: AgronomicProfile(
+                plantingYear: plantingYear,
+                plantingMonth: plantingMonth,
+                soilType: soilType,
+                fertilizingFrequencyPerYear: freqPerYear,
+                fertilizationBudgetPerHa: budgetPerHa,
+                fertilizerRecords: fertilizerRecords,
+                harvestRecord: harvestRecord
+            ),
+            status: status,
+            progressionEvents: detailEvents,
+            timeline: ReviewTimeline(
+                submittedAt: submittedAt,
+                plannedOperatorVisitDate: plannedVisitDate,
+                resultSentAt: resultSentAt
+            ),
+            operatorNotes: nil,
+            fieldErrors: fieldErrors,
+            result: reviewResult
         )
     }
-}
 
-public enum DomainMappingError: LocalizedError {
-    case invalidIdentifiers
+    // MARK: - Helpers
 
-    public var errorDescription: String? {
-        switch self {
-        case .invalidIdentifiers:
-            return "ID permintaan tidak valid."
+    private func mapFertilizerUsage(
+        _ item: FertilizerCompositionItem,
+        index: Int,
+        fieldKey: String,
+        fieldErrors: inout [String: String]
+    ) -> FertilizerUsage? {
+        guard let rawDoseKg = normalizeDoseToKg(
+            valueText: item.dosagePerTree.value,
+            unitText: item.dosagePerTree.valueUnit
+        ) else {
+            fieldErrors["\(fieldKey)[\(index)].dosagePerTree"] =
+                "Nilai dosis '\(item.dosagePerTree.value) \(item.dosagePerTree.valueUnit)' untuk \(item.fertilizerType.rawValue) tidak valid."
+            return nil
+        }
+
+        let elements: [FertilizerCompositionElement] = (item.composition ?? []).compactMap { elem in
+            guard let numeric = parseLocalizedDouble(elem.value) else {
+                fieldErrors["\(fieldKey)[\(index)].composition.\(elem.name)"] =
+                    "Nilai komposisi '\(elem.value)' tidak valid."
+                return nil
+            }
+            return FertilizerCompositionElement(
+                name: elem.name,
+                value: numeric,
+                valueUnit: elem.valueUnit
+            )
+        }
+
+        let rawText = "\(item.dosagePerTree.value) \(item.dosagePerTree.valueUnit)/pohon"
+        return FertilizerUsage(
+            contractType: item.fertilizerType,
+            composition: elements,
+            doseKgPerTree: rawDoseKg,
+            rawDosageText: rawText
+        )
+    }
+
+    private func normalizeDoseToKg(valueText: String, unitText: String) -> Double? {
+        guard let numeric = parseLocalizedDouble(valueText), numeric.isFinite else { return nil }
+        let normalizedUnit = unitText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch normalizedUnit {
+        case "", "kg", "kilogram", "kilograms":
+            return numeric
+        case "g", "gr", "gram", "grams":
+            return numeric / 1000.0
+        default:
+            return nil
+        }
+    }
+
+    private func parseLocalizedDouble(_ raw: String) -> Double? {
+        let trimmed = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ",", with: ".")
+        return Double(trimmed)
+    }
+
+    public static func describeFieldError(_ error: FieldError) -> String {
+        switch error {
+        case .missing(let key):
+            return "Field '\(key)' belum diisi di CloudKit."
+        case .typeMismatch(let key, let expected, let actual):
+            return "Tipe field '\(key)' tidak sesuai (diharapkan \(expected), ditemukan \(actual))."
+        case .unreadable(let key, let reason):
+            return "Nilai field '\(key)' tidak dapat dibaca: \(reason)"
+        case .decodingError(let key, let errorDescription):
+            return "Gagal mendekode JSON envelope '\(key)': \(errorDescription)"
         }
     }
 }

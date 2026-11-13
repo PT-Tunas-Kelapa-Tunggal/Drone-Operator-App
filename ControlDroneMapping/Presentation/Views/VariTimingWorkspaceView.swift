@@ -4,11 +4,42 @@ import SwiftUI
 /// Presents the full `krops_vari.timing` output inside **5. Hasil -> Jadwal Pemupukan**
 /// so operators inspect rounds, daily L5/L8 weather windows, step waits, and 12-month climate basis
 /// without needing raw JSON inspection.
+public struct VariTimingContextSummary: Sendable, Equatable {
+    public let farmName: String?
+    public let coordinate: VariTimingRequest.Coordinate?
+    public let fertilizingFrequencyPerYear: Int?
+    public let selectedNPKType: ContractFertilizerType?
+    public let dolomiteTotalKg: Double
+    public let ureaTotalKg: Double
+    public let npkTotalKg: Double
+    public let blockerReason: String?
+
+    public init(
+        farmName: String? = nil,
+        coordinate: VariTimingRequest.Coordinate? = nil,
+        fertilizingFrequencyPerYear: Int? = nil,
+        selectedNPKType: ContractFertilizerType? = nil,
+        dolomiteTotalKg: Double = 0,
+        ureaTotalKg: Double = 0,
+        npkTotalKg: Double = 0,
+        blockerReason: String? = nil
+    ) {
+        self.farmName = farmName
+        self.coordinate = coordinate
+        self.fertilizingFrequencyPerYear = fertilizingFrequencyPerYear
+        self.selectedNPKType = selectedNPKType
+        self.dolomiteTotalKg = dolomiteTotalKg
+        self.ureaTotalKg = ureaTotalKg
+        self.npkTotalKg = npkTotalKg
+        self.blockerReason = blockerReason
+    }
+}
+
 public struct VariTimingWorkspaceView: View {
     public let result: VariTimingExecutionResult?
     public let isRunning: Bool
     public let errorMessage: String?
-    public let resolvedCoordinate: VariTimingRequest.Coordinate
+    public let context: VariTimingContextSummary
     public let onRun: () -> Void
     public let onDismissError: (() -> Void)?
 
@@ -20,14 +51,14 @@ public struct VariTimingWorkspaceView: View {
         result: VariTimingExecutionResult?,
         isRunning: Bool,
         errorMessage: String?,
-        resolvedCoordinate: VariTimingRequest.Coordinate,
+        context: VariTimingContextSummary,
         onRun: @escaping () -> Void,
         onDismissError: (() -> Void)? = nil
     ) {
         self.result = result
         self.isRunning = isRunning
         self.errorMessage = errorMessage
-        self.resolvedCoordinate = resolvedCoordinate
+        self.context = context
         self.onRun = onRun
         self.onDismissError = onDismissError
     }
@@ -73,33 +104,63 @@ public struct VariTimingWorkspaceView: View {
             )
             .foregroundStyle(errorMessage == nil ? KropsStyle.accent : .red)
         } description: {
-            VStack(spacing: 8) {
+            VStack(spacing: 10) {
                 if let errorMessage {
                     Text(errorMessage)
                         .foregroundStyle(.red)
                         .multilineTextAlignment(.center)
-                        .frame(maxWidth: 520)
+                        .frame(maxWidth: 540)
+                } else if let blocker = context.blockerReason {
+                    Text(blocker)
+                        .foregroundStyle(.orange)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 540)
                 } else {
                     Text(
-                        "Analisis jadwal pemupukan berjalan mandiri tanpa menunggu orthomosaic. Hasil mencakup putaran tahunan, jeda antar pupuk, dan evaluasi cuaca L5/L8."
+                        "Analisis jadwal pemupukan menggabungkan batas kebun & frekuensi dari CloudKit dengan dosis pupuk hasil VARI & HARA."
                     )
-                    .frame(maxWidth: 520)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 540)
                 }
 
-                // Clear disclosure that agronomy fields still use hardcoded placeholders pre-CloudKit
-                Text(
-                    "Koordinat target: \(TimingFormat.coordinate(resolvedCoordinate)) · Frekuensi & daftar pupuk masih memakai data contoh sementara hingga sinkronisasi CloudKit selesai."
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 520)
+                timingContextSummaryPills
             }
         } actions: {
             Button(errorMessage == nil ? "Jalankan Analisis Jadwal" : "Coba Lagi", action: onRun)
                 .kropsPrimaryAction(size: .large)
+                .disabled(context.blockerReason != nil || isRunning)
         }
         .padding(24)
+    }
+
+    @ViewBuilder
+    private var timingContextSummaryPills: some View {
+        VStack(spacing: 6) {
+            if let coordinate = context.coordinate {
+                let farmPrefix = context.farmName.map { "\($0) · " } ?? ""
+                let freqText = context.fertilizingFrequencyPerYear.map { "\($0)x/tahun" } ?? "Frekuensi —"
+                Text("\(farmPrefix)\(TimingFormat.coordinate(coordinate)) · \(freqText)")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+
+            if context.dolomiteTotalKg > 0 || context.ureaTotalKg > 0 || context.npkTotalKg > 0 {
+                let npkTitle = context.selectedNPKType?.rawValue ?? "NPK"
+                Text(
+                    String(
+                        format: "Dosis input: Dolomite %.1f kg · Urea %.1f kg · %@ %.1f kg",
+                        context.dolomiteTotalKg,
+                        context.ureaTotalKg,
+                        npkTitle,
+                        context.npkTotalKg
+                    )
+                )
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+            }
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: 560)
     }
 
     // MARK: - Loaded Report
@@ -175,17 +236,22 @@ public struct VariTimingWorkspaceView: View {
                 Text("Jadwal Pemupukan \(String(schedule.planYear))")
                     .font(KropsTypography.pageTitle)
                 TimingStatusBadge(
-                    text: "Data Contoh Pra-CloudKit",
-                    icon: "info.circle",
-                    tone: .neutral
+                    text: "Sinkron CloudKit & VARI",
+                    icon: "checkmark.icloud.fill",
+                    tone: .positive
                 )
                 .help(
-                    "Parameter frekuensi, komposisi pupuk, dan riwayat aplikasi akan dihubungkan ke CloudKit pada tahap berikutnya."
+                    "Koordinat kebun, frekuensi pemupukan tahunan, serta dosis Dolomite, Urea, dan NPK bersumber dari CloudKit & hasil VARI & HARA."
                 )
                 Spacer()
             }
 
             HStack(spacing: 12) {
+                Label(
+                    "Frekuensi: \(execution.request.fertilizerFreq)x/thn",
+                    systemImage: "arrow.triangle.2.circlepath"
+                )
+                Text("·")
                 Label(
                     "Tanggal acuan WIB: \(TimingFormat.date(schedule.today))",
                     systemImage: "calendar"

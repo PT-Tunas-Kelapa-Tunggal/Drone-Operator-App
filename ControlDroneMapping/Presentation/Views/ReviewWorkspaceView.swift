@@ -47,7 +47,10 @@ struct ReviewWorkspaceView: View {
     @State private var isProcessingTiming = false
     @State private var timingError: String?
     @State private var timingTask: Task<Void, Never>?
+    @State private var selectedTimingNPK: ContractFertilizerType?
+    @State private var timingFertilizerIDLookup: [String: ContractFertilizerType] = [:]
     @State private var showSavedConfirmation = false
+    @State private var dispatchSuccessAt: Date?
 
     init(
         model: ControlViewModel, link: LocalLink, farms: FarmAreaViewModel,
@@ -90,6 +93,35 @@ struct ReviewWorkspaceView: View {
         }
     }
 
+    private var activeReviewRequest: PlantationReviewRequest? {
+        model.reviewRequest(for: mission, fallbackID: record?.id)
+    }
+
+    private var resolvedOrthomosaicJPEGURL: URL? {
+        if let url = variResult?.assets.sourceImageURL,
+            FileManager.default.fileExists(atPath: url.path)
+        {
+            return url
+        }
+        guard let output else { return nil }
+        let canonical = output.folder.appendingPathComponent(LocalVariProcessor.canonicalJPEGFileName)
+        return FileManager.default.fileExists(atPath: canonical.path) ? canonical : nil
+    }
+
+    private var isTimingReadyForDispatch: Bool {
+        guard let timingResult else { return false }
+        return !timingResult.schedule.rounds.isEmpty
+    }
+
+    private var canDispatchCompletedReview: Bool {
+        activeReviewRequest != nil
+            && resolvedOrthomosaicJPEGURL != nil
+            && variResult != nil
+            && isTimingReadyForDispatch
+            && !model.isDispatchingReview
+            && !processing.busy
+    }
+
     private var timingOutputFolder: URL {
         if let output {
             return output.folder
@@ -104,16 +136,77 @@ struct ReviewWorkspaceView: View {
         "\(timingOutputFolder.path)::\(model.isDemo)"
     }
 
-    private var resolvedTimingCoordinate: VariTimingRequest.Coordinate {
-        // TODO: Replace fallback coordinates once CloudKit Farm Boundary sync is integrated.
-        VariTimingRequest.centroid(of: mission?.area?.points)
-            ?? VariTimingRequest.Coordinate(latitude: 1.0, longitude: 104.375)
+    private var resolvedTimingCoordinate: VariTimingRequest.Coordinate? {
+        if let centroid = activeReviewRequest?.centroidCoordinate {
+            return VariTimingRequest.Coordinate(
+                latitude: centroid.latitude,
+                longitude: centroid.longitude
+            )
+        }
+        return VariTimingRequest.centroid(of: mission?.area?.points)
+    }
+
+    private var pendingTimingBuild: VariTimingBuildOutput? {
+        guard let request = activeReviewRequest, let variResult else { return nil }
+        return try? VariTimingBuilder.makeRequest(
+            from: request,
+            variResult: variResult,
+            preferredNPK: selectedTimingNPK
+        )
+    }
+
+    private var timingContextSummary: VariTimingContextSummary {
+        let blocker: String?
+        if activeReviewRequest == nil {
+            blocker =
+                "Permintaan peninjauan CloudKit untuk misi ini belum tersinkronisasi. Tarik data CloudKit terlebih dahulu."
+        } else if resolvedTimingCoordinate == nil {
+            blocker = "Batas kebun (farmBoundary) dari CloudKit belum tersedia atau kosong."
+        } else if variResult == nil {
+            blocker =
+                "Jalankan analisis VARI & HARA terlebih dahulu agar kebutuhan Dolomite, Urea, dan NPK komersial tersedia."
+        } else if pendingTimingBuild == nil {
+            blocker =
+                "Data dosis pupuk pada hasil VARI & HARA tidak memenuhi syarat untuk menyusun jadwal pemupukan."
+        } else {
+            blocker = nil
+        }
+
+        let built = pendingTimingBuild
+        return VariTimingContextSummary(
+            farmName: activeReviewRequest?.garden.name ?? mission?.area?.name,
+            coordinate: resolvedTimingCoordinate,
+            fertilizingFrequencyPerYear: activeReviewRequest?.agronomy.fertilizingFrequencyPerYear,
+            selectedNPKType: built?.selectedNPKType ?? selectedTimingNPK,
+            dolomiteTotalKg: built?.dolomiteTotalKg ?? 0,
+            ureaTotalKg: built?.ureaTotalKg ?? 0,
+            npkTotalKg: built?.npkTotalKg ?? 0,
+            blockerReason: blocker
+        )
     }
 
     private func checkForCachedTimingResult() {
         if timingResult == nil {
-            timingResult = timingProcessor.loadCachedResult(in: timingOutputFolder)
+            let cached = timingProcessor.loadCachedResult(in: timingOutputFolder)
+            timingResult = cached
+            syncSelectionFromCachedTiming(cached)
         }
+    }
+
+    private func syncSelectionFromCachedTiming(_ execution: VariTimingExecutionResult?) {
+        guard let execution else { return }
+        var resolved: [String: ContractFertilizerType] = [:]
+        for item in execution.request.fertilizers {
+            if let id = item.id,
+                let contract = VariTimingBuilder.resolveContractType(fromID: id)
+            {
+                resolved[id] = contract
+                if selectedTimingNPK == nil, contract != .dolomite, contract != .urea {
+                    selectedTimingNPK = contract
+                }
+            }
+        }
+        timingFertilizerIDLookup = resolved
     }
 
     private var mission: SavedMission? {
@@ -307,7 +400,7 @@ struct ReviewWorkspaceView: View {
 
     private var tabs: some View {
         Picker("Tahap misi", selection: Binding(get: { tab }, set: { selectTab($0) })) {
-            ForEach(ReviewTab.allCases.filter { $0 != .overview }) { item in
+            ForEach(ReviewTab.allCases) { item in
                 Text(item.rawValue).tag(item)
             }
         }
@@ -445,17 +538,25 @@ struct ReviewWorkspaceView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
             ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 8) {
                         Text(mission.plan.name).font(.system(size: 28, weight: .semibold))
-                        Text(mission.area?.name ?? "Lokasi kebun belum diatur")
+                        Text(activeReviewRequest?.garden.locationName ?? mission.area?.name ?? "Lokasi kebun belum diatur")
                             .font(.title3).foregroundStyle(.secondary)
                     }
-                    detail("Status misi", value: mission.phase.dashboardTitle)
-                    detail(
-                        "Area pemetaan", value: mission.area.map { "\($0.points.count) titik batas" } ?? "—")
-                    detail("Foto tersimpan", value: "\(mission.saved) foto")
-                    detail("Dibuat", value: mission.createdAt.formatted(date: .long, time: .omitted))
+
+                    if let request = activeReviewRequest {
+                        CloudKitFarmerOverviewCard(request: request)
+                    } else {
+                        detail("Status misi", value: mission.phase.dashboardTitle)
+                        detail(
+                            "Area pemetaan",
+                            value: mission.area.map { "\($0.points.count) titik batas" } ?? "—"
+                        )
+                        detail("Foto tersimpan", value: "\(mission.saved) foto")
+                        detail("Dibuat", value: mission.createdAt.formatted(date: .long, time: .omitted))
+                    }
+
                     Button("Buka perencanaan misi", systemImage: "arrow.right") {
                         if model.step != .mission { model.openMission(mission.id) }
                         tab = .mission
@@ -613,6 +714,14 @@ struct ReviewWorkspaceView: View {
         }
     }
 
+    private func isResultLayerReady(_ layer: ReviewResultLayer) -> Bool {
+        switch layer {
+        case .orthomosaic: return resolvedOrthomosaicJPEGURL != nil
+        case .variAndHara: return variResult != nil
+        case .fertilizationTiming: return isTimingReadyForDispatch
+        }
+    }
+
     private var results: some View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
@@ -620,10 +729,15 @@ struct ReviewWorkspaceView: View {
                     Button {
                         resultLayer = layer
                     } label: {
-                        HStack {
+                        HStack(spacing: 8) {
                             Text(layer.rawValue).font(
                                 .body.weight(resultLayer == layer ? .semibold : .regular))
                             Spacer()
+                            if isResultLayerReady(layer) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.green)
+                            }
                             if resultLayer == layer { Image(systemName: "chevron.right").font(.caption) }
                         }
                         .padding(14)
@@ -635,26 +749,31 @@ struct ReviewWorkspaceView: View {
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(resultLayer == layer ? .isSelected : [])
                 }
+
                 Spacer()
+
+                Divider()
+
+                CloudKitDispatchSidebarPanel(
+                    request: activeReviewRequest,
+                    isOrthomosaicJPEGReady: resolvedOrthomosaicJPEGURL != nil,
+                    isVariReady: variResult != nil,
+                    isTimingReady: isTimingReadyForDispatch,
+                    canDispatch: canDispatchCompletedReview,
+                    isDispatching: model.isDispatchingReview,
+                    dispatchSuccessAt: dispatchSuccessAt,
+                    onDispatch: {
+                        Task { await dispatchCompletedReview() }
+                    }
+                )
             }
-            .padding(18).frame(width: 220)
+            .padding(18).frame(width: 245)
             Divider()
             VStack(spacing: 0) {
                 HStack {
                     Text(resultLayer.rawValue).font(.headline)
                     Spacer()
                     if resultLayer == .orthomosaic, let output {
-                        Button {
-                            Task {
-                                await model.dispatchReviewResult(for: mission, output: output)
-                            }
-                        } label: {
-                            Label(
-                                model.isDispatchingReview ? "Mengirim..." : "Kirim", systemImage: "paperplane"
-                            )
-                        }
-                        .disabled(model.isDispatchingReview || processing.busy)
-
                         Button("Simpan TIFF") {
                             OrthomosaicFilePanels.save(output: output, model: processing)
                         }.disabled(processing.busy)
@@ -697,11 +816,6 @@ struct ReviewWorkspaceView: View {
                             Label("Unduh", systemImage: "arrow.down.doc")
                         }
                         .kropsToolbarAction(size: .regular)
-                    } else if resultLayer == .orthomosaic {
-                        Button {
-                        } label: {
-                            Label("Kirim", systemImage: "paperplane")
-                        }.disabled(true)
                     }
                 }
                 .padding(20)
@@ -714,6 +828,14 @@ struct ReviewWorkspaceView: View {
                             "\(output.width) × \(output.height) px · \(output.registered)/\(output.total) foto"
                         )
                         .font(.caption).foregroundStyle(.secondary)
+                        Text("·").foregroundStyle(.tertiary)
+                        Text(
+                            resolvedOrthomosaicJPEGURL != nil
+                                ? "Aset CloudKit: orthomosaic.jpeg siap"
+                                : "Aset CloudKit: orthomosaic.jpeg dibuat saat VARI dijalankan"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(resolvedOrthomosaicJPEGURL != nil ? .green : .orange)
                         Spacer()
                         Button("Buka hasil") { processing.showOutput(output) }
                     }.padding(16)
@@ -733,6 +855,9 @@ struct ReviewWorkspaceView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .task(id: output?.folder) {
+            variResult = nil
+            variError = nil
+            selectedTimingNPK = nil
             checkForCachedVariResult()
         }
         .task(id: timingStorageKey) {
@@ -741,6 +866,8 @@ struct ReviewWorkspaceView: View {
             isProcessingTiming = false
             timingError = nil
             timingResult = nil
+            timingFertilizerIDLookup = [:]
+            dispatchSuccessAt = nil
             checkForCachedTimingResult()
         }
         .onChange(of: resultLayer) { _, newLayer in
@@ -787,6 +914,10 @@ struct ReviewWorkspaceView: View {
             VariReportWorkspaceView(
                 result: result,
                 initialSection: .vari,
+                selectedNPKForTiming: selectedTimingNPK,
+                onSelectNPKForTiming: { chosenNPK in
+                    selectedTimingNPK = chosenNPK
+                },
                 onRerun: output.map { out in { runVariScan(on: out.image, outputFolder: out.folder) } }
             )
         } else {
@@ -795,6 +926,9 @@ struct ReviewWorkspaceView: View {
             } description: {
                 if let variError {
                     Text("Error: \(variError)").foregroundStyle(.red)
+                } else if activeReviewRequest == nil {
+                    Text("Menunggu sinkronisasi data permintaan kebun dari CloudKit agar profil agronomi dan anggaran petani tersedia.")
+                        .foregroundStyle(.orange)
                 } else if let output {
                     Text(
                         "Orthomosaic siap diolah (\(output.width) × \(output.height) px). Mulai proses deteksi tajuk pohon sawit, indeks vegetasi VARI, dan kalkulasi rekomendasi pupuk hara."
@@ -808,6 +942,7 @@ struct ReviewWorkspaceView: View {
                         runVariScan(on: output.image, outputFolder: output.folder)
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(activeReviewRequest == nil || isProcessingVari)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -820,33 +955,63 @@ struct ReviewWorkspaceView: View {
             result: timingResult,
             isRunning: isProcessingTiming,
             errorMessage: timingError,
-            resolvedCoordinate: resolvedTimingCoordinate,
+            context: timingContextSummary,
             onRun: runTimingAnalysis,
             onDismissError: { timingError = nil }
         )
     }
 
+    private func dispatchCompletedReview() async {
+        guard let output, let variResult, let timingResult else { return }
+        let succeeded = await model.dispatchCompletedReview(
+            for: mission,
+            fallbackID: record?.id ?? activeReviewRequest?.id,
+            output: output,
+            variResult: variResult,
+            timingResult: timingResult,
+            fertilizerIDLookup: timingFertilizerIDLookup,
+            preferredNPK: selectedTimingNPK
+        )
+        if succeeded {
+            dispatchSuccessAt = Date()
+        }
+    }
+
     private func runTimingAnalysis() {
         guard !isProcessingTiming else { return }
+        guard let request = activeReviewRequest else {
+            timingError = "Data permintaan kebun dari CloudKit belum ditemukan untuk misi ini."
+            return
+        }
+        guard let variResult else {
+            timingError =
+                "Analisis VARI & HARA harus selesai terlebih dahulu agar dosis pupuk komersial tersedia."
+            return
+        }
+
         isProcessingTiming = true
         timingError = nil
         let targetFolder = timingOutputFolder
-        let coordinate = resolvedTimingCoordinate
+        let chosenNPK = selectedTimingNPK
         let options = VariTimingWeatherSettings.currentRunOptions()
 
         timingTask?.cancel()
         timingTask = Task {
             do {
-                // TODO: Replace hardcoded placeholder template with CloudKit-synced
-                // fertilizerFreq, fertilizers (compositions + VARI dose), and applications[].
-                let request = VariTimingRequest.placeholderTemplate(coordinate: coordinate)
+                let buildOutput = try VariTimingBuilder.makeRequest(
+                    from: request,
+                    variResult: variResult,
+                    preferredNPK: chosenNPK
+                )
                 let result = try await timingProcessor.runTiming(
-                    request: request,
+                    request: buildOutput.request,
                     options: options,
                     outputFolder: targetFolder
                 )
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
+                    self.timingFertilizerIDLookup = buildOutput.fertilizerIDLookup
+                    self.selectedTimingNPK = buildOutput.selectedNPKType
                     self.timingResult = result
                     self.isProcessingTiming = false
                 }
@@ -866,16 +1031,15 @@ struct ReviewWorkspaceView: View {
 
     private func runVariScan(on imageURL: URL, outputFolder: URL) {
         guard !isProcessingVari else { return }
+        guard let request = activeReviewRequest else {
+            variError = "Data permintaan kebun dari CloudKit belum ditemukan untuk misi ini."
+            return
+        }
         isProcessingVari = true
         variError = nil
         Task {
             do {
-                let farmName = mission?.plan.name ?? record?.plan.name ?? "Kebun Kelapa Sawit"
-                let submission = VariEngineSubmissionRequest.defaultSample(
-                    farmName: farmName,
-                    areaHa: 1.0,
-                    budgetRp: 5_000_000
-                )
+                let submission = try VariSubmissionBuilder.makeSubmission(from: request)
                 let result = try await variProcessor.process(
                     photoURL: imageURL,
                     submission: submission,
@@ -1036,5 +1200,231 @@ private struct ReviewOutputPreview: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(KropsStyle.canvas)
         .task(id: url) { image = NSImage(contentsOf: url) }
+    }
+}
+
+private struct CloudKitFarmerOverviewCard: View {
+    let request: PlantationReviewRequest
+
+    private static let currencyFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.locale = Locale(identifier: "id_ID")
+        formatter.maximumFractionDigits = 0
+        return formatter
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            if request.hasFieldErrors {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Peringatan Sinkronisasi Field CloudKit", systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.orange)
+                    ForEach(request.fieldErrors.sorted(by: { $0.key < $1.key }), id: \.key) { key, message in
+                        Text("• \(key): \(message)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.3)))
+            }
+
+            sectionCard(title: "Status & Jadwal Peninjauan") {
+                row("Status CloudKit", request.status.title)
+                row("Dikirim petani", request.timeline.submittedAt.formatted(date: .abbreviated, time: .shortened))
+                if let visit = request.timeline.plannedOperatorVisitDate {
+                    row("Rencana kunjungan", visit.formatted(date: .abbreviated, time: .shortened))
+                }
+                if let sent = request.timeline.resultSentAt {
+                    row("Hasil terkirim", sent.formatted(date: .abbreviated, time: .shortened))
+                }
+                if !request.progressionEvents.isEmpty {
+                    Divider()
+                    Text("Riwayat Progres (\(request.progressionEvents.count))")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(request.progressionEvents) { event in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(event.title) · \(event.dateTime.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.caption.weight(.medium))
+                            Text(event.desc)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            sectionCard(title: "Identitas Petani & Lokasi Kebun") {
+                row("Nama petani", request.farmer.name)
+                row("Telepon", request.farmer.phone)
+                row("Alamat petani", request.farmer.address)
+                Divider()
+                row("Nama kebun", request.garden.name)
+                row("Alamat kebun", request.garden.locationName)
+                row("Luas kebun", String(format: "%.2f ha", request.garden.areaHectares))
+                row("Keliling batas", String(format: "%.0f m", request.garden.circumferenceMeters))
+                row("Titik poligon", "\(request.boundary.count) koordinat")
+            }
+
+            sectionCard(title: "Profil Agronomi & Anggaran") {
+                row(
+                    "Bulan / tahun tanam",
+                    request.agronomy.plantingMonth.map { "\($0)/\(request.agronomy.plantingYear)" }
+                        ?? "\(request.agronomy.plantingYear)"
+                )
+                row("Jenis tanah", soilDisplayTitle(request.agronomy.soilType))
+                row("Frekuensi pemupukan", "\(request.agronomy.fertilizingFrequencyPerYear)x / tahun")
+                row("Anggaran / ha", formatRp(Double(request.agronomy.fertilizationBudgetPerHa)))
+                row("Total anggaran kebun", formatRp(request.totalBudgetRp))
+                if let harvest = request.agronomy.harvestRecord {
+                    row(
+                        "Panen terakhir",
+                        String(format: "%dx/bulan · %.0f kg", harvest.frequencyPerMonth, harvest.latestWeightKg)
+                    )
+                }
+            }
+
+            sectionCard(title: "Riwayat Pupuk Petani (\(request.agronomy.fertilizerRecords.count))") {
+                if request.agronomy.fertilizerRecords.isEmpty {
+                    Text("Belum ada catatan pemupukan dari petani.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(request.agronomy.fertilizerRecords) { item in
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack {
+                                Text(item.contractType.rawValue)
+                                    .font(.callout.weight(.semibold))
+                                Spacer()
+                                Text(String(format: "%.2f kg/pohon", item.doseKgPerTree))
+                                    .font(.caption.monospacedDigit().weight(.medium))
+                            }
+                            if !item.composition.isEmpty {
+                                let ratio = item.composition.map { "\($0.name): \(Int($0.value))%" }.joined(separator: " · ")
+                                Text(ratio)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        if item.id != request.agronomy.fertilizerRecords.last?.id {
+                            Divider()
+                        }
+                    }
+                }
+            }
+
+            if let result = request.result {
+                sectionCard(title: "Ringkasan Hasil Terkirim") {
+                    row("Zona pemupukan", "\(result.zoneCount) zona")
+                    row("Identifikasi pohon", "\(result.treeCount) pohon")
+                    row("Kebutuhan pupuk", "\(result.fertilizerNeeds.count) baris")
+                    row("Putaran jadwal", "\(result.scheduleRoundCount) putaran")
+                }
+            }
+        }
+    }
+
+    private func sectionCard<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.headline)
+            VStack(alignment: .leading, spacing: 8) {
+                content()
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(KropsStyle.canvas, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(KropsStyle.border))
+        }
+    }
+
+    private func row(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 135, alignment: .leading)
+            Text(value)
+                .font(.callout.weight(.medium))
+                .textSelection(.enabled)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func soilDisplayTitle(_ soil: ContractSoilType) -> String {
+        switch soil {
+        case .unknown(let raw): return raw.isEmpty ? "Tidak diketahui" : raw
+        default: return soil.rawValue
+        }
+    }
+
+    private func formatRp(_ amount: Double) -> String {
+        Self.currencyFormatter.string(from: NSNumber(value: amount)) ?? "Rp \(Int(amount))"
+    }
+}
+
+private struct CloudKitDispatchSidebarPanel: View {
+    let request: PlantationReviewRequest?
+    let isOrthomosaicJPEGReady: Bool
+    let isVariReady: Bool
+    let isTimingReady: Bool
+    let canDispatch: Bool
+    let isDispatching: Bool
+    let dispatchSuccessAt: Date?
+    let onDispatch: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Pengiriman CloudKit")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            checklistRow("Orthomosaic JPEG", ready: isOrthomosaicJPEGReady)
+            checklistRow("VARI & HARA", ready: isVariReady)
+            checklistRow("Jadwal Pemupukan", ready: isTimingReady)
+
+            if let sent = dispatchSuccessAt ?? request?.timeline.resultSentAt {
+                Label(
+                    "Terkirim \(sent.formatted(date: .abbreviated, time: .shortened))",
+                    systemImage: "checkmark.icloud.fill"
+                )
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.green)
+            } else if request == nil {
+                Text("Permintaan CloudKit belum tersedia untuk misi ini.")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+
+            Button(action: onDispatch) {
+                Label(
+                    isDispatching ? "Mengirim…" : "Kirim Semua Hasil",
+                    systemImage: "paperplane.fill"
+                )
+                .frame(maxWidth: .infinity)
+            }
+            .kropsPrimaryAction(size: .regular)
+            .disabled(!canDispatch)
+        }
+        .padding(.top, 4)
+    }
+
+    private func checklistRow(_ title: String, ready: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: ready ? "checkmark.circle.fill" : "circle")
+                .font(.caption)
+                .foregroundStyle(ready ? .green : .secondary)
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(ready ? .primary : .secondary)
+        }
     }
 }

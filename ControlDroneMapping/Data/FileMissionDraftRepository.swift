@@ -5,8 +5,10 @@ struct FileMissionDraftRepository: MissionDraftRepository {
     let url: URL?
 
     static var defaultURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("DroneControl/mission-draft.json")
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("DroneControl", isDirectory: true)
+        let scoped = AppConfiguration.bundleStorageScope?.directory(under: base) ?? base
+        return scoped.appendingPathComponent("mission-draft.json")
     }
 
     func load() throws -> Command? {

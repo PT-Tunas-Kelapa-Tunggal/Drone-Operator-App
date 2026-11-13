@@ -5,6 +5,30 @@ import Foundation
 /// Validates that all required build-time settings were supplied via `Config/Developer.xcconfig`
 /// without any silent fallback defaults.
 public struct AppConfiguration: Sendable {
+    /// CloudKit container + environment tuple used to partition local cached missions and artifacts.
+    public struct StorageScope: Hashable, Codable, Sendable {
+        public let cloudKitContainerIdentifier: String
+        public let environment: String
+
+        public init(cloudKitContainerIdentifier: String, environment: String) {
+            self.cloudKitContainerIdentifier = cloudKitContainerIdentifier
+            self.environment = environment.lowercased()
+        }
+
+        public static func sanitizedPathComponent(_ raw: String) -> String {
+            let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-_"))
+            let cleaned = raw.unicodeScalars.map { allowed.contains($0) ? String($0) : "_" }.joined()
+            return cleaned.isEmpty ? "default" : cleaned
+        }
+
+        public func directory(under base: URL) -> URL {
+            base
+                .appendingPathComponent("Containers", isDirectory: true)
+                .appendingPathComponent(Self.sanitizedPathComponent(cloudKitContainerIdentifier), isDirectory: true)
+                .appendingPathComponent(Self.sanitizedPathComponent(environment), isDirectory: true)
+        }
+    }
+
     public enum BuildEnvironment: String, Sendable {
         case development
         case staging
@@ -37,6 +61,35 @@ public struct AppConfiguration: Sendable {
 
     public var isProduction: Bool {
         environment == .production
+    }
+
+    public var storageScope: StorageScope {
+        StorageScope(
+            cloudKitContainerIdentifier: cloudKitContainerIdentifier,
+            environment: environment.rawValue
+        )
+    }
+
+    /// Reads the configured CloudKit container & environment from `Bundle.main` when available.
+    /// Returns `nil` inside headless test binaries that do not embed an app `Info.plist`.
+    public static var bundleStorageScope: StorageScope? {
+        guard
+            let containerID = (Bundle.main.object(forInfoDictionaryKey: "ICloudContainerIdentifier") as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            !containerID.isEmpty,
+            !containerID.contains("$("),
+            let rawEnv = (Bundle.main.object(forInfoDictionaryKey: "AppEnvironment") as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            !rawEnv.isEmpty,
+            !rawEnv.contains("$("),
+            let env = BuildEnvironment(rawValue: rawEnv.lowercased())
+        else {
+            return nil
+        }
+        return StorageScope(
+            cloudKitContainerIdentifier: containerID,
+            environment: env.rawValue
+        )
     }
 
     public static let current: AppConfiguration = {
