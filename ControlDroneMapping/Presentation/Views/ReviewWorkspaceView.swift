@@ -16,7 +16,7 @@ enum ReviewTab: String, CaseIterable, Identifiable {
 private enum ReviewResultLayer: String, CaseIterable, Identifiable {
     case orthomosaic = "Orthomosaic"
     case variAndHara = "VARI & HARA"
-    case rainfall = "Curah Hujan"
+    case fertilizationTiming = "Jadwal Pemupukan"
     var id: String { rawValue }
 }
 
@@ -39,9 +39,14 @@ struct ReviewWorkspaceView: View {
     @State private var importedProjectID: UUID?
     @State private var mapFocus = UUID()
     private let variProcessor: any VariProcessing
+    private let timingProcessor: any VariTimingProcessing
     @State private var variResult: VariScanResult?
     @State private var isProcessingVari = false
     @State private var variError: String?
+    @State private var timingResult: VariTimingExecutionResult?
+    @State private var isProcessingTiming = false
+    @State private var timingError: String?
+    @State private var timingTask: Task<Void, Never>?
     @State private var showSavedConfirmation = false
 
     init(
@@ -49,6 +54,7 @@ struct ReviewWorkspaceView: View {
         location: OperatorLocationViewModel, planner: FlightPlannerViewModel,
         processing: OrthomosaicViewModel,
         variProcessor: (any VariProcessing)? = nil,
+        timingProcessor: (any VariTimingProcessing)? = nil,
         search: String,
         openPlanner: @escaping () -> Void, createMission: @escaping () -> Void,
         export: @escaping (MissionRecord) -> Void, tab: ReviewTab? = nil
@@ -60,6 +66,7 @@ struct ReviewWorkspaceView: View {
         self.planner = planner
         self.processing = processing
         self.variProcessor = variProcessor ?? ControlDependencies.variProcessor(demo: model.isDemo)
+        self.timingProcessor = timingProcessor ?? ControlDependencies.timingProcessor(demo: model.isDemo)
         self.search = search
         self.openPlanner = openPlanner
         self.createMission = createMission
@@ -80,6 +87,32 @@ struct ReviewWorkspaceView: View {
         }
         if variResult == nil {
             variResult = try? variProcessor.loadCachedResult(from: output.folder)
+        }
+    }
+
+    private var timingOutputFolder: URL {
+        if let output {
+            return output.folder
+        }
+        let fallbackID =
+            mission?.id ?? record?.id ?? project?.id
+            ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+        return VariTimingWeatherSettings.defaultTimingOutputFolder(for: fallbackID, demo: model.isDemo)
+    }
+
+    private var timingStorageKey: String {
+        "\(timingOutputFolder.path)::\(model.isDemo)"
+    }
+
+    private var resolvedTimingCoordinate: VariTimingRequest.Coordinate {
+        // TODO: Replace fallback coordinates once CloudKit Farm Boundary sync is integrated.
+        VariTimingRequest.centroid(of: mission?.area?.points)
+            ?? VariTimingRequest.Coordinate(latitude: 1.0, longitude: 104.375)
+    }
+
+    private func checkForCachedTimingResult() {
+        if timingResult == nil {
+            timingResult = timingProcessor.loadCachedResult(in: timingOutputFolder)
         }
     }
 
@@ -634,7 +667,37 @@ struct ReviewWorkspaceView: View {
                         } label: {
                             Label("Unduh JSON", systemImage: "arrow.down.doc")
                         }
-                    } else {
+                    } else if resultLayer == .fertilizationTiming, let result = timingResult {
+                        Button {
+                            runTimingAnalysis()
+                        } label: {
+                            Label("Jalankan Ulang", systemImage: "arrow.clockwise")
+                        }
+                        .kropsToolbarAction(size: .regular)
+                        .disabled(isProcessingTiming)
+
+                        Menu {
+                            Button("Simpan Output JSON…") {
+                                VariFilePanels.saveJSON(
+                                    from: result.resultJSONURL,
+                                    suggestedName: "jadwal_pemupukan_hasil.json"
+                                )
+                            }
+                            Button("Simpan Input Request JSON…") {
+                                VariFilePanels.saveJSON(
+                                    from: result.requestJSONURL,
+                                    suggestedName: "jadwal_pemupukan_request.json"
+                                )
+                            }
+                            Divider()
+                            Button("Tampilkan di Finder") {
+                                NSWorkspace.shared.activateFileViewerSelecting([result.resultJSONURL])
+                            }
+                        } label: {
+                            Label("Unduh", systemImage: "arrow.down.doc")
+                        }
+                        .kropsToolbarAction(size: .regular)
+                    } else if resultLayer == .orthomosaic {
                         Button {
                         } label: {
                             Label("Kirim", systemImage: "paperplane")
@@ -656,15 +719,13 @@ struct ReviewWorkspaceView: View {
                     }.padding(16)
                 } else if resultLayer == .variAndHara {
                     variView
+                } else if resultLayer == .fertilizationTiming {
+                    timingView
                 } else {
                     ContentUnavailableView(
-                        resultLayer == .orthomosaic
-                            ? "Belum ada orthomosaic" : "Belum ada data " + resultLayer.rawValue,
-                        systemImage: resultLayer == .orthomosaic ? "square.3.layers.3d" : "chart.xyaxis.line",
-                        description: Text(
-                            resultLayer == .orthomosaic
-                                ? "Impor dan olah foto melalui tab Citra."
-                                : "Hasil analisis akan ditampilkan di sini.")
+                        "Belum ada orthomosaic",
+                        systemImage: "square.3.layers.3d",
+                        description: Text("Impor dan olah foto melalui tab Citra.")
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -674,10 +735,24 @@ struct ReviewWorkspaceView: View {
         .task(id: output?.folder) {
             checkForCachedVariResult()
         }
+        .task(id: timingStorageKey) {
+            timingTask?.cancel()
+            timingTask = nil
+            isProcessingTiming = false
+            timingError = nil
+            timingResult = nil
+            checkForCachedTimingResult()
+        }
         .onChange(of: resultLayer) { _, newLayer in
             if newLayer == .variAndHara {
                 checkForCachedVariResult()
+            } else if newLayer == .fertilizationTiming {
+                checkForCachedTimingResult()
             }
+        }
+        .onDisappear {
+            timingTask?.cancel()
+            timingTask = nil
         }
     }
 
@@ -736,6 +811,56 @@ struct ReviewWorkspaceView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private var timingView: some View {
+        VariTimingWorkspaceView(
+            result: timingResult,
+            isRunning: isProcessingTiming,
+            errorMessage: timingError,
+            resolvedCoordinate: resolvedTimingCoordinate,
+            onRun: runTimingAnalysis,
+            onDismissError: { timingError = nil }
+        )
+    }
+
+    private func runTimingAnalysis() {
+        guard !isProcessingTiming else { return }
+        isProcessingTiming = true
+        timingError = nil
+        let targetFolder = timingOutputFolder
+        let coordinate = resolvedTimingCoordinate
+        let options = VariTimingWeatherSettings.currentRunOptions()
+
+        timingTask?.cancel()
+        timingTask = Task {
+            do {
+                // TODO: Replace hardcoded placeholder template with CloudKit-synced
+                // fertilizerFreq, fertilizers (compositions + VARI dose), and applications[].
+                let request = VariTimingRequest.placeholderTemplate(coordinate: coordinate)
+                let result = try await timingProcessor.runTiming(
+                    request: request,
+                    options: options,
+                    outputFolder: targetFolder
+                )
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    self.timingResult = result
+                    self.isProcessingTiming = false
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    self.isProcessingTiming = false
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    self.timingError = error.localizedDescription
+                    self.isProcessingTiming = false
+                }
+            }
         }
     }
 
@@ -824,6 +949,7 @@ private struct ReviewWorkspacePreview: View {
             processing: ControlDependencies.orthomosaicViewModel(
                 store: dependencies.link.store, demo: true),
             variProcessor: dependencies.variProcessor,
+            timingProcessor: dependencies.timingProcessor,
             search: "", openPlanner: {}, createMission: {}, export: { _ in }, tab: tab
         )
         .frame(width: 1280, height: 720)

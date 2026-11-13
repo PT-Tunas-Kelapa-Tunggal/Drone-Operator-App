@@ -17,6 +17,15 @@ public struct BundledVariEngine {
         Bundle.main.url(forResource: "VariEngine", withExtension: nil)
     }
 
+    public static var bundledTimingWeatherCacheDirectory: URL? {
+        guard
+            let cache = embeddedDirectory?.appendingPathComponent(
+                "fertilization_timing/data/weather_cache", isDirectory: true),
+            FileManager.default.fileExists(atPath: cache.path)
+        else { return nil }
+        return cache
+    }
+
     public static var helperExecutable: URL? {
         Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("VariPython")
     }
