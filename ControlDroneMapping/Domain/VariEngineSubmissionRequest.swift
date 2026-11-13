@@ -111,7 +111,8 @@ public struct VariEngineSubmissionRequest: Codable, Sendable, Equatable {
         self.fertilizerBudgetRp = fertilizerBudgetRp
     }
 
-    /// Provides realistic default agronomic parameters for immediate scanning and local testing.
+    /// Deprecated test-only default request generator; production callers must use `VariSubmissionBuilder.makeSubmission(from:)`.
+    @available(*, deprecated, message: "Gunakan VariSubmissionBuilder.makeSubmission(from:) agar seluruh input agronomi & anggaran berasal dari CloudKit.")
     public static func defaultSample(
         farmName: String = "Kebun Kelapa Sawit",
         areaHa: Double = 1.0,

@@ -3,8 +3,10 @@ import Foundation
 struct FileMissionLibraryRepository: MissionLibraryRepository {
     let url: URL?
     static var defaultURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("DroneControl/missions.json")
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("DroneControl", isDirectory: true)
+        let scoped = AppConfiguration.bundleStorageScope?.directory(under: base) ?? base
+        return scoped.appendingPathComponent("missions.json")
     }
     func load() throws -> MissionLibrary {
         guard let url, FileManager.default.fileExists(atPath: url.path) else { return MissionLibrary() }

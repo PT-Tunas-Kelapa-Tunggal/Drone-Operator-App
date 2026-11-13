@@ -1,3 +1,4 @@
+import CloudKit
 import Combine
 import Foundation
 
@@ -62,9 +63,11 @@ final class ControlViewModel: ObservableObject {
     private let drafts: any MissionDraftRepository
     let link: any LocalTransport
     let isDemo: Bool
+    @Published private(set) var reviewRequests: [PlantationReviewRequest] = []
     @Published var isDispatchingReview = false
     @Published private(set) var isSyncingCloudKit = false
     private let reviewRepository: any OperatorReviewRepository
+    private let storageScope: AppConfiguration.StorageScope?
     private var reviewObservationTask: Task<Void, Never>?
     private var expectedTestID: UUID?
     private var expectedReferenceID: UUID?
@@ -74,8 +77,11 @@ final class ControlViewModel: ObservableObject {
         demo: Bool = false, draftURL: URL? = nil,
         transport: (any LocalTransport)? = nil, drafts: (any MissionDraftRepository)? = nil,
         missions: (any MissionLibraryRepository)? = nil,
-        reviewRepository: (any OperatorReviewRepository)? = nil
+        reviewRepository: (any OperatorReviewRepository)? = nil,
+        storageScope: AppConfiguration.StorageScope? = nil
     ) {
+        let resolvedScope = storageScope ?? (demo ? nil : AppConfiguration.bundleStorageScope)
+        self.storageScope = resolvedScope
         self.reviewRepository = reviewRepository ?? CloudKitOperatorReviewRepository.shared
         self.drafts =
             drafts
@@ -95,10 +101,18 @@ final class ControlViewModel: ObservableObject {
         plan.guidedMode = true
         plan.durationSeconds = 600
         do {
-            missionLibrary = try libraryRepository.load()
+            let loaded = try libraryRepository.load()
+            if !demo, let resolvedScope, !loaded.matches(resolvedScope) {
+                // Ignore cached missions saved under a different CloudKit container/environment or legacy unscoped cache.
+                missionLibrary = MissionLibrary().tagged(with: resolvedScope)
+            } else if let resolvedScope {
+                missionLibrary = loaded.tagged(with: resolvedScope)
+            } else {
+                missionLibrary = loaded
+            }
             libraryReady = true
         } catch {
-            missionLibrary = MissionLibrary()
+            missionLibrary = resolvedScope.map { MissionLibrary().tagged(with: $0) } ?? MissionLibrary()
             libraryReady = true
             missionStorageError = "Pustaka misi: " + error.localizedDescription
         }
@@ -248,7 +262,7 @@ final class ControlViewModel: ObservableObject {
         reviewObservationTask?.cancel()
         reviewObservationTask = Task { [weak self] in
             guard let self else { return }
-            await self.syncReviewRequests()
+            await self.syncCloudKitRequests()
             for await requests in self.reviewRepository.observeIncomingRequests() {
                 guard !Task.isCancelled else { break }
                 await self.applyIncomingRequests(requests)
@@ -268,19 +282,48 @@ final class ControlViewModel: ObservableObject {
                 errorMessage = nil
             }
         } catch {
-            print("[ControlViewModel] Failed to sync CloudKit requests: \(error.localizedDescription)")
-            errorMessage = "Gagal memuat permintaan dari CloudKit: \(error.localizedDescription)"
+            let formatted = Self.cloudKitLoadErrorMessage(error, storageScope: storageScope)
+            print("[ControlViewModel] Failed to sync CloudKit requests: \(formatted)")
+            errorMessage = formatted
         }
     }
 
     @MainActor
     func syncReviewRequests() async {
-        guard let requests = try? await reviewRepository.fetchAllRequests() else { return }
-        applyIncomingRequests(requests)
+        await syncCloudKitRequests()
+    }
+
+    static func cloudKitLoadErrorMessage(
+        _ error: any Error,
+        storageScope: AppConfiguration.StorageScope?
+    ) -> String {
+        let prefix = "Gagal memuat permintaan dari CloudKit"
+        let containerLabel = storageScope?.cloudKitContainerIdentifier ?? "aktif"
+        let environmentLabel = storageScope?.environment ?? "development"
+
+        if let ckError = error as? CKError {
+            let detail = ckError.localizedDescription
+            switch ckError.code {
+            case .permissionFailure:
+                let bundleID = Bundle.main.bundleIdentifier ?? "unknown-bundle-id"
+                return "\(prefix): Bundle ID '\(bundleID)' belum diotorisasi untuk container '\(containerLabel)' (\(detail))."
+            case .unknownItem:
+                return "\(prefix): Record type CloudKit belum tersedia di container '\(containerLabel)' (\(environmentLabel)): \(detail)."
+            case .notAuthenticated:
+                return "\(prefix): Akun iCloud pada Mac belum masuk atau akses iCloud tidak tersedia (\(detail))."
+            default:
+                return "\(prefix) (\(containerLabel)): \(detail)"
+            }
+        }
+        return "\(prefix): \(error.localizedDescription)"
     }
 
     @MainActor
     func applyIncomingRequests(_ requests: [PlantationReviewRequest]) {
+        reviewRequests = requests
+        if errorMessage?.hasPrefix("Gagal memuat permintaan dari CloudKit") == true {
+            errorMessage = nil
+        }
         var newMissions: [SavedMission] = []
         for request in requests {
             if missionLibrary.hiddenRemoteIDs.contains(request.id) {
@@ -293,7 +336,7 @@ final class ControlViewModel: ObservableObject {
                 FarmArea.Point(latitude: $0.latitude, longitude: $0.longitude)
             }
             let area = FarmArea(id: request.garden.id, name: request.garden.name, points: areaPoints)
-            let phase: MissionPhase = request.status == .completed ? .completed : (existing?.phase ?? .idle)
+            let phase: MissionPhase = request.status.isFinished ? .completed : (existing?.phase ?? .idle)
 
             let localRecord = records.first(where: { $0.id == request.id })
             let savedCount = localRecord?.saved ?? existing?.saved ?? 0
@@ -336,45 +379,72 @@ final class ControlViewModel: ObservableObject {
         }
     }
 
+    func reviewRequest(for mission: SavedMission?, fallbackID: UUID? = nil) -> PlantationReviewRequest? {
+        guard let candidateID = mission?.remoteID ?? mission?.id ?? fallbackID else {
+            return nil
+        }
+        return reviewRequests.first { $0.id == candidateID }
+    }
+
     @MainActor
-    func dispatchReviewResult(
+    @discardableResult
+    func dispatchCompletedReview(
         for mission: SavedMission?,
-        output: OrthomosaicOutput
-    ) async {
-        guard !isDispatchingReview else { return }
+        fallbackID: UUID? = nil,
+        output: OrthomosaicOutput,
+        variResult: VariScanResult,
+        timingResult: VariTimingExecutionResult,
+        fertilizerIDLookup: [String: ContractFertilizerType] = [:],
+        preferredNPK: ContractFertilizerType? = nil
+    ) async -> Bool {
+        guard !isDispatchingReview else { return false }
         isDispatchingReview = true
         defer { isDispatchingReview = false }
 
         do {
-            let allRequests = (try? await reviewRepository.fetchAllRequests()) ?? []
-            guard let targetID = mission?.remoteID ?? mission?.id else {
+            guard let targetID = mission?.remoteID ?? mission?.id ?? fallbackID else {
                 errorMessage = "ID misi tidak valid untuk pengiriman hasil."
-                return
+                return false
             }
 
-            guard let request = allRequests.first(where: { $0.id == targetID }) else {
+            let allRequests = (try? await reviewRepository.fetchAllRequests()) ?? reviewRequests
+            guard let baseRequest = allRequests.first(where: { $0.id == targetID }) else {
                 errorMessage =
                     "Permintaan peninjauan (\(targetID.uuidString)) tidak ditemukan di CloudKit container aktif."
-                return
+                return false
             }
 
-            let previewURL = output.folder.appendingPathComponent("preview.png")
-            let assetURL = FileManager.default.fileExists(atPath: previewURL.path) ? previewURL : nil
+            // Re-fetch single record to preserve any latest iOS-written fields & progressionStatusDetail events.
+            let latestRequest =
+                (try? await reviewRepository.fetchRequest(recordName: baseRequest.recordName))
+                ?? baseRequest
 
-            let result = PlantationReviewResult.standardRecommendation(
-                completedAt: Date(),
-                orthomosaicImageURL: assetURL
+            let orthomosaicJPEGURL =
+                variResult.assets.sourceImageURL
+                ?? output.folder.appendingPathComponent(LocalVariProcessor.canonicalJPEGFileName)
+
+            let payload = try CloudKitReviewDispatchBuilder.makeDispatchPayload(
+                request: latestRequest,
+                orthomosaicJPEGURL: orthomosaicJPEGURL,
+                variResult: variResult,
+                timingResult: timingResult,
+                fertilizerIDLookup: fertilizerIDLookup,
+                preferredNPKForFallback: preferredNPK
             )
 
-            try await reviewRepository.dispatchResult(
-                requestID: request.id,
-                result: result,
-                previewAssetURL: assetURL
-            )
+            let updatedRequest = try await reviewRepository.dispatchCompletedReview(payload)
+            if let index = reviewRequests.firstIndex(where: { $0.recordName == updatedRequest.recordName }) {
+                reviewRequests[index] = updatedRequest
+            } else {
+                reviewRequests.append(updatedRequest)
+            }
+
             markMissionCompleted(targetID)
             await syncReviewRequests()
+            return true
         } catch {
             errorMessage = "Gagal mengirim hasil: \(error.localizedDescription)"
+            return false
         }
     }
     var selectedMission: SavedMission? {
@@ -399,8 +469,9 @@ final class ControlViewModel: ObservableObject {
     }
     @discardableResult private func saveLibrary(_ updated: MissionLibrary) -> Bool {
         do {
-            try libraryRepository.save(updated)
-            missionLibrary = updated
+            let scoped = storageScope.map { updated.tagged(with: $0) } ?? updated
+            try libraryRepository.save(scoped)
+            missionLibrary = scoped
             missionStorageError = nil
             return true
         } catch {

@@ -34,6 +34,8 @@ private enum VariVisualLayer: String, CaseIterable, Identifiable {
 public struct VariReportWorkspaceView: View {
     public let result: VariScanResult
     public let initialSection: VariReportInitialSection
+    public let selectedNPKForTiming: ContractFertilizerType?
+    public let onSelectNPKForTiming: ((ContractFertilizerType) -> Void)?
     public let onRerun: (() -> Void)?
 
     @State private var selectedLayer = VariVisualLayer.annotated
@@ -42,10 +44,14 @@ public struct VariReportWorkspaceView: View {
     public init(
         result: VariScanResult,
         initialSection: VariReportInitialSection = .vari,
+        selectedNPKForTiming: ContractFertilizerType? = nil,
+        onSelectNPKForTiming: ((ContractFertilizerType) -> Void)? = nil,
         onRerun: (() -> Void)? = nil
     ) {
         self.result = result
         self.initialSection = initialSection
+        self.selectedNPKForTiming = selectedNPKForTiming
+        self.onSelectNPKForTiming = onSelectNPKForTiming
         self.onRerun = onRerun
     }
 
@@ -510,9 +516,22 @@ public struct VariReportWorkspaceView: View {
                         Text("4. Pencocokan Anggaran & Formulasi NPK Komersial")
                             .font(.headline)
                     }
-                    Text("Perbandingan opsi formula pupuk NPK/NPKMg komersial yang dipadukan dengan biaya top-up Mg/Urea.")
+                    Text("Perbandingan opsi formula pupuk NPK/NPKMg komersial seluruh kebun dipadukan dengan total Mg (Dolomite) & Urea per zona.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if let userBlend = result.userBlend {
+                        let ratioText =
+                            userBlend.ratio.map {
+                                "(\(Int($0.n.rounded()))-\(Int($0.p2o5.rounded()))-\(Int($0.k2o.rounded()))-\(Int($0.mgo.rounded())))"
+                            } ?? ""
+                        let kgText = String(format: "%.1f kg/thn", userBlend.npkProductKgFarmPerYear)
+                        let doseText = userBlend.dosePerTreeKgPerApplication.map {
+                            String(format: " · %.2f kg/pohon", $0)
+                        } ?? ""
+                        Text("Baseline pupuk petani: NPK \(ratioText) · \(kgText)\(doseText)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 if let target = budget.targetBudgetRp {
@@ -571,9 +590,16 @@ public struct VariReportWorkspaceView: View {
                                 .foregroundStyle(.secondary)
                                 .frame(width: 145, alignment: .leading)
 
-                            Text("\(candidate.npkFullBags)")
-                                .font(.callout.monospacedDigit())
-                                .frame(width: 110, alignment: .trailing)
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text("\(candidate.npkFullBags) karung")
+                                    .font(.callout.monospacedDigit())
+                                if let annualKg = candidate.recommendedAnnualKgFarm, annualKg > 0 {
+                                    Text("\(String(format: "%.1f", VariDoseRounding.roundToHalfKg(annualKg))) kg/thn")
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .frame(width: 110, alignment: .trailing)
 
                             Text(formatRupiah(candidate.npkCostRp))
                                 .font(.callout.monospacedDigit())
@@ -598,7 +624,7 @@ public struct VariReportWorkspaceView: View {
                                 .foregroundStyle(candidate.budgetDifferenceRp <= 0 ? Color.green : Color.primary)
                                 .frame(width: 155, alignment: .trailing)
 
-                            Group {
+                            VStack(spacing: 4) {
                                 if candidate.isClosest {
                                     Text("CLOSEST TO BUDGET")
                                         .font(.system(size: 9, weight: .bold))
@@ -606,8 +632,22 @@ public struct VariReportWorkspaceView: View {
                                         .padding(.vertical, 3)
                                         .background(Color.green.opacity(0.18), in: Capsule())
                                         .foregroundStyle(Color.green)
-                                } else {
-                                    Text("")
+                                }
+                                if let explicitType = candidate.explicitNPKType,
+                                    let onSelectNPKForTiming
+                                {
+                                    let isSelectedForTiming =
+                                        selectedNPKForTiming == explicitType
+                                        || (selectedNPKForTiming == nil && candidate.isClosest)
+                                    Button {
+                                        onSelectNPKForTiming(explicitType)
+                                    } label: {
+                                        Text(isSelectedForTiming ? "Dipakai di Jadwal" : "Pakai di Jadwal")
+                                            .font(.system(size: 10, weight: .semibold))
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.mini)
+                                    .tint(isSelectedForTiming ? KropsStyle.accent : .secondary)
                                 }
                             }
                             .frame(width: 130, alignment: .center)

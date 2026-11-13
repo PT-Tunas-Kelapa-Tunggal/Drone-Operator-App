@@ -19,6 +19,21 @@ struct MissionLibrary: Codable, Equatable {
     var hiddenRemoteIDs: Set<UUID> = []
     // Optional for compatibility with libraries saved before file cleanup existed.
     var deletedFileIDs: Set<UUID>? = nil
+    // Tracks which CloudKit container and build environment own these cached missions.
+    var cloudKitContainerIdentifier: String? = nil
+    var cloudKitEnvironment: String? = nil
+
+    func matches(_ scope: AppConfiguration.StorageScope) -> Bool {
+        cloudKitContainerIdentifier == scope.cloudKitContainerIdentifier
+            && cloudKitEnvironment?.lowercased() == scope.environment.lowercased()
+    }
+
+    func tagged(with scope: AppConfiguration.StorageScope) -> MissionLibrary {
+        var copy = self
+        copy.cloudKitContainerIdentifier = scope.cloudKitContainerIdentifier
+        copy.cloudKitEnvironment = scope.environment.lowercased()
+        return copy
+    }
 }
 
 protocol MissionLibraryRepository {

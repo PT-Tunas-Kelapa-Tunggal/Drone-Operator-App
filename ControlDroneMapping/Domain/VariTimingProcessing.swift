@@ -97,11 +97,8 @@ public struct VariTimingRequest: Codable, Sendable, Equatable {
         return Coordinate(latitude: lat, longitude: lon)
     }
 
-    /// Pre-CloudKit placeholder request builder.
-    ///
-    /// TODO: Replace all hardcoded dummy fields (`fertilizerFreq`, `fertilizers`,
-    /// `applications`, and fallback Batam coordinates) once CloudKit farm data synchronization
-    /// per `data-structure-synchronization.md` is implemented.
+    /// Deprecated pre-CloudKit placeholder request builder; production callers must use `VariTimingBuilder.makeRequest(from:variResult:)`.
+    @available(*, deprecated, message: "Gunakan VariTimingBuilder.makeRequest(from:variResult:) agar koordinat, frekuensi, dan dosis pupuk berasal dari CloudKit dan VARI & HARA.")
     public static func placeholderTemplate(coordinate: Coordinate? = nil) -> VariTimingRequest {
         // Fallback coordinates match the pre-seeded Batam cell `n1.000_e104.3750`
         // so offline/first-run validation succeeds without network dependency.

@@ -1,41 +1,89 @@
+import CryptoKit
 import Foundation
 
 // MARK: - Domain: PlantationReviewRequest
-public struct PlantationReviewRequest: Identifiable, Sendable {
+
+public struct PlantationReviewRequest: Identifiable, Sendable, Equatable {
     public let id: UUID
+    public let recordName: String
+    public let schemaVersion: Int64
     public let farmer: FarmerContact
     public let garden: GardenSummary
     public let boundary: [CoordinatePoint]
     public let agronomy: AgronomicProfile
     public var status: ReviewStatus
+    public var progressionEvents: [ReviewProgressionEvent]
     public var timeline: ReviewTimeline
     public var operatorNotes: String?
+    /// Per-field contract decode/validation errors keyed by CloudKit record key.
+    public var fieldErrors: [String: String]
     public var result: PlantationReviewResult?
 
     public init(
-        id: UUID = UUID(),
+        id: UUID? = nil,
+        recordName: String = UUID().uuidString,
+        schemaVersion: Int64 = ContractInfo.version,
         farmer: FarmerContact,
         garden: GardenSummary,
         boundary: [CoordinatePoint],
         agronomy: AgronomicProfile,
-        status: ReviewStatus = .submitted,
+        status: ReviewStatus = .sent,
+        progressionEvents: [ReviewProgressionEvent] = [],
         timeline: ReviewTimeline = ReviewTimeline(),
         operatorNotes: String? = nil,
+        fieldErrors: [String: String] = [:],
         result: PlantationReviewResult? = nil
     ) {
-        self.id = id
+        self.id = id ?? Self.stableUUID(forRecordName: recordName)
+        self.recordName = recordName
+        self.schemaVersion = schemaVersion
         self.farmer = farmer
         self.garden = garden
         self.boundary = boundary
         self.agronomy = agronomy
         self.status = status
+        self.progressionEvents = progressionEvents
         self.timeline = timeline
         self.operatorNotes = operatorNotes
+        self.fieldErrors = fieldErrors
         self.result = result
+    }
+
+    public var hasFieldErrors: Bool { !fieldErrors.isEmpty }
+
+    public var totalBudgetRp: Double {
+        Double(agronomy.fertilizationBudgetPerHa) * garden.areaHectares
+    }
+
+    public var centroidCoordinate: CoordinatePoint? {
+        guard !boundary.isEmpty else { return nil }
+        let count = Double(boundary.count)
+        let lat = boundary.reduce(0.0) { $0 + $1.latitude } / count
+        let lon = boundary.reduce(0.0) { $0 + $1.longitude } / count
+        guard lat.isFinite, lon.isFinite else { return nil }
+        return CoordinatePoint(latitude: lat, longitude: lon)
+    }
+
+    /// Resolves a UUID from `recordName` when formatted as UUID, otherwise derives a deterministic UUID.
+    public static func stableUUID(forRecordName recordName: String) -> UUID {
+        if let parsed = UUID(uuidString: recordName) {
+            return parsed
+        }
+        let digest = SHA256.hash(data: Data(recordName.utf8))
+        var bytes = Array(digest.prefix(16))
+        bytes[6] = (bytes[6] & 0x0F) | 0x50
+        bytes[8] = (bytes[8] & 0x3F) | 0x80
+        let tuple: uuid_t = (
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[8], bytes[9], bytes[10], bytes[11],
+            bytes[12], bytes[13], bytes[14], bytes[15]
+        )
+        return UUID(uuid: tuple)
     }
 }
 
-public struct FarmerContact: Sendable {
+public struct FarmerContact: Sendable, Equatable {
     public let name: String
     public let phone: String
     public let address: String
@@ -47,17 +95,25 @@ public struct FarmerContact: Sendable {
     }
 }
 
-public struct GardenSummary: Sendable {
+public struct GardenSummary: Sendable, Equatable {
     public let id: UUID
     public let name: String
     public let locationName: String
     public let areaHectares: Double
+    public let circumferenceMeters: Double
 
-    public init(id: UUID, name: String, locationName: String, areaHectares: Double) {
+    public init(
+        id: UUID,
+        name: String,
+        locationName: String,
+        areaHectares: Double,
+        circumferenceMeters: Double = 0
+    ) {
         self.id = id
         self.name = name
         self.locationName = locationName
         self.areaHectares = areaHectares
+        self.circumferenceMeters = circumferenceMeters
     }
 }
 
@@ -71,51 +127,72 @@ public struct CoordinatePoint: Hashable, Sendable {
     }
 }
 
-public struct AgronomicProfile: Sendable {
+public struct FertilizerCompositionElement: Codable, Equatable, Sendable {
+    public let name: String
+    public let value: Double
+    public let valueUnit: String
+
+    public init(name: String, value: Double, valueUnit: String = "percent") {
+        self.name = name
+        self.value = value
+        self.valueUnit = valueUnit
+    }
+}
+
+public struct AgronomicProfile: Sendable, Equatable {
     public let plantingYear: Int
     public let plantingMonth: Int?
-    public let soilType: String
+    public let soilType: ContractSoilType
+    public let fertilizingFrequencyPerYear: Int
+    public let fertilizationBudgetPerHa: Int64
     public let fertilizerRecords: [FertilizerUsage]
     public let harvestRecord: HarvestYield?
 
     public init(
         plantingYear: Int,
         plantingMonth: Int? = nil,
-        soilType: String,
+        soilType: ContractSoilType,
+        fertilizingFrequencyPerYear: Int,
+        fertilizationBudgetPerHa: Int64,
         fertilizerRecords: [FertilizerUsage] = [],
         harvestRecord: HarvestYield? = nil
     ) {
         self.plantingYear = plantingYear
         self.plantingMonth = plantingMonth
         self.soilType = soilType
+        self.fertilizingFrequencyPerYear = fertilizingFrequencyPerYear
+        self.fertilizationBudgetPerHa = fertilizationBudgetPerHa
         self.fertilizerRecords = fertilizerRecords
         self.harvestRecord = harvestRecord
     }
 }
 
-public struct FertilizerUsage: Identifiable, Sendable {
+public struct FertilizerUsage: Identifiable, Sendable, Equatable {
     public let id: UUID
-    public let name: String
-    public let bagWeightKg: Double
-    public let bagCount: Int
+    public let contractType: ContractFertilizerType
+    public let composition: [FertilizerCompositionElement]
+    /// Normalized annual per-tree dosage per application in kg.
     public let doseKgPerTree: Double
+    public let rawDosageText: String
+
+    public var name: String { contractType.rawValue }
 
     public init(
         id: UUID = UUID(),
-        name: String,
-        bagWeightKg: Double,
-        bagCount: Int,
-        doseKgPerTree: Double
+        contractType: ContractFertilizerType,
+        composition: [FertilizerCompositionElement] = [],
+        doseKgPerTree: Double,
+        rawDosageText: String? = nil
     ) {
         self.id = id
-        self.name = name
-        self.bagWeightKg = bagWeightKg
-        self.bagCount = bagCount
+        self.contractType = contractType
+        self.composition = composition
         self.doseKgPerTree = doseKgPerTree
+        self.rawDosageText = rawDosageText ?? String(format: "%.2f kg/pohon", doseKgPerTree)
     }
 }
 
-public struct HarvestYield: Sendable {
+public struct HarvestYield: Sendable, Equatable {
     public let frequencyPerMonth: Int
     public let latestWeightKg: Double
 
@@ -126,159 +203,51 @@ public struct HarvestYield: Sendable {
 }
 
 // MARK: - Domain: ReviewTimeline
-public struct ReviewTimeline: Sendable {
+
+public struct ReviewTimeline: Sendable, Equatable {
     public let submittedAt: Date
-    public var scheduledFor: Date?
-    public var inReviewAt: Date?
-    public var completedAt: Date?
+    public var plannedOperatorVisitDate: Date?
+    public var resultSentAt: Date?
 
     public init(
         submittedAt: Date = Date(),
-        scheduledFor: Date? = nil,
-        inReviewAt: Date? = nil,
-        completedAt: Date? = nil
+        plannedOperatorVisitDate: Date? = nil,
+        resultSentAt: Date? = nil
     ) {
         self.submittedAt = submittedAt
-        self.scheduledFor = scheduledFor
-        self.inReviewAt = inReviewAt
-        self.completedAt = completedAt
+        self.plannedOperatorVisitDate = plannedOperatorVisitDate
+        self.resultSentAt = resultSentAt
     }
 }
 
-// MARK: - Domain: PlantationReviewResult
-public struct PlantationReviewResult: Sendable {
+// MARK: - Domain: PlantationReviewResult (Contract Snapshot)
+
+/// Real deliverable snapshot synchronized to/from `MacOSScanRequestRecordWriter` keys.
+public struct PlantationReviewResult: Sendable, Equatable {
     public let completedAt: Date
-    public let nutrients: [NutrientMetric]
-    public let costs: [CostEstimate]
-    public let totalCostFormatted: String
-    public let allocationAreas: [FertilizerAreaPlan]
     public let orthomosaicImageURL: URL?
+    public let zones: [FertilizingZoneItem]
+    public let trees: [TreeIdentificationItem]
+    public let fertilizerNeeds: [FertilizerNeedItem]
+    public let schedulePeriods: [FertilizationSchedulePeriodItem]
+
+    public var zoneCount: Int { zones.count }
+    public var treeCount: Int { trees.count }
+    public var scheduleRoundCount: Int { schedulePeriods.count }
 
     public init(
         completedAt: Date = Date(),
-        nutrients: [NutrientMetric] = [],
-        costs: [CostEstimate] = [],
-        totalCostFormatted: String = "Rp 0",
-        allocationAreas: [FertilizerAreaPlan] = [],
-        orthomosaicImageURL: URL? = nil
+        orthomosaicImageURL: URL? = nil,
+        zones: [FertilizingZoneItem] = [],
+        trees: [TreeIdentificationItem] = [],
+        fertilizerNeeds: [FertilizerNeedItem] = [],
+        schedulePeriods: [FertilizationSchedulePeriodItem] = []
     ) {
         self.completedAt = completedAt
-        self.nutrients = nutrients
-        self.costs = costs
-        self.totalCostFormatted = totalCostFormatted
-        self.allocationAreas = allocationAreas
         self.orthomosaicImageURL = orthomosaicImageURL
-    }
-    // TODO: implement with actual AI/ML later, this is static placeholder only
-    public static func standardRecommendation(
-        completedAt: Date = Date(),
-        orthomosaicImageURL: URL? = nil
-    ) -> PlantationReviewResult {
-        PlantationReviewResult(
-            completedAt: completedAt,
-            nutrients: [
-                NutrientMetric(name: "Nitrogen (N)", current: 0.65, target: 0.85),
-                NutrientMetric(name: "Fosfor (P)", current: 0.45, target: 0.80),
-                NutrientMetric(name: "Kalium (K)", current: 0.55, target: 0.90),
-                NutrientMetric(name: "Magnesium (Mg)", current: 0.70, target: 0.85),
-                NutrientMetric(name: "Boron (B)", current: 0.60, target: 0.75),
-            ],
-            costs: [
-                CostEstimate(name: "Urea", quantity: "450 kg", cost: "Rp 1.125.000"),
-                CostEstimate(name: "Rock Phosphate", quantity: "300 kg", cost: "Rp 750.000"),
-                CostEstimate(name: "MOP (KCl)", quantity: "500 kg", cost: "Rp 1.850.000"),
-                CostEstimate(name: "Kieserite", quantity: "200 kg", cost: "Rp 600.000"),
-            ],
-            totalCostFormatted: "Rp 4.325.000",
-            allocationAreas: [
-                FertilizerAreaPlan(
-                    id: "A",
-                    periods: [
-                        FertilizerPeriodPlan(
-                            title: "Periode 1",
-                            dateRange: "Maret - Mei 2026",
-                            lines: [
-                                FertilizerDoseLine(name: "Urea", total: "225 kg", dosage: "1.5 kg/pohon"),
-                                FertilizerDoseLine(
-                                    name: "MOP (KCl)", total: "250 kg", dosage: "1.7 kg/pohon"),
-                            ]
-                        ),
-                        FertilizerPeriodPlan(
-                            title: "Periode 2",
-                            dateRange: "September - November 2026",
-                            lines: [
-                                FertilizerDoseLine(
-                                    name: "Rock Phosphate", total: "300 kg", dosage: "2.0 kg/pohon"),
-                                FertilizerDoseLine(
-                                    name: "Kieserite", total: "200 kg", dosage: "1.3 kg/pohon"),
-                            ]
-                        ),
-                    ]
-                )
-            ],
-            orthomosaicImageURL: orthomosaicImageURL
-        )
-    }
-}
-
-public struct NutrientMetric: Identifiable, Sendable {
-    public var id: String { name }
-    public let name: String
-    public let current: Double
-    public let target: Double
-
-    public init(name: String, current: Double, target: Double) {
-        self.name = name
-        self.current = current
-        self.target = target
-    }
-}
-
-public struct CostEstimate: Identifiable, Sendable {
-    public var id: String { name }
-    public let name: String
-    public let quantity: String
-    public let cost: String
-
-    public init(name: String, quantity: String, cost: String) {
-        self.name = name
-        self.quantity = quantity
-        self.cost = cost
-    }
-}
-
-public struct FertilizerAreaPlan: Identifiable, Sendable {
-    public let id: String
-    public let periods: [FertilizerPeriodPlan]
-
-    public init(id: String, periods: [FertilizerPeriodPlan]) {
-        self.id = id
-        self.periods = periods
-    }
-}
-
-public struct FertilizerPeriodPlan: Identifiable, Sendable {
-    public var id: String { title }
-    public let title: String
-    public let dateRange: String
-    public let lines: [FertilizerDoseLine]
-
-    public init(title: String, dateRange: String, lines: [FertilizerDoseLine]) {
-        self.title = title
-        self.dateRange = dateRange
-        self.lines = lines
-    }
-}
-
-public struct FertilizerDoseLine: Identifiable, Sendable {
-    public var id: String { name }
-    public let name: String
-    public let total: String
-    public let dosage: String
-
-    public init(name: String, total: String, dosage: String) {
-        self.name = name
-        self.total = total
-        self.dosage = dosage
+        self.zones = zones
+        self.trees = trees
+        self.fertilizerNeeds = fertilizerNeeds
+        self.schedulePeriods = schedulePeriods
     }
 }

@@ -24,7 +24,20 @@ public struct MockVariTimingProcessor: VariTimingProcessing {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(request).write(to: requestURL, options: .atomic)
 
+        let dolomiteID =
+            request.fertilizers.first(where: { VariTimingBuilder.isDolomiteProduct($0.name) })?.id
+            ?? "A01C2E47-5D6B-4B95-9D31-6A1C8217D045"
+        let npkID =
+            request.fertilizers.first(where: { $0.name.lowercased().contains("npk") })?.id
+            ?? "D828E19B-7B72-4E11-A35D-B1B7D2F9C304"
+        let ureaID =
+            request.fertilizers.first(where: { VariTimingBuilder.isUreaProduct($0.name) })?.id
+            ?? "5F3B9C1A-2E7D-4C8B-A6F0-91D4E2B7C3A8"
+
         let sampleJSON = Self.makeSampleOutputJSON(skipDaily: options.skipDaily)
+            .replacingOccurrences(of: "A01C2E47-5D6B-4B95-9D31-6A1C8217D045", with: dolomiteID)
+            .replacingOccurrences(of: "D828E19B-7B72-4E11-A35D-B1B7D2F9C304", with: npkID)
+            .replacingOccurrences(of: "5F3B9C1A-2E7D-4C8B-A6F0-91D4E2B7C3A8", with: ureaID)
         guard let outputData = sampleJSON.data(using: .utf8) else {
             throw VariTimingError.invalidJSON("Gagal menyusun JSON demo.")
         }
@@ -52,13 +65,10 @@ public struct MockVariTimingProcessor: VariTimingProcessing {
         }
 
         let requestURL = outputFolder.appendingPathComponent(LocalVariTimingProcessor.requestFileName)
-        let request: VariTimingRequest
-        if let reqData = try? Data(contentsOf: requestURL),
-            let decoded = try? JSONDecoder().decode(VariTimingRequest.self, from: reqData)
-        {
-            request = decoded
-        } else {
-            request = VariTimingRequest.placeholderTemplate()
+        guard let reqData = try? Data(contentsOf: requestURL),
+            let request = try? JSONDecoder().decode(VariTimingRequest.self, from: reqData)
+        else {
+            return nil
         }
 
         let modified =
