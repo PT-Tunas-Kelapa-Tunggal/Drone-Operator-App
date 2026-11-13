@@ -8,6 +8,7 @@ struct ControlDependencies {
     let planner: FlightPlannerViewModel
     let reviews: any OperatorReviewRepository
     let variProcessor: any VariProcessing
+    let timingProcessor: any VariTimingProcessing
 
     init(demo: Bool) {
         farms = FarmAreaViewModel(repository: FarmAreaStore())
@@ -42,6 +43,7 @@ struct ControlDependencies {
                 url: support.appendingPathComponent(demo ? "demo-missions.json" : "missions.json")),
             reviewRepository: reviewRepository)
         self.variProcessor = demo ? MockVariProcessor() : LocalVariProcessor()
+        self.timingProcessor = demo ? MockVariTimingProcessor() : LocalVariTimingProcessor()
     }
 
     static func exportViewModel(record: MissionRecord, store: any DatasetRepository) -> WebODMExportViewModel
@@ -65,5 +67,9 @@ struct ControlDependencies {
 
     static func variProcessor(demo: Bool) -> any VariProcessing {
         demo ? MockVariProcessor() : LocalVariProcessor()
+    }
+
+    static func timingProcessor(demo: Bool) -> any VariTimingProcessing {
+        demo ? MockVariTimingProcessor() : LocalVariTimingProcessor()
     }
 }
