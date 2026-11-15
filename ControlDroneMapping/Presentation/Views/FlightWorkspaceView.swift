@@ -83,7 +83,8 @@ struct FlightWorkspaceView: View {
     }
 
     private var boundaryCoordinates: [CLLocationCoordinate2D] {
-        let routeBoundary = planner.draft.waypoints.filter { $0.coordinate.isValid }.map(\.coordinate.clCoordinate)
+        let routeBoundary = planner.draft.waypoints.filter { $0.coordinate.isValid }.map(
+            \.coordinate.clCoordinate)
         if routeBoundary.count >= 3 {
             return routeBoundary
         }
@@ -158,12 +159,14 @@ struct FlightWorkspaceView: View {
                         Spacer()
                     }
                 }
-                .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
+                .transition(
+                    .asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity)
+                )
             }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showingCommandMenu)
         .alert("Perintah Ditolak oleh Drone", isPresented: $showingCommandAlert) {
-            Button("Tutup", role: .cancel) { }
+            Button("Tutup", role: .cancel) {}
         } message: {
             Text(commandError ?? "Terjadi kesalahan saat mengeksekusi perintah pada wahana.")
         }
@@ -470,7 +473,9 @@ struct FlightWorkspaceView: View {
                         followDrone.toggle()
                         if followDrone, let coord = droneLiveCoordinate {
                             cameraPosition = .region(
-                                MKCoordinateRegion(center: coord, span: MKCoordinateSpan(latitudeDelta: 0.005, longitudeDelta: 0.005))
+                                MKCoordinateRegion(
+                                    center: coord,
+                                    span: MKCoordinateSpan(latitudeDelta: 0.005, longitudeDelta: 0.005))
                             )
                         }
                     } label: {
@@ -559,10 +564,12 @@ struct FlightWorkspaceView: View {
                                 Text("Checklist SOP Belum Diverifikasi")
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(.primary)
-                                Text("Selesaikan checklist di tab 1. Rencana untuk membuka kunci kontrol motor (Arming).")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
+                                Text(
+                                    "Selesaikan checklist di tab 1. Rencana untuk membuka kunci kontrol motor (Arming)."
+                                )
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                             }
                         }
 
@@ -583,7 +590,8 @@ struct FlightWorkspaceView: View {
                     }
                     .padding(12)
                     .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.25), lineWidth: 1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.25), lineWidth: 1))
                 }
 
                 ScrollView {
@@ -786,7 +794,8 @@ struct FlightWorkspaceView: View {
             // Metrics Grid (Altitude, Speed, Climb, Waypoint)
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
                 GridRow {
-                    telemetryMetricItem("Alt (Rel)", String(format: "%.1f m", drone.telemetry.altitudeRelative))
+                    telemetryMetricItem(
+                        "Alt (Rel)", String(format: "%.1f m", drone.telemetry.altitudeRelative))
                     telemetryMetricItem("Kecepatan", String(format: "%.1f m/s", drone.telemetry.groundSpeed))
                 }
                 GridRow {
@@ -988,7 +997,9 @@ struct FlightWorkspaceView: View {
 
     private func fitMissionArea() {
         var allCoords = boundaryCoordinates + surveyTransectCoordinates
-        if let fenceCoords = planner.draft.safetyResult?.polygonCoordinates.filter(\.isValid).map(\.clCoordinate) {
+        if let fenceCoords = planner.draft.safetyResult?.polygonCoordinates.filter(\.isValid).map(
+            \.clCoordinate)
+        {
             allCoords.append(contentsOf: fenceCoords)
         }
         if let home = homeCoordinate { allCoords.append(home) }

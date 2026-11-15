@@ -42,7 +42,9 @@ public final class CloudKitOperatorReviewRepository: OperatorReviewRepository, @
                 fetchedCache[record.recordID.recordName] = record
                 requests.append(domainMapper.toDomain(from: record))
             } catch {
-                print("[CloudKitOperatorReviewRepository] Warning: Failed to fetch record: \(error.localizedDescription)")
+                print(
+                    "[CloudKitOperatorReviewRepository] Warning: Failed to fetch record: \(error.localizedDescription)"
+                )
             }
         }
 
@@ -68,7 +70,9 @@ public final class CloudKitOperatorReviewRepository: OperatorReviewRepository, @
         }
     }
 
-    public func dispatchCompletedReview(_ payload: ReviewDispatchPayload) async throws -> PlantationReviewRequest {
+    public func dispatchCompletedReview(_ payload: ReviewDispatchPayload) async throws
+        -> PlantationReviewRequest
+    {
         let recordID = CKRecord.ID(recordName: payload.recordName)
 
         // Always fetch the latest server record first to preserve all iOS-owned fields & change tag;

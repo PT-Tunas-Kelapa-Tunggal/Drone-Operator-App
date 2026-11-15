@@ -6,4 +6,3 @@ import Foundation
 nonisolated public enum ContractInfo {
     public static let version: Int64 = 1
 }
-

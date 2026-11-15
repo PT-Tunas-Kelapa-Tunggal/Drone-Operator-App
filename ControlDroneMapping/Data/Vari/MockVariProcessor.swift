@@ -18,13 +18,23 @@ public final class MockVariProcessor: VariProcessing, @unchecked Sendable {
     public func process(
         photoURL: URL,
         submission: VariEngineSubmissionRequest? = nil,
-        outputFolder: URL? = nil
+        outputFolder: URL? = nil,
+        cancellation: VariProcessCancellation? = nil,
+        onStage: (@Sendable (VariProcessingStage) -> Void)? = nil
     ) async throws -> VariScanResult {
         if let shouldThrowError { throw shouldThrowError }
         if let mockResult { return mockResult }
 
-        try await Task.sleep(nanoseconds: 600_000_000)
+        onStage?(.convertingImage)
+        try cancellation?.check()
+        try await Task.sleep(nanoseconds: 300_000_000)
 
+        onStage?(.runningEngine)
+        try cancellation?.check()
+        try await Task.sleep(nanoseconds: 400_000_000)
+        try cancellation?.check()
+
+        onStage?(.parsingResults)
         let targetDir = outputFolder ?? FileManager.default.temporaryDirectory
         let mockURL = targetDir.appendingPathComponent("vari_result.json")
 
@@ -39,7 +49,9 @@ public final class MockVariProcessor: VariProcessing, @unchecked Sendable {
         return mockResult ?? Self.sampleResult(at: cachedURL)
     }
 
-    public static func sampleResult(at url: URL = URL(fileURLWithPath: "/tmp/vari_result.json")) -> VariScanResult {
+    public static func sampleResult(at url: URL = URL(fileURLWithPath: "/tmp/vari_result.json"))
+        -> VariScanResult
+    {
         let sampleZones: [VariZoneDetail] = (1...6).map { idx in
             let xOffset = Double((idx - 1) % 3) * 600.0
             let yOffset = Double((idx - 1) / 3) * 800.0

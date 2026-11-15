@@ -98,7 +98,11 @@ public struct VariTimingRequest: Codable, Sendable, Equatable {
     }
 
     /// Deprecated pre-CloudKit placeholder request builder; production callers must use `VariTimingBuilder.makeRequest(from:variResult:)`.
-    @available(*, deprecated, message: "Gunakan VariTimingBuilder.makeRequest(from:variResult:) agar koordinat, frekuensi, dan dosis pupuk berasal dari CloudKit dan VARI & HARA.")
+    @available(
+        *, deprecated,
+        message:
+            "Gunakan VariTimingBuilder.makeRequest(from:variResult:) agar koordinat, frekuensi, dan dosis pupuk berasal dari CloudKit dan VARI & HARA."
+    )
     public static func placeholderTemplate(coordinate: Coordinate? = nil) -> VariTimingRequest {
         // Fallback coordinates match the pre-seeded Batam cell `n1.000_e104.3750`
         // so offline/first-run validation succeeds without network dependency.

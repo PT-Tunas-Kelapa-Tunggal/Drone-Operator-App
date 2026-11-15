@@ -28,6 +28,7 @@ struct ReviewWorkspaceView: View {
     @ObservedObject var location: OperatorLocationViewModel
     @ObservedObject var planner: FlightPlannerViewModel
     @ObservedObject var processing: OrthomosaicViewModel
+    @ObservedObject var variAnalysis: VariAnalysisViewModel
     @ObservedObject private var engineManager = QGCEngineManager.shared
     let search: String
     let openPlanner: () -> Void
@@ -38,26 +39,12 @@ struct ReviewWorkspaceView: View {
     @State private var resultLayer = ReviewResultLayer.orthomosaic
     @State private var importedProjectID: UUID?
     @State private var mapFocus = UUID()
-    private let variProcessor: any VariProcessing
-    private let timingProcessor: any VariTimingProcessing
-    @State private var variResult: VariScanResult?
-    @State private var isProcessingVari = false
-    @State private var variError: String?
-    @State private var timingResult: VariTimingExecutionResult?
-    @State private var isProcessingTiming = false
-    @State private var timingError: String?
-    @State private var timingTask: Task<Void, Never>?
-    @State private var selectedTimingNPK: ContractFertilizerType?
-    @State private var timingFertilizerIDLookup: [String: ContractFertilizerType] = [:]
     @State private var showSavedConfirmation = false
-    @State private var dispatchSuccessAt: Date?
 
     init(
         model: ControlViewModel, link: LocalLink, farms: FarmAreaViewModel,
         location: OperatorLocationViewModel, planner: FlightPlannerViewModel,
-        processing: OrthomosaicViewModel,
-        variProcessor: (any VariProcessing)? = nil,
-        timingProcessor: (any VariTimingProcessing)? = nil,
+        processing: OrthomosaicViewModel, variAnalysis: VariAnalysisViewModel,
         search: String,
         openPlanner: @escaping () -> Void, createMission: @escaping () -> Void,
         export: @escaping (MissionRecord) -> Void, tab: ReviewTab? = nil
@@ -68,8 +55,7 @@ struct ReviewWorkspaceView: View {
         self.location = location
         self.planner = planner
         self.processing = processing
-        self.variProcessor = variProcessor ?? ControlDependencies.variProcessor(demo: model.isDemo)
-        self.timingProcessor = timingProcessor ?? ControlDependencies.timingProcessor(demo: model.isDemo)
+        self.variAnalysis = variAnalysis
         self.search = search
         self.openPlanner = openPlanner
         self.createMission = createMission
@@ -78,19 +64,39 @@ struct ReviewWorkspaceView: View {
         _tab = State(initialValue: tab ?? .mission)
     }
 
+    private var variResult: VariScanResult? {
+        guard isOrthomosaicReady else { return nil }
+        return variAnalysis.result(for: output?.folder)
+    }
+    private var isProcessingVari: Bool { variAnalysis.isRunningVari(in: output?.folder) }
+    private var variError: String? { variAnalysis.error(for: output?.folder) }
+    private var timingResult: VariTimingExecutionResult? {
+        variAnalysis.timingResult(for: timingStorageKey)
+    }
+    private var isProcessingTiming: Bool {
+        variAnalysis.isTimingBusy(storageKey: timingStorageKey)
+    }
+    private var timingError: String? {
+        variAnalysis.timingError(for: timingStorageKey)
+    }
+    private var selectedTimingNPK: ContractFertilizerType? {
+        variAnalysis.selectedNPK(for: output?.folder)
+    }
+    private var timingFertilizerIDLookup: [String: ContractFertilizerType] {
+        variAnalysis.timingFertilizerLookup(for: timingStorageKey)
+    }
+    private var dispatchSuccessAt: Date? {
+        variAnalysis.dispatchSuccessAt(for: output?.folder)
+    }
+
     private var isOrthomosaicReady: Bool {
         guard let output else { return false }
         return FileManager.default.fileExists(atPath: output.image.path)
     }
 
     private func checkForCachedVariResult() {
-        guard let output, isOrthomosaicReady else {
-            variResult = nil
-            return
-        }
-        if variResult == nil {
-            variResult = try? variProcessor.loadCachedResult(from: output.folder)
-        }
+        guard isOrthomosaicReady else { return }
+        variAnalysis.loadCachedVariIfNeeded(for: output?.folder)
     }
 
     private var activeReviewRequest: PlantationReviewRequest? {
@@ -117,6 +123,8 @@ struct ReviewWorkspaceView: View {
         activeReviewRequest != nil
             && resolvedOrthomosaicJPEGURL != nil
             && variResult != nil
+            && !isProcessingVari
+            && !isProcessingTiming
             && isTimingReadyForDispatch
             && !model.isDispatchingReview
             && !processing.busy
@@ -186,27 +194,11 @@ struct ReviewWorkspaceView: View {
     }
 
     private func checkForCachedTimingResult() {
-        if timingResult == nil {
-            let cached = timingProcessor.loadCachedResult(in: timingOutputFolder)
-            timingResult = cached
-            syncSelectionFromCachedTiming(cached)
-        }
-    }
-
-    private func syncSelectionFromCachedTiming(_ execution: VariTimingExecutionResult?) {
-        guard let execution else { return }
-        var resolved: [String: ContractFertilizerType] = [:]
-        for item in execution.request.fertilizers {
-            if let id = item.id,
-                let contract = VariTimingBuilder.resolveContractType(fromID: id)
-            {
-                resolved[id] = contract
-                if selectedTimingNPK == nil, contract != .dolomite, contract != .urea {
-                    selectedTimingNPK = contract
-                }
-            }
-        }
-        timingFertilizerIDLookup = resolved
+        variAnalysis.loadCachedTimingIfNeeded(
+            storageKey: timingStorageKey,
+            outputFolder: timingOutputFolder,
+            resultFolder: output?.folder
+        )
     }
 
     private var mission: SavedMission? {
@@ -541,8 +533,11 @@ struct ReviewWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(mission.plan.name).font(.system(size: 28, weight: .semibold))
-                        Text(activeReviewRequest?.garden.locationName ?? mission.area?.name ?? "Lokasi kebun belum diatur")
-                            .font(.title3).foregroundStyle(.secondary)
+                        Text(
+                            activeReviewRequest?.garden.locationName ?? mission.area?.name
+                                ?? "Lokasi kebun belum diatur"
+                        )
+                        .font(.title3).foregroundStyle(.secondary)
                     }
 
                     if let request = activeReviewRequest {
@@ -717,7 +712,7 @@ struct ReviewWorkspaceView: View {
     private func isResultLayerReady(_ layer: ReviewResultLayer) -> Bool {
         switch layer {
         case .orthomosaic: return resolvedOrthomosaicJPEGURL != nil
-        case .variAndHara: return variResult != nil
+        case .variAndHara: return variResult != nil || isProcessingVari
         case .fertilizationTiming: return isTimingReadyForDispatch
         }
     }
@@ -777,7 +772,7 @@ struct ReviewWorkspaceView: View {
                         Button("Simpan TIFF") {
                             OrthomosaicFilePanels.save(output: output, model: processing)
                         }.disabled(processing.busy)
-                    } else if resultLayer == .variAndHara, let result = variResult {
+                    } else if resultLayer == .variAndHara, !isProcessingVari, let result = variResult {
                         Button {
                             VariFilePanels.saveJSON(
                                 from: result.resultJSONURL,
@@ -854,20 +849,21 @@ struct ReviewWorkspaceView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .task(id: variAnalysis.navigationRequest?.id) {
+            guard let request = variAnalysis.navigationRequest else { return }
+            await Task.yield()
+            if request.missionID == nil, request.recordID == nil, let projectID = request.projectID {
+                importedProjectID = projectID
+            }
+            tab = .results
+            resultLayer = .variAndHara
+            variAnalysis.clearNavigationRequest(request.id)
+        }
         .task(id: output?.folder) {
-            variResult = nil
-            variError = nil
-            selectedTimingNPK = nil
             checkForCachedVariResult()
+            syncVisibleVariFolder()
         }
         .task(id: timingStorageKey) {
-            timingTask?.cancel()
-            timingTask = nil
-            isProcessingTiming = false
-            timingError = nil
-            timingResult = nil
-            timingFertilizerIDLookup = [:]
-            dispatchSuccessAt = nil
             checkForCachedTimingResult()
         }
         .onChange(of: resultLayer) { _, newLayer in
@@ -876,10 +872,21 @@ struct ReviewWorkspaceView: View {
             } else if newLayer == .fertilizationTiming {
                 checkForCachedTimingResult()
             }
+            syncVisibleVariFolder()
+        }
+        .onChange(of: tab) { _, _ in
+            syncVisibleVariFolder()
         }
         .onDisappear {
-            timingTask?.cancel()
-            timingTask = nil
+            variAnalysis.setVisibleVariFolder(nil)
+        }
+    }
+
+    private func syncVisibleVariFolder() {
+        if tab == .results && resultLayer == .variAndHara {
+            variAnalysis.setVisibleVariFolder(output?.folder)
+        } else {
+            variAnalysis.setVisibleVariFolder(nil)
         }
     }
 
@@ -900,26 +907,57 @@ struct ReviewWorkspaceView: View {
                 .buttonStyle(.borderedProminent)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if isProcessingVari {
-            VStack(spacing: 16) {
-                ProgressView().controlSize(.large)
-                Text("Menjalankan Analisis VARI & HARA...").font(.headline)
-                Text(
-                    "Mendeteksi tajuk pohon kelapa sawit, menghitung indeks vegetasi VARI, serta rekomendasi pupuk hara."
-                )
-                .font(.caption).foregroundStyle(.secondary)
-            }
+        } else if isProcessingVari, let activeRun = variAnalysis.activeRun {
+            VariActiveWorkspaceCard(
+                activeRun: activeRun,
+                onOpenLog: {
+                    if !NSWorkspace.shared.open(activeRun.logURL) {
+                        NSWorkspace.shared.activateFileViewerSelecting([activeRun.logURL])
+                    }
+                },
+                onCancel: {
+                    variAnalysis.cancelVari()
+                }
+            )
+            .padding(32)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let result = variResult {
-            VariReportWorkspaceView(
-                result: result,
-                initialSection: .vari,
-                selectedNPKForTiming: selectedTimingNPK,
-                onSelectNPKForTiming: { chosenNPK in
-                    selectedTimingNPK = chosenNPK
-                },
-                onRerun: output.map { out in { runVariScan(on: out.image, outputFolder: out.folder) } }
-            )
+            VStack(spacing: 0) {
+                if let activeRun = variAnalysis.activeRun {
+                    HStack(spacing: 10) {
+                        Image(systemName: "hourglass")
+                            .foregroundStyle(KropsStyle.accent)
+                        Text(
+                            "Analisis VARI & HARA sedang berjalan untuk \"\(activeRun.missionName)\". Pemrosesan ulang dinonaktifkan sementara."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        Button("Lihat") {
+                            variAnalysis.requestNavigationToActiveRun()
+                        }
+                        .kropsToolbarAction(size: .regular)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(KropsStyle.surface)
+                    .overlay(alignment: .bottom) {
+                        Rectangle().fill(KropsStyle.border).frame(height: 1)
+                    }
+                }
+
+                VariReportWorkspaceView(
+                    result: result,
+                    initialSection: .vari,
+                    selectedNPKForTiming: selectedTimingNPK,
+                    onSelectNPKForTiming: { chosenNPK in
+                        variAnalysis.setSelectedNPK(chosenNPK, for: output?.folder)
+                    },
+                    onRerun: variAnalysis.busy
+                        ? nil
+                        : output.map { out in { runVariScan(on: out.image, outputFolder: out.folder) } }
+                )
+            }
         } else {
             ContentUnavailableView {
                 Label("Analisis VARI & HARA", systemImage: "leaf.fill")
@@ -927,8 +965,15 @@ struct ReviewWorkspaceView: View {
                 if let variError {
                     Text("Error: \(variError)").foregroundStyle(.red)
                 } else if activeReviewRequest == nil {
-                    Text("Menunggu sinkronisasi data permintaan kebun dari CloudKit agar profil agronomi dan anggaran petani tersedia.")
-                        .foregroundStyle(.orange)
+                    Text(
+                        "Menunggu sinkronisasi data permintaan kebun dari CloudKit agar profil agronomi dan anggaran petani tersedia."
+                    )
+                    .foregroundStyle(.orange)
+                } else if let activeRun = variAnalysis.activeRun {
+                    Text(
+                        "Analisis VARI & HARA sedang berjalan pada misi \"\(activeRun.missionName)\" (\(activeRun.stage.title.lowercased())). Tunggu selesai atau hentikan dulu untuk memindai misi ini."
+                    )
+                    .foregroundStyle(.secondary)
                 } else if let output {
                     Text(
                         "Orthomosaic siap diolah (\(output.width) × \(output.height) px). Mulai proses deteksi tajuk pohon sawit, indeks vegetasi VARI, dan kalkulasi rekomendasi pupuk hara."
@@ -938,11 +983,20 @@ struct ReviewWorkspaceView: View {
                 }
             } actions: {
                 if let output {
-                    Button("Jalankan Analisis VARI & HARA") {
-                        runVariScan(on: output.image, outputFolder: output.folder)
+                    HStack(spacing: 10) {
+                        Button("Jalankan Analisis VARI & HARA") {
+                            runVariScan(on: output.image, outputFolder: output.folder)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(activeReviewRequest == nil || variAnalysis.busy)
+
+                        if variAnalysis.activeRun != nil {
+                            Button("Lihat proses berjalan") {
+                                variAnalysis.requestNavigationToActiveRun()
+                            }
+                            .buttonStyle(.bordered)
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(activeReviewRequest == nil || isProcessingVari)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -957,7 +1011,7 @@ struct ReviewWorkspaceView: View {
             errorMessage: timingError,
             context: timingContextSummary,
             onRun: runTimingAnalysis,
-            onDismissError: { timingError = nil }
+            onDismissError: { variAnalysis.clearTimingError(for: timingStorageKey) }
         )
     }
 
@@ -973,89 +1027,55 @@ struct ReviewWorkspaceView: View {
             preferredNPK: selectedTimingNPK
         )
         if succeeded {
-            dispatchSuccessAt = Date()
+            variAnalysis.markDispatchSucceeded(for: output.folder)
         }
     }
 
     private func runTimingAnalysis() {
         guard !isProcessingTiming else { return }
         guard let request = activeReviewRequest else {
-            timingError = "Data permintaan kebun dari CloudKit belum ditemukan untuk misi ini."
+            variAnalysis.setTimingError(
+                "Data permintaan kebun dari CloudKit belum ditemukan untuk misi ini.",
+                storageKey: timingStorageKey
+            )
             return
         }
         guard let variResult else {
-            timingError =
-                "Analisis VARI & HARA harus selesai terlebih dahulu agar dosis pupuk komersial tersedia."
+            variAnalysis.setTimingError(
+                "Analisis VARI & HARA harus selesai terlebih dahulu agar dosis pupuk komersial tersedia.",
+                storageKey: timingStorageKey
+            )
             return
         }
-
-        isProcessingTiming = true
-        timingError = nil
-        let targetFolder = timingOutputFolder
-        let chosenNPK = selectedTimingNPK
-        let options = VariTimingWeatherSettings.currentRunOptions()
-
-        timingTask?.cancel()
-        timingTask = Task {
-            do {
-                let buildOutput = try VariTimingBuilder.makeRequest(
-                    from: request,
-                    variResult: variResult,
-                    preferredNPK: chosenNPK
-                )
-                let result = try await timingProcessor.runTiming(
-                    request: buildOutput.request,
-                    options: options,
-                    outputFolder: targetFolder
-                )
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    self.timingFertilizerIDLookup = buildOutput.fertilizerIDLookup
-                    self.selectedTimingNPK = buildOutput.selectedNPKType
-                    self.timingResult = result
-                    self.isProcessingTiming = false
-                }
-            } catch is CancellationError {
-                await MainActor.run {
-                    self.isProcessingTiming = false
-                }
-            } catch {
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    self.timingError = error.localizedDescription
-                    self.isProcessingTiming = false
-                }
-            }
-        }
+        variAnalysis.startTiming(
+            storageKey: timingStorageKey,
+            outputFolder: timingOutputFolder,
+            resultFolder: output?.folder,
+            request: request,
+            variResult: variResult,
+            preferredNPK: selectedTimingNPK,
+            options: VariTimingWeatherSettings.currentRunOptions()
+        )
     }
 
     private func runVariScan(on imageURL: URL, outputFolder: URL) {
-        guard !isProcessingVari else { return }
+        guard !variAnalysis.busy else { return }
         guard let request = activeReviewRequest else {
-            variError = "Data permintaan kebun dari CloudKit belum ditemukan untuk misi ini."
+            variAnalysis.setError(
+                "Data permintaan kebun dari CloudKit belum ditemukan untuk misi ini.",
+                for: outputFolder
+            )
             return
         }
-        isProcessingVari = true
-        variError = nil
-        Task {
-            do {
-                let submission = try VariSubmissionBuilder.makeSubmission(from: request)
-                let result = try await variProcessor.process(
-                    photoURL: imageURL,
-                    submission: submission,
-                    outputFolder: outputFolder
-                )
-                await MainActor.run {
-                    self.variResult = result
-                    self.isProcessingVari = false
-                }
-            } catch {
-                await MainActor.run {
-                    self.variError = error.localizedDescription
-                    self.isProcessingVari = false
-                }
-            }
-        }
+        variAnalysis.startVari(
+            missionID: mission?.id,
+            recordID: record?.id,
+            projectID: project?.id,
+            missionName: title,
+            imageURL: imageURL,
+            outputFolder: outputFolder,
+            request: request
+        )
     }
 
     private func resolveImportedProject() {
@@ -1112,8 +1132,7 @@ private struct ReviewWorkspacePreview: View {
             planner: dependencies.planner,
             processing: ControlDependencies.orthomosaicViewModel(
                 store: dependencies.link.store, demo: true),
-            variProcessor: dependencies.variProcessor,
-            timingProcessor: dependencies.timingProcessor,
+            variAnalysis: dependencies.variAnalysis,
             search: "", openPlanner: {}, createMission: {}, export: { _ in }, tab: tab
         )
         .frame(width: 1280, height: 720)
@@ -1218,9 +1237,11 @@ private struct CloudKitFarmerOverviewCard: View {
         VStack(alignment: .leading, spacing: 18) {
             if request.hasFieldErrors {
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("Peringatan Sinkronisasi Field CloudKit", systemImage: "exclamationmark.triangle.fill")
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(.orange)
+                    Label(
+                        "Peringatan Sinkronisasi Field CloudKit", systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.orange)
                     ForEach(request.fieldErrors.sorted(by: { $0.key < $1.key }), id: \.key) { key, message in
                         Text("• \(key): \(message)")
                             .font(.caption)
@@ -1235,7 +1256,9 @@ private struct CloudKitFarmerOverviewCard: View {
 
             sectionCard(title: "Status & Jadwal Peninjauan") {
                 row("Status CloudKit", request.status.title)
-                row("Dikirim petani", request.timeline.submittedAt.formatted(date: .abbreviated, time: .shortened))
+                row(
+                    "Dikirim petani",
+                    request.timeline.submittedAt.formatted(date: .abbreviated, time: .shortened))
                 if let visit = request.timeline.plannedOperatorVisitDate {
                     row("Rencana kunjungan", visit.formatted(date: .abbreviated, time: .shortened))
                 }
@@ -1249,8 +1272,10 @@ private struct CloudKitFarmerOverviewCard: View {
                         .foregroundStyle(.secondary)
                     ForEach(request.progressionEvents) { event in
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(event.title) · \(event.dateTime.formatted(date: .abbreviated, time: .shortened))")
-                                .font(.caption.weight(.medium))
+                            Text(
+                                "\(event.title) · \(event.dateTime.formatted(date: .abbreviated, time: .shortened))"
+                            )
+                            .font(.caption.weight(.medium))
                             Text(event.desc)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
@@ -1284,7 +1309,8 @@ private struct CloudKitFarmerOverviewCard: View {
                 if let harvest = request.agronomy.harvestRecord {
                     row(
                         "Panen terakhir",
-                        String(format: "%dx/bulan · %.0f kg", harvest.frequencyPerMonth, harvest.latestWeightKg)
+                        String(
+                            format: "%dx/bulan · %.0f kg", harvest.frequencyPerMonth, harvest.latestWeightKg)
                     )
                 }
             }
@@ -1305,7 +1331,8 @@ private struct CloudKitFarmerOverviewCard: View {
                                     .font(.caption.monospacedDigit().weight(.medium))
                             }
                             if !item.composition.isEmpty {
-                                let ratio = item.composition.map { "\($0.name): \(Int($0.value))%" }.joined(separator: " · ")
+                                let ratio = item.composition.map { "\($0.name): \(Int($0.value))%" }.joined(
+                                    separator: " · ")
                                 Text(ratio)
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)

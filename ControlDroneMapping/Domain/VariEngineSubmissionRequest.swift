@@ -112,7 +112,11 @@ public struct VariEngineSubmissionRequest: Codable, Sendable, Equatable {
     }
 
     /// Deprecated test-only default request generator; production callers must use `VariSubmissionBuilder.makeSubmission(from:)`.
-    @available(*, deprecated, message: "Gunakan VariSubmissionBuilder.makeSubmission(from:) agar seluruh input agronomi & anggaran berasal dari CloudKit.")
+    @available(
+        *, deprecated,
+        message:
+            "Gunakan VariSubmissionBuilder.makeSubmission(from:) agar seluruh input agronomi & anggaran berasal dari CloudKit."
+    )
     public static func defaultSample(
         farmName: String = "Kebun Kelapa Sawit",
         areaHa: Double = 1.0,
@@ -145,7 +149,7 @@ public struct VariEngineSubmissionRequest: Codable, Sendable, Equatable {
                         id: UUID().uuidString,
                         dosePerTree: 0.5,
                         composition: NPKCompositionInput(N: 15, P: 15, K: 15, Mg: 0)
-                    )
+                    ),
                 ]
             ),
             harvest: HarvestYieldInput(

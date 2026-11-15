@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -105,9 +106,11 @@ public struct VariReportWorkspaceView: View {
                     Text("Laporan Analisis VARI & Nutrisi Pohon")
                         .font(.title2.weight(.bold))
                 }
-                Text("Citra: \(result.resultJSONURL.deletingLastPathComponent().lastPathComponent) · Diproses: \(result.createdAt.formatted(date: .abbreviated, time: .shortened))")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Citra: \(result.resultJSONURL.deletingLastPathComponent().lastPathComponent) · Diproses: \(result.createdAt.formatted(date: .abbreviated, time: .shortened))"
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
             }
             Spacer()
             HStack(spacing: 10) {
@@ -176,7 +179,9 @@ public struct VariReportWorkspaceView: View {
             )
             metricCard(
                 title: "Estimasi Biaya Pupuk",
-                value: result.budget?.candidates.first(where: { $0.isClosest }).map { formatRupiah($0.combinedCostRp) }
+                value: result.budget?.candidates.first(where: { $0.isClosest }).map {
+                    formatRupiah($0.combinedCostRp)
+                }
                     ?? (result.budget?.targetBudgetRp.map { formatRupiah($0) } ?? "Rp 0"),
                 unit: "rekap tahunan",
                 systemImage: "banknote.fill",
@@ -185,7 +190,9 @@ public struct VariReportWorkspaceView: View {
         }
     }
 
-    private func metricCard(title: String, value: String, unit: String, systemImage: String, color: Color) -> some View {
+    private func metricCard(title: String, value: String, unit: String, systemImage: String, color: Color)
+        -> some View
+    {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label(title, systemImage: systemImage)
@@ -223,9 +230,11 @@ public struct VariReportWorkspaceView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("1. Visual Citra & Pemetaan Kanopi Sawit")
                     .font(.headline)
-                Text("Pilih lapisan visualisasi untuk meninjau zonasi, nomor plot, kuartil tajuk, atau alur deteksi.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Pilih lapisan visualisasi untuk meninjau zonasi, nomor plot, kuartil tajuk, atau alur deteksi."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             // Layer Selector Bar — Dedicated full-width segmented control without horizontal squeeze
@@ -269,9 +278,11 @@ public struct VariReportWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("2. Statistik Indeks Vegetasi VARI per Zona")
                         .font(.headline)
-                    Text("Pengelompokan tajuk sawit per zona untuk mendeteksi variabilitas spasial dan zona acuan (reference zone).")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "Pengelompokan tajuk sawit per zona untuk mendeteksi variabilitas spasial dan zona acuan (reference zone)."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
                 Spacer()
                 if let refMean = result.summary?.referenceZoneMeanVari {
@@ -279,8 +290,11 @@ public struct VariReportWorkspaceView: View {
                         Text("Zona Acuan:")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
-                        Text(result.summary?.referenceZoneIDs.map { "Z\($0)" }.joined(separator: ", ") ?? "Semua")
-                            .font(.caption.weight(.bold))
+                        Text(
+                            result.summary?.referenceZoneIDs.map { "Z\($0)" }.joined(separator: ", ")
+                                ?? "Semua"
+                        )
+                        .font(.caption.weight(.bold))
                         Text("(Rerata VARI: \(String(format: "%.3f", refMean)))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -361,7 +375,8 @@ public struct VariReportWorkspaceView: View {
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(
-                                    (zone.boostMode == "blanket_p25" ? Color.orange : Color.green).opacity(0.14),
+                                    (zone.boostMode == "blanket_p25" ? Color.orange : Color.green).opacity(
+                                        0.14),
                                     in: Capsule()
                                 )
                                 .frame(width: 110, alignment: .center)
@@ -412,9 +427,11 @@ public struct VariReportWorkspaceView: View {
                         Text("3. Rekomendasi Alokasi Pupuk & Dosis HARA")
                             .font(.headline)
                     }
-                    Text("Perhitungan suplemen unsur hara Mg dan N berbasis variasi defisit VARI, dikonversi ke massa pupuk Dolomite & Urea.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "Perhitungan suplemen unsur hara Mg dan N berbasis variasi defisit VARI, dikonversi ke massa pupuk Dolomite & Urea."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
                 Spacer()
                 if let csvURL = result.assets.fertilizerMassCSVURL {
@@ -516,18 +533,21 @@ public struct VariReportWorkspaceView: View {
                         Text("4. Pencocokan Anggaran & Formulasi NPK Komersial")
                             .font(.headline)
                     }
-                    Text("Perbandingan opsi formula pupuk NPK/NPKMg komersial seluruh kebun dipadukan dengan total Mg (Dolomite) & Urea per zona.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "Perbandingan opsi formula pupuk NPK/NPKMg komersial seluruh kebun dipadukan dengan total Mg (Dolomite) & Urea per zona."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                     if let userBlend = result.userBlend {
                         let ratioText =
                             userBlend.ratio.map {
                                 "(\(Int($0.n.rounded()))-\(Int($0.p2o5.rounded()))-\(Int($0.k2o.rounded()))-\(Int($0.mgo.rounded())))"
                             } ?? ""
                         let kgText = String(format: "%.1f kg/thn", userBlend.npkProductKgFarmPerYear)
-                        let doseText = userBlend.dosePerTreeKgPerApplication.map {
-                            String(format: " · %.2f kg/pohon", $0)
-                        } ?? ""
+                        let doseText =
+                            userBlend.dosePerTreeKgPerApplication.map {
+                                String(format: " · %.2f kg/pohon", $0)
+                            } ?? ""
                         Text("Baseline pupuk petani: NPK \(ratioText) · \(kgText)\(doseText)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -594,9 +614,11 @@ public struct VariReportWorkspaceView: View {
                                 Text("\(candidate.npkFullBags) karung")
                                     .font(.callout.monospacedDigit())
                                 if let annualKg = candidate.recommendedAnnualKgFarm, annualKg > 0 {
-                                    Text("\(String(format: "%.1f", VariDoseRounding.roundToHalfKg(annualKg))) kg/thn")
-                                        .font(.caption2.monospacedDigit())
-                                        .foregroundStyle(.secondary)
+                                    Text(
+                                        "\(String(format: "%.1f", VariDoseRounding.roundToHalfKg(annualKg))) kg/thn"
+                                    )
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(.secondary)
                                 }
                             }
                             .frame(width: 110, alignment: .trailing)
@@ -611,7 +633,9 @@ public struct VariReportWorkspaceView: View {
                                 .frame(width: 115, alignment: .trailing)
 
                             Text(formatRupiah(candidate.combinedCostRp))
-                                .font(.callout.monospacedDigit().weight(candidate.isClosest ? .bold : .medium))
+                                .font(
+                                    .callout.monospacedDigit().weight(candidate.isClosest ? .bold : .medium)
+                                )
                                 .frame(width: 125, alignment: .trailing)
 
                             Text(formatRupiah(candidate.budgetTargetRp))
@@ -621,7 +645,9 @@ public struct VariReportWorkspaceView: View {
 
                             Text(formatBudgetDifference(candidate.budgetDifferenceRp))
                                 .font(.caption.monospacedDigit())
-                                .foregroundStyle(candidate.budgetDifferenceRp <= 0 ? Color.green : Color.primary)
+                                .foregroundStyle(
+                                    candidate.budgetDifferenceRp <= 0 ? Color.green : Color.primary
+                                )
                                 .frame(width: 155, alignment: .trailing)
 
                             VStack(spacing: 4) {
@@ -678,12 +704,8 @@ public struct VariReportWorkspaceView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if let plotURL = result.assets.variDistributionPlotURL,
-                   let plotImg = NSImage(contentsOf: plotURL) {
-                    Image(nsImage: plotImg)
-                        .resizable()
-                        .scaledToFit()
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                if let plotURL = result.assets.variDistributionPlotURL {
+                    VariAsyncReportImage(url: plotURL)
                 } else {
                     RoundedRectangle(cornerRadius: 10)
                         .fill(Color.secondary.opacity(0.08))
@@ -708,12 +730,8 @@ public struct VariReportWorkspaceView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if let montageURL = result.assets.heatmapMontageURL,
-                   let montageImg = NSImage(contentsOf: montageURL) {
-                    Image(nsImage: montageImg)
-                        .resizable()
-                        .scaledToFit()
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                if let montageURL = result.assets.heatmapMontageURL {
+                    VariAsyncReportImage(url: montageURL)
                 } else {
                     RoundedRectangle(cornerRadius: 10)
                         .fill(Color.secondary.opacity(0.08))
@@ -828,9 +846,11 @@ private struct ZoneCropDetailSheet: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Detail Tajuk Citra — Zona Z\(zone.zoneID)")
                         .font(.title3.weight(.bold))
-                    Text("\(zone.treeCount) pohon terdeteksi · Rerata VARI: \(zone.meanVari.map { String(format: "%.3f", $0) } ?? "N/A")")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "\(zone.treeCount) pohon terdeteksi · Rerata VARI: \(zone.meanVari.map { String(format: "%.3f", $0) } ?? "N/A")"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("Tutup") { dismiss() }
@@ -842,11 +862,8 @@ private struct ZoneCropDetailSheet: View {
                 // Base Crop
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Citra RGB Asli").font(.headline)
-                    if let url = zone.baseImageCropURL, let img = NSImage(contentsOf: url) {
-                        Image(nsImage: img)
-                            .resizable()
-                            .scaledToFit()
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    if let url = zone.baseImageCropURL {
+                        VariAsyncReportImage(url: url)
                     } else {
                         placeholder("Crop citra asli tidak ditemukan")
                     }
@@ -856,11 +873,8 @@ private struct ZoneCropDetailSheet: View {
                 // ExG Crop
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Segmentasi ExG & Kanopi").font(.headline)
-                    if let url = zone.exgImageCropURL, let img = NSImage(contentsOf: url) {
-                        Image(nsImage: img)
-                            .resizable()
-                            .scaledToFit()
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    if let url = zone.exgImageCropURL {
+                        VariAsyncReportImage(url: url)
                     } else {
                         placeholder("Crop ExG tidak ditemukan")
                     }
@@ -1016,7 +1030,10 @@ private struct InteractiveImageViewport: View {
                         .buttonStyle(.plain)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 3)
-                        .background(zoomScale == 1.0 ? Color.white.opacity(0.2) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                        .background(
+                            zoomScale == 1.0 ? Color.white.opacity(0.2) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 6)
+                        )
                         .help("Sesuaikan gambar pas ke layar")
 
                         Divider().frame(height: 14)
@@ -1062,7 +1079,8 @@ private struct InteractiveImageViewport: View {
                         if let imageURL {
                             Button {
                                 let ext = imageURL.pathExtension.isEmpty ? "jpg" : imageURL.pathExtension
-                                let suggested = "vari_\(layer.id.lowercased().replacingOccurrences(of: " ", with: "_")).\(ext)"
+                                let suggested =
+                                    "vari_\(layer.id.lowercased().replacingOccurrences(of: " ", with: "_")).\(ext)"
                                 VariFilePanels.saveFile(
                                     from: imageURL,
                                     suggestedName: suggested,
@@ -1093,19 +1111,101 @@ private struct InteractiveImageViewport: View {
         .task(id: imageURL) {
             guard let imageURL else {
                 image = nil
+                isLoading = false
                 return
             }
+            // Drop any previously retained full-resolution image before decoding the next layer
+            // so two giant (>20k x 20k) bitmaps do not overlap in memory simultaneously.
+            image = nil
             isLoading = true
             let loaded = await Task.detached(priority: .userInitiated) {
-                NSImage(contentsOf: imageURL)
+                decodeFullResolutionNSImage(at: imageURL)
             }.value
-            await MainActor.run {
-                self.image = loaded
-                self.isLoading = false
-                self.zoomScale = 1.0
-                self.panOffset = .zero
-                self.dragTranslation = .zero
+            guard !Task.isCancelled else { return }
+            self.image = loaded
+            self.isLoading = false
+            self.zoomScale = 1.0
+            self.panOffset = .zero
+            self.dragTranslation = .zero
+        }
+        .onDisappear {
+            image = nil
+        }
+    }
+}
+
+/// Decodes a raster image at its full pixel dimensions off the main actor
+/// so ImageIO decompresses pixels eagerly before AppKit draws the layer.
+private func decodeFullResolutionNSImage(at url: URL) -> NSImage? {
+    let sourceOptions: [CFString: Any] = [
+        kCGImageSourceShouldCache: false
+    ]
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else {
+        return nil
+    }
+    let decodeOptions: [CFString: Any] = [
+        kCGImageSourceShouldCache: true,
+        kCGImageSourceShouldCacheImmediately: true,
+    ]
+    if let cgImage = CGImageSourceCreateImageAtIndex(source, 0, decodeOptions as CFDictionary) {
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+    }
+    return NSImage(contentsOf: url)
+}
+
+/// Loads secondary report plots, montages, and zone crop previews off `@MainActor`
+/// without downsampling away diagnostic detail.
+private struct VariAsyncReportImage: View {
+    let url: URL?
+    var cornerRadius: CGFloat = 10
+    var maxHeight: CGFloat?
+
+    @State private var image: NSImage?
+    @State private var isLoading = false
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: maxHeight)
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            } else if isLoading {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(KropsStyle.canvas)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: min(maxHeight ?? 240, 240))
+                    .overlay { ProgressView().controlSize(.small) }
+            } else if url != nil {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(KropsStyle.canvas)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 160)
+                    .overlay {
+                        Label("Citra tidak dapat dimuat", systemImage: "photo.badge.exclamationmark")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
             }
+        }
+        .task(id: url) {
+            guard let url else {
+                image = nil
+                isLoading = false
+                return
+            }
+            image = nil
+            isLoading = true
+            let decoded = await Task.detached(priority: .userInitiated) {
+                decodeFullResolutionNSImage(at: url)
+            }.value
+            guard !Task.isCancelled else { return }
+            image = decoded
+            isLoading = false
+        }
+        .onDisappear {
+            image = nil
         }
     }
 }

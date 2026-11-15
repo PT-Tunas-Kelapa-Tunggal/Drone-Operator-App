@@ -20,11 +20,11 @@ extension CKRecord {
             return .success(num.doubleValue as! T)
         }
 
-        return .failure(.typeMismatch(
-            key: key,
-            expected: String(describing: T.self),
-            actual: String(describing: Swift.type(of: rawValue))
-        ))
+        return .failure(
+            .typeMismatch(
+                key: key,
+                expected: String(describing: T.self),
+                actual: String(describing: Swift.type(of: rawValue))
+            ))
     }
 }
-

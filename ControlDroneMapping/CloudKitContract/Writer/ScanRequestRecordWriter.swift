@@ -91,7 +91,8 @@ nonisolated public struct ScanRequestRecordWriter: Sendable {
             record[RecordKeys.iOSOwned.soilType] = soilType.rawValue as CKRecordValue
         }
         if let fertilizingFrequencyPerYear {
-            record[RecordKeys.iOSOwned.fertilizingFrequencyPerYear] = fertilizingFrequencyPerYear as CKRecordValue
+            record[RecordKeys.iOSOwned.fertilizingFrequencyPerYear] =
+                fertilizingFrequencyPerYear as CKRecordValue
         }
         if let fertilizersCompositions {
             let jsonString = try JSONEnvelope.encodeToString(fertilizersCompositions)
@@ -137,7 +138,8 @@ nonisolated public struct ScanRequestRecordWriter: Sendable {
         if let existing {
             record = existing
         } else if let recordName {
-            record = CKRecord(recordType: RecordKeys.recordType, recordID: CKRecord.ID(recordName: recordName))
+            record = CKRecord(
+                recordType: RecordKeys.recordType, recordID: CKRecord.ID(recordName: recordName))
         } else {
             record = CKRecord(recordType: RecordKeys.recordType)
         }
@@ -192,4 +194,3 @@ nonisolated public struct ScanRequestRecordWriter: Sendable {
         }
     }
 }
-

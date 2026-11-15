@@ -27,4 +27,3 @@ extension VariProductRow {
         VariDoseRounding.roundToHalfKg(combinedKg)
     }
 }
-

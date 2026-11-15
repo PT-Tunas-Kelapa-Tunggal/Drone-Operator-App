@@ -139,4 +139,3 @@ nonisolated public struct ScanRequestRecord: Sendable {
         decodeEnvelope(RecordKeys.MacOSOwned.fertilizationScheduling)
     }
 }
-

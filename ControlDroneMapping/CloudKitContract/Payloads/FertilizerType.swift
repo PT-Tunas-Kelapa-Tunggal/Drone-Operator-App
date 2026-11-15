@@ -15,7 +15,9 @@ nonisolated public enum ContractFertilizerTypeError: LocalizedError, Equatable, 
 
 /// Known fertilizer classifications across the plantation contract.
 /// Unrecognized values are rejected with an error rather than stored as arbitrary strings.
-nonisolated public enum ContractFertilizerType: RawRepresentable, CaseIterable, Equatable, Hashable, Codable, Sendable {
+nonisolated public enum ContractFertilizerType: RawRepresentable, CaseIterable, Equatable, Hashable, Codable,
+    Sendable
+{
     case npk
     case npk15_15_15
     case npk12_6_22_3

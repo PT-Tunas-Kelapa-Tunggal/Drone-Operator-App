@@ -220,10 +220,14 @@ public struct ConnectedDrone: Identifiable, Codable, Equatable {
     /// Unique key representing the most recent status/alert entry (including QGC timestamp when present)
     /// so the UI can detect newly arrived messages and auto-dismiss them after a timeout.
     public var latestAlertKey: String? {
-        if let latestError, let lastLine = Self.extractLatestStatusLine(from: latestError, stripTimestamp: false) {
+        if let latestError,
+            let lastLine = Self.extractLatestStatusLine(from: latestError, stripTimestamp: false)
+        {
             return lastLine
         }
-        if let prearmError, let lastLine = Self.extractLatestStatusLine(from: prearmError, stripTimestamp: false) {
+        if let prearmError,
+            let lastLine = Self.extractLatestStatusLine(from: prearmError, stripTimestamp: false)
+        {
             return lastLine
         }
         if let firstProblem = armingProblems.first,
@@ -235,10 +239,12 @@ public struct ConnectedDrone: Identifiable, Codable, Equatable {
     }
 
     public var activeAlertMessage: String? {
-        if let latestError, let clean = Self.extractLatestStatusLine(from: latestError, stripTimestamp: true) {
+        if let latestError, let clean = Self.extractLatestStatusLine(from: latestError, stripTimestamp: true)
+        {
             return clean
         }
-        if let prearmError, let clean = Self.extractLatestStatusLine(from: prearmError, stripTimestamp: true) {
+        if let prearmError, let clean = Self.extractLatestStatusLine(from: prearmError, stripTimestamp: true)
+        {
             return clean
         }
         if let firstProblem = armingProblems.first,
@@ -251,7 +257,8 @@ public struct ConnectedDrone: Identifiable, Codable, Equatable {
 
     private static func extractLatestStatusLine(from raw: String, stripTimestamp: Bool) -> String? {
         guard !raw.isEmpty else { return nil }
-        let withLineBreaks = raw
+        let withLineBreaks =
+            raw
             .replacingOccurrences(of: "<br/>", with: "\n", options: .caseInsensitive)
             .replacingOccurrences(of: "<br>", with: "\n", options: .caseInsensitive)
         let withoutTags = withLineBreaks.replacingOccurrences(
@@ -259,14 +266,16 @@ public struct ConnectedDrone: Identifiable, Codable, Equatable {
             with: "",
             options: .regularExpression
         )
-        let decoded = withoutTags
+        let decoded =
+            withoutTags
             .replacingOccurrences(of: "&amp;", with: "&")
             .replacingOccurrences(of: "&lt;", with: "<")
             .replacingOccurrences(of: "&gt;", with: ">")
             .replacingOccurrences(of: "&quot;", with: "\"")
             .replacingOccurrences(of: "&#39;", with: "'")
 
-        let lines = decoded
+        let lines =
+            decoded
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }

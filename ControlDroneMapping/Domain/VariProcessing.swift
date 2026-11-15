@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Summary of reference zone baseline and VARI gap calculations across the plantation.
@@ -421,6 +422,75 @@ public struct VariScanResult: Sendable, Identifiable {
     }
 }
 
+/// High-level execution stages reported to the macOS UI during a VARI & HARA run.
+public enum VariProcessingStage: String, Sendable, Equatable {
+    case validatingEngine = "Memeriksa VariEngine…"
+    case convertingImage = "Mengonversi orthomosaic TIFF ke JPEG…"
+    case copyingImage = "Menyiapkan citra orthomosaic…"
+    case runningEngine = "Menjalankan analisis VARI & HARA…"
+    case parsingResults = "Memuat hasil analisis…"
+
+    public var title: String { rawValue }
+}
+
+/// Thread-safe cancellation token shared between the UI coordinator and the running `VariPython` process.
+public final class VariProcessCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+    private var process: Process?
+
+    public init() {}
+
+    public var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+
+    public func check() throws {
+        if isCancelled { throw CancellationError() }
+    }
+
+    public func launch(_ process: Process) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        if cancelled { throw CancellationError() }
+        try process.run()
+        self.process = process
+    }
+
+    public func clear() {
+        lock.lock()
+        process = nil
+        lock.unlock()
+    }
+
+    public func cancel(waitForExit: Bool = false) {
+        lock.lock()
+        cancelled = true
+        let active = process
+        if let active, active.isRunning { active.terminate() }
+        lock.unlock()
+
+        guard let active else { return }
+        if waitForExit {
+            let deadline = Date().addingTimeInterval(1.5)
+            while active.isRunning && Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            guard active.isRunning else { return }
+            let pid = active.processIdentifier
+            if getpgid(pid) == pid { kill(-pid, SIGKILL) } else { kill(pid, SIGKILL) }
+        } else {
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 2) {
+                guard active.isRunning else { return }
+                let pid = active.processIdentifier
+                if getpgid(pid) == pid { kill(-pid, SIGKILL) } else { kill(pid, SIGKILL) }
+            }
+        }
+    }
+}
+
 /// Abstract contract for performing and managing VARI analyses.
 /// Decouples UI and business workflows from underlying subprocesses, Python helpers, or file formats.
 public protocol VariProcessing: Sendable {
@@ -431,9 +501,27 @@ public protocol VariProcessing: Sendable {
     func process(
         photoURL: URL,
         submission: VariEngineSubmissionRequest?,
-        outputFolder: URL?
+        outputFolder: URL?,
+        cancellation: VariProcessCancellation?,
+        onStage: (@Sendable (VariProcessingStage) -> Void)?
     ) async throws -> VariScanResult
 
     /// Loads a previously cached VARI scan result from an orthomosaic project output folder, if present.
     func loadCachedResult(from folder: URL) throws -> VariScanResult?
+}
+
+extension VariProcessing {
+    public func process(
+        photoURL: URL,
+        submission: VariEngineSubmissionRequest? = nil,
+        outputFolder: URL? = nil
+    ) async throws -> VariScanResult {
+        try await process(
+            photoURL: photoURL,
+            submission: submission,
+            outputFolder: outputFolder,
+            cancellation: nil,
+            onStage: nil
+        )
+    }
 }

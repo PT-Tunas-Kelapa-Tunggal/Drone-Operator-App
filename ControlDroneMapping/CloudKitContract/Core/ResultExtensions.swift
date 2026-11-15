@@ -11,4 +11,3 @@ extension Result {
         try? get()
     }
 }
-

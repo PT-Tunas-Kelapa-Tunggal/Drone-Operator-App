@@ -24,7 +24,9 @@ public struct AppConfiguration: Sendable {
         public func directory(under base: URL) -> URL {
             base
                 .appendingPathComponent("Containers", isDirectory: true)
-                .appendingPathComponent(Self.sanitizedPathComponent(cloudKitContainerIdentifier), isDirectory: true)
+                .appendingPathComponent(
+                    Self.sanitizedPathComponent(cloudKitContainerIdentifier), isDirectory: true
+                )
                 .appendingPathComponent(Self.sanitizedPathComponent(environment), isDirectory: true)
         }
     }
@@ -74,7 +76,8 @@ public struct AppConfiguration: Sendable {
     /// Returns `nil` inside headless test binaries that do not embed an app `Info.plist`.
     public static var bundleStorageScope: StorageScope? {
         guard
-            let containerID = (Bundle.main.object(forInfoDictionaryKey: "ICloudContainerIdentifier") as? String)?
+            let containerID =
+                (Bundle.main.object(forInfoDictionaryKey: "ICloudContainerIdentifier") as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
             !containerID.isEmpty,
             !containerID.contains("$("),

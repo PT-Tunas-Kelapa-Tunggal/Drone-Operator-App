@@ -9,6 +9,7 @@ struct ControlDependencies {
     let reviews: any OperatorReviewRepository
     let variProcessor: any VariProcessing
     let timingProcessor: any VariTimingProcessing
+    let variAnalysis: VariAnalysisViewModel
 
     private static func storageDirectory(under base: URL, demo: Bool) -> URL {
         guard !demo, let scope = AppConfiguration.bundleStorageScope else {
@@ -34,10 +35,12 @@ struct ControlDependencies {
             : QGCWaypointGenerator(baseURL: BundledQGCEngine.baseURL)
         planner = FlightPlannerViewModel(
             repository: FileFlightRouteRepository(
-                url: scopedSupport.appendingPathComponent(demo ? "demo-flight-routes.json" : "flight-routes.json")
+                url: scopedSupport.appendingPathComponent(
+                    demo ? "demo-flight-routes.json" : "flight-routes.json")
             ),
             trailRepository: FileFlightTrailRepository(
-                url: scopedSupport.appendingPathComponent(demo ? "demo-flight-trails.json" : "flight-trails.json")
+                url: scopedSupport.appendingPathComponent(
+                    demo ? "demo-flight-trails.json" : "flight-trails.json")
             ),
             waypointGenerator: waypointGenerator
         )
@@ -59,6 +62,12 @@ struct ControlDependencies {
             storageScope: storageScope)
         self.variProcessor = demo ? MockVariProcessor() : LocalVariProcessor()
         self.timingProcessor = demo ? MockVariTimingProcessor() : LocalVariTimingProcessor()
+        self.variAnalysis = MainActor.assumeIsolated {
+            VariAnalysisViewModel(
+                variProcessor: Self.variProcessor(demo: demo),
+                timingProcessor: Self.timingProcessor(demo: demo)
+            )
+        }
     }
 
     static func exportViewModel(record: MissionRecord, store: any DatasetRepository) -> WebODMExportViewModel

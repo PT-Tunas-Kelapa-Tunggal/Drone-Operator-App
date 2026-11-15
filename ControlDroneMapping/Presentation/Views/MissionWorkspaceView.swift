@@ -147,7 +147,7 @@ struct MissionWorkspaceView: View {
             Button("Tetap Buka Kunci & Edit Rencana") {
                 planner.unlockPlan()
             }
-            Button("Batal", role: .cancel) { }
+            Button("Batal", role: .cancel) {}
         } message: {
             Text(
                 "Drone #\(commsLostVehicleID) saat ini kehilangan koneksi telemetri (tidak terjangkau). Karena drone belum pernah di-Arm sejak rute diunggah, sebaiknya pulihkan koneksi drone terlebih dahulu, atau pilih 'Tetap Buka Kunci & Edit Rencana' untuk kembali merencanakan rute."
@@ -227,7 +227,9 @@ struct MissionWorkspaceView: View {
             .frame(height: 36)
             .padding(4)
             .kropsFloatingControl(in: Capsule())
-            .help("Rencana tidak dapat diubah selama drone sedang Armed atau menjalankan misi di udara. Daratkan dan Disarm drone terlebih dahulu.")
+            .help(
+                "Rencana tidak dapat diubah selama drone sedang Armed atau menjalankan misi di udara. Daratkan dan Disarm drone terlebih dahulu."
+            )
 
         case .softLocked, .commsLostNeverArmed, .commsLostWasArmed, .unlocked:
             PlanHoldToUnlockCapsule(
@@ -290,9 +292,11 @@ struct MissionWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Peringatan Keamanan: Drone Pernah Arm & Komms Terputus")
                         .font(.headline)
-                    Text("Drone #\(commsLostVehicleID) kehilangan koneksi setelah sebelumnya berstatus Armed.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "Drone #\(commsLostVehicleID) kehilangan koneksi setelah sebelumnya berstatus Armed."
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                 }
             }
 
@@ -1042,13 +1046,17 @@ struct MissionWorkspaceView: View {
                         .disabled(model.editingLocked || !canEditRoute || !planner.isSOPChecklistComplete)
 
                         if planner.draft.isPlanLocked
-                            || ((model.geometry.reviewed || planner.reviewed) && planner.isSOPChecklistComplete)
+                            || ((model.geometry.reviewed || planner.reviewed)
+                                && planner.isSOPChecklistComplete)
                         {
                             VStack(spacing: 8) {
                                 if planner.draft.isUploadedToDrone || planner.draft.isPlanLocked {
                                     HStack(spacing: 6) {
-                                        Image(systemName: planner.draft.isPlanLocked ? "lock.fill" : "checkmark.circle.fill")
-                                            .foregroundStyle(.green)
+                                        Image(
+                                            systemName: planner.draft.isPlanLocked
+                                                ? "lock.fill" : "checkmark.circle.fill"
+                                        )
+                                        .foregroundStyle(.green)
                                         Text(
                                             planner.draft.isPlanLocked
                                                 ? "Rencana Terkunci & Tersinkronisasi"
@@ -1068,7 +1076,8 @@ struct MissionWorkspaceView: View {
                                         }
                                     }
                                     .padding(8)
-                                    .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                                    .background(
+                                        Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
                                 } else {
                                     Button {
                                         uploadMissionToDrone()
@@ -1101,9 +1110,11 @@ struct MissionWorkspaceView: View {
                                             .font(.caption2)
                                             .foregroundStyle(.secondary)
                                     } else if isAssignedOrActiveDroneArmed {
-                                        Text("Daratkan dan Disarm drone terlebih dahulu sebelum mengunggah misi.")
-                                            .font(.caption2)
-                                            .foregroundStyle(.orange)
+                                        Text(
+                                            "Daratkan dan Disarm drone terlebih dahulu sebelum mengunggah misi."
+                                        )
+                                        .font(.caption2)
+                                        .foregroundStyle(.orange)
                                     }
                                 }
 
@@ -1131,7 +1142,7 @@ struct MissionWorkspaceView: View {
         .frame(width: 290)
         .kropsFloatingPanel()
         .alert("Gagal Mengunggah Misi", isPresented: $showingUploadErrorAlert) {
-            Button("Tutup", role: .cancel) { }
+            Button("Tutup", role: .cancel) {}
         } message: {
             Text(uploadErrorMessage ?? "Terjadi kesalahan saat mengunggah rute ke drone.")
         }
@@ -1329,7 +1340,8 @@ struct MissionWorkspaceView: View {
         syncHomeToQGC(coordinate: coord, altitudeAMSL: drone.telemetry.altitudeAMSL, vehicleID: drone.id)
     }
 
-    private func syncHomeToQGC(coordinate: MapCoordinate, altitudeAMSL: Double? = nil, vehicleID: Int? = nil) {
+    private func syncHomeToQGC(coordinate: MapCoordinate, altitudeAMSL: Double? = nil, vehicleID: Int? = nil)
+    {
         guard engineManager.status.isHealthy else { return }
         let targetID = vehicleID ?? engineManager.activeVehicle?.id
         let alt = altitudeAMSL ?? engineManager.activeVehicle?.telemetry.altitudeAMSL ?? 0.0
@@ -1339,7 +1351,7 @@ struct MissionWorkspaceView: View {
                 param: [
                     "latitude": coordinate.latitude,
                     "longitude": coordinate.longitude,
-                    "altitude": alt
+                    "altitude": alt,
                 ],
                 vehicleID: targetID
             )
@@ -1364,7 +1376,8 @@ struct MissionWorkspaceView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             let connectedDrone = engineManager.activeVehicle
-            let hasDronePosition = (connectedDrone?.telemetry.latitude != nil)
+            let hasDronePosition =
+                (connectedDrone?.telemetry.latitude != nil)
                 && (connectedDrone!.telemetry.latitude != 0)
                 && (connectedDrone!.telemetry.longitude != 0)
 
@@ -1401,9 +1414,11 @@ struct MissionWorkspaceView: View {
                         }
 
                         if let drone = connectedDrone, hasDronePosition {
-                            Text("Drone #\(drone.id) (\(String(format: "%.5f", drone.telemetry.latitude)), \(String(format: "%.5f", drone.telemetry.longitude))) · \(drone.gps.satellites) Sats")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                            Text(
+                                "Drone #\(drone.id) (\(String(format: "%.5f", drone.telemetry.latitude)), \(String(format: "%.5f", drone.telemetry.longitude))) · \(drone.gps.satellites) Sats"
+                            )
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                         } else if connectedDrone != nil {
                             Text("Drone terhubung, menunggu koordinat GPS...")
                                 .font(.caption2)
@@ -1424,7 +1439,9 @@ struct MissionWorkspaceView: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(hasDronePosition ? Color.green.opacity(0.3) : Color.primary.opacity(0.06), lineWidth: 1)
+                        .stroke(
+                            hasDronePosition ? Color.green.opacity(0.3) : Color.primary.opacity(0.06),
+                            lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)

@@ -23,9 +23,9 @@ public enum VariSubmissionBuildError: LocalizedError, Equatable, Sendable {
     }
 }
 
-public extension ContractFertilizerType {
+extension ContractFertilizerType {
     /// True for generic `.npk` and all explicit NPK formulation variants.
-    var isNPKGroup: Bool {
+    public var isNPKGroup: Bool {
         switch self {
         case .npk, .npk15_15_15, .npk12_6_22_3, .npk13_6_27_4, .npk13_8_27_4, .npk16_16_16:
             return true
@@ -35,19 +35,19 @@ public extension ContractFertilizerType {
     }
 
     /// True only for the legacy untyped `.npk` sentinel (which macOS must never write to CloudKit).
-    var isGenericNPKSentinel: Bool {
+    public var isGenericNPKSentinel: Bool {
         self == .npk
     }
 
     /// Name format expected by `krops_vari.main` (`v2_engine.py`) fertilizer history parser.
-    var variHistoryProductName: String {
+    public var variHistoryProductName: String {
         isNPKGroup ? "NPK" : rawValue
     }
 }
 
-public extension FertilizerUsage {
+extension FertilizerUsage {
     /// Extracts N-P2O5-K2O-MgO ratio either from farmer composition elements or explicit NPK enum case.
-    func effectiveNPKRatio() -> VariNPKRatio? {
+    public func effectiveNPKRatio() -> VariNPKRatio? {
         if !composition.isEmpty {
             var n: Double = 0
             var p: Double = 0
@@ -82,7 +82,7 @@ public extension FertilizerUsage {
         return VariNPKRatio(contractType: contractType)
     }
 
-    func toVariCompositionInput() -> VariEngineSubmissionRequest.NPKCompositionInput? {
+    public func toVariCompositionInput() -> VariEngineSubmissionRequest.NPKCompositionInput? {
         guard contractType.isNPKGroup, let ratio = effectiveNPKRatio() else {
             return nil
         }
@@ -141,7 +141,8 @@ public enum VariSubmissionBuilder {
         let calendar = Calendar(identifier: .gregorian)
         let currentMonth = calendar.component(.month, from: referenceDate)
 
-        let historyItems: [VariEngineSubmissionRequest.FertilizerItemInput] = request.agronomy.fertilizerRecords
+        let historyItems: [VariEngineSubmissionRequest.FertilizerItemInput] = request.agronomy
+            .fertilizerRecords
             .map { usage in
                 VariEngineSubmissionRequest.FertilizerItemInput(
                     name: usage.contractType.variHistoryProductName,
