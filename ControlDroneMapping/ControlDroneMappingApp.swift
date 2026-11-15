@@ -16,6 +16,7 @@ struct ControlDroneMappingApp: App {
     private let link: LocalLink
     @StateObject private var farms: FarmAreaViewModel
     @StateObject private var variAnalysis: VariAnalysisViewModel
+    @AppStorage(IPhoneConnectionSettings.enabledKey) private var iphoneConnectionEnabled = true
 
     init() {
         // Exercise the actual signed app and inherited helper sandbox without opening a window.
@@ -87,6 +88,9 @@ struct ControlDroneMappingApp: App {
                 model: model, link: link, farms: farms, location: location, planner: planner,
                 variAnalysis: variAnalysis
             )
+            .onChange(of: iphoneConnectionEnabled) { _, enabled in
+                link.setEnabled(enabled && !model.isDemo)
+            }
             .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
             .tint(KropsStyle.accent)
             // Every bordered and glass button is a capsule; icon-only buttons opt into a circle.

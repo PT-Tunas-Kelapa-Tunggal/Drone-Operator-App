@@ -97,7 +97,7 @@ final class ControlViewModel: ObservableObject {
                     ?? (demo || drafts != nil || transport != nil
                         ? nil : FileMissionLibraryRepository.defaultURL))
         isDemo = demo
-        link = transport ?? LocalLink(camera: false, enabled: !demo)
+        link = transport ?? LocalLink(camera: false, enabled: !demo && IPhoneConnectionSettings.isEnabled())
         plan.guidedMode = true
         plan.durationSeconds = 600
         do {

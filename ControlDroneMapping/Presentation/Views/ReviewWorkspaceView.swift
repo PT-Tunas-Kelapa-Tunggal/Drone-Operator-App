@@ -231,7 +231,7 @@ struct ReviewWorkspaceView: View {
         return importedProjectID.flatMap { processing.project($0) }
     }
 
-    private var output: OrthomosaicOutput? { project?.outputs.last }
+    private var output: OrthomosaicOutput? { project?.outputs.first }
     private var title: String { mission?.plan.name ?? record?.plan.name ?? project?.name ?? "Pilih misi" }
     private var canPrepare: Bool {
         guard processing.storageError == nil else { return false }
@@ -579,12 +579,21 @@ struct ReviewWorkspaceView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Hubungkan iPhone").font(.headline)
                             Text(link.status).font(.caption).foregroundStyle(.secondary)
-                            Text("Buka DroneCam dan izinkan Jaringan Lokal pada kedua perangkat.")
-                                .font(.caption).foregroundStyle(.secondary)
+                            Text(
+                                !model.isDemo && !link.isEnabled
+                                    ? "Aktifkan koneksi iPhone di Pengaturan untuk menghubungkan DroneCam."
+                                    : "Buka DroneCam dan izinkan Jaringan Lokal pada kedua perangkat."
+                            )
+                            .font(.caption).foregroundStyle(.secondary)
                             ForEach(link.peers, id: \.self) { peer in
                                 Button("Hubungkan \(peer.displayName)") { link.connect(peer) }
+                                    .disabled(!link.isEnabled)
                             }
                             Button("Cari iPhone lagi") { link.refreshDiscovery() }
+                                .disabled(!link.isEnabled)
+                            if !model.isDemo && !link.isEnabled {
+                                Button("Buka Pengaturan") { model.step = .settings }
+                            }
                             if model.isDemo {
                                 Button("Hubungkan demo") { model.connectDemo() }
                             }
