@@ -344,22 +344,28 @@ struct FlightRoute: Codable, Equatable, Identifiable {
         entryLocation = try container.decodeIfPresent(Int.self, forKey: .entryLocation) ?? 0
         sideOverlap = try container.decodeIfPresent(Double.self, forKey: .sideOverlap) ?? 70.0
         frontalOverlap = try container.decodeIfPresent(Double.self, forKey: .frontalOverlap) ?? 75.0
-        cameraResolution = try container.decodeIfPresent(CameraOpticalSpec.Resolution.self, forKey: .cameraResolution) ?? .res24MP
-        geofence = try container.decodeIfPresent(GeofenceSettings.self, forKey: .geofence) ?? GeofenceSettings()
+        cameraResolution =
+            try container.decodeIfPresent(CameraOpticalSpec.Resolution.self, forKey: .cameraResolution)
+            ?? .res24MP
+        geofence =
+            try container.decodeIfPresent(GeofenceSettings.self, forKey: .geofence) ?? GeofenceSettings()
         calculatedLineSpacing = try container.decodeIfPresent(Double.self, forKey: .calculatedLineSpacing)
-        calculatedTriggerDistance = try container.decodeIfPresent(Double.self, forKey: .calculatedTriggerDistance)
+        calculatedTriggerDistance = try container.decodeIfPresent(
+            Double.self, forKey: .calculatedTriggerDistance)
         groundResolutionCmPerPx = try container.decodeIfPresent(Double.self, forKey: .groundResolutionCmPerPx)
         visualTransects = try container.decodeIfPresent([MapCoordinate].self, forKey: .visualTransects) ?? []
         surveyStatistics = try container.decodeIfPresent(SurveyScanStatistics.self, forKey: .surveyStatistics)
         safetyResult = try container.decodeIfPresent(SurveySafetyResult.self, forKey: .safetyResult)
         rawPlanJSON = try container.decodeIfPresent(Data.self, forKey: .rawPlanJSON)
         isAreaConfirmed = try container.decodeIfPresent(Bool.self, forKey: .isAreaConfirmed) ?? false
-        checkedSOPItems = try container.decodeIfPresent(Set<PreflightChecklistItem>.self, forKey: .checkedSOPItems) ?? []
+        checkedSOPItems =
+            try container.decodeIfPresent(Set<PreflightChecklistItem>.self, forKey: .checkedSOPItems) ?? []
         isReviewed = try container.decodeIfPresent(Bool.self, forKey: .isReviewed) ?? false
         isPlanLocked = try container.decodeIfPresent(Bool.self, forKey: .isPlanLocked) ?? false
         isUploadedToDrone = try container.decodeIfPresent(Bool.self, forKey: .isUploadedToDrone) ?? false
         uploadedVehicleID = try container.decodeIfPresent(Int.self, forKey: .uploadedVehicleID)
-        wasVehicleArmedSinceUpload = try container.decodeIfPresent(Bool.self, forKey: .wasVehicleArmedSinceUpload) ?? false
+        wasVehicleArmedSinceUpload =
+            try container.decodeIfPresent(Bool.self, forKey: .wasVehicleArmedSinceUpload) ?? false
         lastSavedAt = try container.decodeIfPresent(Date.self, forKey: .lastSavedAt)
     }
 }

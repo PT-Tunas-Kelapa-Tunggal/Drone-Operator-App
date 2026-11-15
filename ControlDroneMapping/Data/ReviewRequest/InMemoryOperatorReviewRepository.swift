@@ -20,16 +20,21 @@ public final class InMemoryOperatorReviewRepository: OperatorReviewRepository, @
         }
     }
 
-    public func dispatchCompletedReview(_ payload: ReviewDispatchPayload) async throws -> PlantationReviewRequest {
+    public func dispatchCompletedReview(_ payload: ReviewDispatchPayload) async throws
+        -> PlantationReviewRequest
+    {
         lock.withLock {
-            guard let index = requests.firstIndex(where: {
-                $0.recordName == payload.recordName || $0.id == payload.requestID
-            }) else {
+            guard
+                let index = requests.firstIndex(where: {
+                    $0.recordName == payload.recordName || $0.id == payload.requestID
+                })
+            else {
                 let fallback = PlantationReviewRequest(
                     id: payload.requestID,
                     recordName: payload.recordName,
                     farmer: FarmerContact(name: "Demo Petani", phone: "-", address: "-"),
-                    garden: GardenSummary(id: payload.requestID, name: "Kebun Demo", locationName: "-", areaHectares: 1.0),
+                    garden: GardenSummary(
+                        id: payload.requestID, name: "Kebun Demo", locationName: "-", areaHectares: 1.0),
                     boundary: [],
                     agronomy: AgronomicProfile(
                         plantingYear: 2018,
@@ -59,7 +64,8 @@ public final class InMemoryOperatorReviewRepository: OperatorReviewRepository, @
                 requests[index].progressionEvents = details.map { ReviewProgressionEvent(contractEvent: $0) }
             }
             requests[index].timeline.plannedOperatorVisitDate = payload.writer.plannedOperatorVisitDate
-            requests[index].timeline.resultSentAt = payload.writer.resultSentAt ?? payload.summaryResult.completedAt
+            requests[index].timeline.resultSentAt =
+                payload.writer.resultSentAt ?? payload.summaryResult.completedAt
             requests[index].result = payload.summaryResult
             return requests[index]
         }

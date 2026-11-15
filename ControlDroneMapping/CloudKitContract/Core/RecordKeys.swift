@@ -51,7 +51,7 @@ nonisolated public enum RecordKeys {
             fertilizingFrequencyPerYear, fertilizersCompositions,
             harvestFrequencyPerMonth, averageHarvestWeightKg,
             farmerContactName, farmerPhoneNumber, farmerHomeAddress,
-            fertilizationBudgetPerHa, RecordKeys.schemaVersion
+            fertilizationBudgetPerHa, RecordKeys.schemaVersion,
         ]
     }
 
@@ -82,8 +82,7 @@ nonisolated public enum RecordKeys {
             progressionStatus, progressionStatusDetail, orthomosaicImage,
             fertilizingZone, fertilizerNeedPerZone, treeIdentification,
             plannedOperatorVisitDate, resultSentAt, fertilizationScheduling,
-            RecordKeys.schemaVersion
+            RecordKeys.schemaVersion,
         ]
     }
 }
-

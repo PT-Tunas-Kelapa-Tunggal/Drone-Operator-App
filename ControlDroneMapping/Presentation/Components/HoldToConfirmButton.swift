@@ -156,7 +156,7 @@ struct HoldToConfirmButton: View {
         holdTask?.cancel()
         holdTask = Task { @MainActor in
             while !Task.isCancelled && isHolding {
-                try? await Task.sleep(nanoseconds: 30_000_000) // 30ms tick
+                try? await Task.sleep(nanoseconds: 30_000_000)  // 30ms tick
                 guard isHolding && !Task.isCancelled else { break }
 
                 let elapsed = Date().timeIntervalSince(startTime)

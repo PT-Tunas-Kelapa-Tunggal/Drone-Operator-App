@@ -105,9 +105,11 @@ public struct VariReportWorkspaceView: View {
                     Text("Laporan Analisis VARI & Nutrisi Pohon")
                         .font(.title2.weight(.bold))
                 }
-                Text("Citra: \(result.resultJSONURL.deletingLastPathComponent().lastPathComponent) · Diproses: \(result.createdAt.formatted(date: .abbreviated, time: .shortened))")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Citra: \(result.resultJSONURL.deletingLastPathComponent().lastPathComponent) · Diproses: \(result.createdAt.formatted(date: .abbreviated, time: .shortened))"
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
             }
             Spacer()
             HStack(spacing: 10) {
@@ -176,7 +178,9 @@ public struct VariReportWorkspaceView: View {
             )
             metricCard(
                 title: "Estimasi Biaya Pupuk",
-                value: result.budget?.candidates.first(where: { $0.isClosest }).map { formatRupiah($0.combinedCostRp) }
+                value: result.budget?.candidates.first(where: { $0.isClosest }).map {
+                    formatRupiah($0.combinedCostRp)
+                }
                     ?? (result.budget?.targetBudgetRp.map { formatRupiah($0) } ?? "Rp 0"),
                 unit: "rekap tahunan",
                 systemImage: "banknote.fill",
@@ -185,7 +189,9 @@ public struct VariReportWorkspaceView: View {
         }
     }
 
-    private func metricCard(title: String, value: String, unit: String, systemImage: String, color: Color) -> some View {
+    private func metricCard(title: String, value: String, unit: String, systemImage: String, color: Color)
+        -> some View
+    {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label(title, systemImage: systemImage)
@@ -223,9 +229,11 @@ public struct VariReportWorkspaceView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("1. Visual Citra & Pemetaan Kanopi Sawit")
                     .font(.headline)
-                Text("Pilih lapisan visualisasi untuk meninjau zonasi, nomor plot, kuartil tajuk, atau alur deteksi.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Pilih lapisan visualisasi untuk meninjau zonasi, nomor plot, kuartil tajuk, atau alur deteksi."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             // Layer Selector Bar — Dedicated full-width segmented control without horizontal squeeze
@@ -269,9 +277,11 @@ public struct VariReportWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("2. Statistik Indeks Vegetasi VARI per Zona")
                         .font(.headline)
-                    Text("Pengelompokan tajuk sawit per zona untuk mendeteksi variabilitas spasial dan zona acuan (reference zone).")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "Pengelompokan tajuk sawit per zona untuk mendeteksi variabilitas spasial dan zona acuan (reference zone)."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
                 Spacer()
                 if let refMean = result.summary?.referenceZoneMeanVari {
@@ -279,8 +289,11 @@ public struct VariReportWorkspaceView: View {
                         Text("Zona Acuan:")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
-                        Text(result.summary?.referenceZoneIDs.map { "Z\($0)" }.joined(separator: ", ") ?? "Semua")
-                            .font(.caption.weight(.bold))
+                        Text(
+                            result.summary?.referenceZoneIDs.map { "Z\($0)" }.joined(separator: ", ")
+                                ?? "Semua"
+                        )
+                        .font(.caption.weight(.bold))
                         Text("(Rerata VARI: \(String(format: "%.3f", refMean)))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -361,7 +374,8 @@ public struct VariReportWorkspaceView: View {
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(
-                                    (zone.boostMode == "blanket_p25" ? Color.orange : Color.green).opacity(0.14),
+                                    (zone.boostMode == "blanket_p25" ? Color.orange : Color.green).opacity(
+                                        0.14),
                                     in: Capsule()
                                 )
                                 .frame(width: 110, alignment: .center)
@@ -412,9 +426,11 @@ public struct VariReportWorkspaceView: View {
                         Text("3. Rekomendasi Alokasi Pupuk & Dosis HARA")
                             .font(.headline)
                     }
-                    Text("Perhitungan suplemen unsur hara Mg dan N berbasis variasi defisit VARI, dikonversi ke massa pupuk Dolomite & Urea.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "Perhitungan suplemen unsur hara Mg dan N berbasis variasi defisit VARI, dikonversi ke massa pupuk Dolomite & Urea."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
                 Spacer()
                 if let csvURL = result.assets.fertilizerMassCSVURL {
@@ -516,18 +532,21 @@ public struct VariReportWorkspaceView: View {
                         Text("4. Pencocokan Anggaran & Formulasi NPK Komersial")
                             .font(.headline)
                     }
-                    Text("Perbandingan opsi formula pupuk NPK/NPKMg komersial seluruh kebun dipadukan dengan total Mg (Dolomite) & Urea per zona.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "Perbandingan opsi formula pupuk NPK/NPKMg komersial seluruh kebun dipadukan dengan total Mg (Dolomite) & Urea per zona."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                     if let userBlend = result.userBlend {
                         let ratioText =
                             userBlend.ratio.map {
                                 "(\(Int($0.n.rounded()))-\(Int($0.p2o5.rounded()))-\(Int($0.k2o.rounded()))-\(Int($0.mgo.rounded())))"
                             } ?? ""
                         let kgText = String(format: "%.1f kg/thn", userBlend.npkProductKgFarmPerYear)
-                        let doseText = userBlend.dosePerTreeKgPerApplication.map {
-                            String(format: " · %.2f kg/pohon", $0)
-                        } ?? ""
+                        let doseText =
+                            userBlend.dosePerTreeKgPerApplication.map {
+                                String(format: " · %.2f kg/pohon", $0)
+                            } ?? ""
                         Text("Baseline pupuk petani: NPK \(ratioText) · \(kgText)\(doseText)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -594,9 +613,11 @@ public struct VariReportWorkspaceView: View {
                                 Text("\(candidate.npkFullBags) karung")
                                     .font(.callout.monospacedDigit())
                                 if let annualKg = candidate.recommendedAnnualKgFarm, annualKg > 0 {
-                                    Text("\(String(format: "%.1f", VariDoseRounding.roundToHalfKg(annualKg))) kg/thn")
-                                        .font(.caption2.monospacedDigit())
-                                        .foregroundStyle(.secondary)
+                                    Text(
+                                        "\(String(format: "%.1f", VariDoseRounding.roundToHalfKg(annualKg))) kg/thn"
+                                    )
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(.secondary)
                                 }
                             }
                             .frame(width: 110, alignment: .trailing)
@@ -611,7 +632,9 @@ public struct VariReportWorkspaceView: View {
                                 .frame(width: 115, alignment: .trailing)
 
                             Text(formatRupiah(candidate.combinedCostRp))
-                                .font(.callout.monospacedDigit().weight(candidate.isClosest ? .bold : .medium))
+                                .font(
+                                    .callout.monospacedDigit().weight(candidate.isClosest ? .bold : .medium)
+                                )
                                 .frame(width: 125, alignment: .trailing)
 
                             Text(formatRupiah(candidate.budgetTargetRp))
@@ -621,7 +644,9 @@ public struct VariReportWorkspaceView: View {
 
                             Text(formatBudgetDifference(candidate.budgetDifferenceRp))
                                 .font(.caption.monospacedDigit())
-                                .foregroundStyle(candidate.budgetDifferenceRp <= 0 ? Color.green : Color.primary)
+                                .foregroundStyle(
+                                    candidate.budgetDifferenceRp <= 0 ? Color.green : Color.primary
+                                )
                                 .frame(width: 155, alignment: .trailing)
 
                             VStack(spacing: 4) {
@@ -828,9 +853,11 @@ private struct ZoneCropDetailSheet: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Detail Tajuk Citra — Zona Z\(zone.zoneID)")
                         .font(.title3.weight(.bold))
-                    Text("\(zone.treeCount) pohon terdeteksi · Rerata VARI: \(zone.meanVari.map { String(format: "%.3f", $0) } ?? "N/A")")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "\(zone.treeCount) pohon terdeteksi · Rerata VARI: \(zone.meanVari.map { String(format: "%.3f", $0) } ?? "N/A")"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("Tutup") { dismiss() }
@@ -1016,7 +1043,10 @@ private struct InteractiveImageViewport: View {
                         .buttonStyle(.plain)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 3)
-                        .background(zoomScale == 1.0 ? Color.white.opacity(0.2) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                        .background(
+                            zoomScale == 1.0 ? Color.white.opacity(0.2) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 6)
+                        )
                         .help("Sesuaikan gambar pas ke layar")
 
                         Divider().frame(height: 14)
@@ -1062,7 +1092,8 @@ private struct InteractiveImageViewport: View {
                         if let imageURL {
                             Button {
                                 let ext = imageURL.pathExtension.isEmpty ? "jpg" : imageURL.pathExtension
-                                let suggested = "vari_\(layer.id.lowercased().replacingOccurrences(of: " ", with: "_")).\(ext)"
+                                let suggested =
+                                    "vari_\(layer.id.lowercased().replacingOccurrences(of: " ", with: "_")).\(ext)"
                                 VariFilePanels.saveFile(
                                     from: imageURL,
                                     suggestedName: suggested,

@@ -19,7 +19,8 @@ nonisolated public struct JSONEnvelope<Payload: Codable & Sendable>: Codable, Se
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(envelope)
         guard let string = String(data: data, encoding: .utf8) else {
-            throw FieldError.decodingError(key: "envelope", errorDescription: "Failed to convert encoded JSON to UTF-8 string")
+            throw FieldError.decodingError(
+                key: "envelope", errorDescription: "Failed to convert encoded JSON to UTF-8 string")
         }
         return string
     }
@@ -27,8 +28,9 @@ nonisolated public struct JSONEnvelope<Payload: Codable & Sendable>: Codable, Se
     /// Inspects the version tag inside a raw JSON string without decoding the entire payload.
     public static func inspectVersion(from rawJSON: String) -> String? {
         guard let data = rawJSON.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let version = json["version"] as? String else {
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let version = json["version"] as? String
+        else {
             return nil
         }
         return version

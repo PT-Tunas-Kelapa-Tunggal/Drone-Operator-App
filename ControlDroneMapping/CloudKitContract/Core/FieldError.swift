@@ -20,4 +20,3 @@ nonisolated public enum FieldError: Error, Equatable, Sendable {
         return false
     }
 }
-

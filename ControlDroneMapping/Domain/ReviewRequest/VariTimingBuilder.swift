@@ -12,7 +12,8 @@ public enum VariTimingBuildError: LocalizedError, Equatable, Sendable {
         case .contractFieldError(let field, let detail):
             return "Data CloudKit pada field '\(field)' bermasalah: \(detail)"
         case .missingBoundaryCoordinate:
-            return "Batas kebun (farmBoundary) dari CloudKit kosong sehingga koordinat cuaca tidak dapat dihitung."
+            return
+                "Batas kebun (farmBoundary) dari CloudKit kosong sehingga koordinat cuaca tidak dapat dihitung."
         case .invalidFertilizingFrequency(let freq):
             return "Frekuensi pemupukan per tahun tidak valid (\(freq)x/tahun)."
         case .missingValidNPKOption:
@@ -139,10 +140,10 @@ public enum VariTimingBuilder {
         var selectedNPKType: ContractFertilizerType?
         var npkTotalKg: Double = 0
         if let chosenCandidate,
-           let explicitNPK = chosenCandidate.explicitNPKType,
-           !explicitNPK.isGenericNPKSentinel,
-           let annualKg = chosenCandidate.recommendedAnnualKgFarm,
-           annualKg > 0
+            let explicitNPK = chosenCandidate.explicitNPKType,
+            !explicitNPK.isGenericNPKSentinel,
+            let annualKg = chosenCandidate.recommendedAnnualKgFarm,
+            annualKg > 0
         {
             let ratio = chosenCandidate.labelRatioValues ?? VariNPKRatio(contractType: explicitNPK)
             let npkID = deterministicID(for: explicitNPK)
@@ -228,7 +229,7 @@ public enum VariTimingBuilder {
             return (candidate.recommendedAnnualKgFarm ?? 0) > 0
         }
         if let preferredNPK,
-           let matchedPreferred = validCandidates.first(where: { $0.explicitNPKType == preferredNPK })
+            let matchedPreferred = validCandidates.first(where: { $0.explicitNPKType == preferredNPK })
         {
             return matchedPreferred
         }

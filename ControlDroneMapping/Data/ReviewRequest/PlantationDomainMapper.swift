@@ -45,28 +45,34 @@ public struct PlantationDomainMapper: Sendable {
         let schemaVersion = reader.schemaVersion()
 
         // 1. Farmer Contact (iOS-Owned)
-        let farmerName = readField(
-            RecordKeys.iOSOwned.farmerContactName, result: reader.farmerContactName()) ?? ""
-        let farmerPhone = readField(
-            RecordKeys.iOSOwned.farmerPhoneNumber, result: reader.farmerPhoneNumber()) ?? ""
-        let farmerAddress = readField(
-            RecordKeys.iOSOwned.farmerHomeAddress, result: reader.farmerHomeAddress()) ?? ""
+        let farmerName =
+            readField(
+                RecordKeys.iOSOwned.farmerContactName, result: reader.farmerContactName()) ?? ""
+        let farmerPhone =
+            readField(
+                RecordKeys.iOSOwned.farmerPhoneNumber, result: reader.farmerPhoneNumber()) ?? ""
+        let farmerAddress =
+            readField(
+                RecordKeys.iOSOwned.farmerHomeAddress, result: reader.farmerHomeAddress()) ?? ""
 
         // 2. Garden Metadata & Boundary (iOS-Owned)
         let farmName = readField(RecordKeys.iOSOwned.farmName, result: reader.farmName()) ?? ""
         let farmAddress = readField(RecordKeys.iOSOwned.farmAddress, result: reader.farmAddress()) ?? ""
         let farmSize = readField(RecordKeys.iOSOwned.farmSize, result: reader.farmSize()) ?? 0.0
-        let farmCircumference = readField(
-            RecordKeys.iOSOwned.farmCircumference, result: reader.farmCircumference()) ?? 0.0
-        let locations = readField(
-            RecordKeys.iOSOwned.farmBoundary, result: reader.farmBoundary()) ?? []
+        let farmCircumference =
+            readField(
+                RecordKeys.iOSOwned.farmCircumference, result: reader.farmCircumference()) ?? 0.0
+        let locations =
+            readField(
+                RecordKeys.iOSOwned.farmBoundary, result: reader.farmBoundary()) ?? []
         let boundary = locations.map {
             CoordinatePoint(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude)
         }
 
         // 3. Agronomic Profile (iOS-Owned)
-        let submittedAt = readField(
-            RecordKeys.iOSOwned.submittedAt, result: reader.submittedAt())
+        let submittedAt =
+            readField(
+                RecordKeys.iOSOwned.submittedAt, result: reader.submittedAt())
             ?? reader.record.creationDate
             ?? Date()
 
@@ -76,21 +82,25 @@ public struct PlantationDomainMapper: Sendable {
         let plantingYear = plantingDate.map { calendar.component(.year, from: $0) } ?? 0
         let plantingMonth = plantingDate.map { calendar.component(.month, from: $0) }
 
-        let soilType = readField(
-            RecordKeys.iOSOwned.soilType, result: reader.soilType()) ?? .unknown("")
+        let soilType =
+            readField(
+                RecordKeys.iOSOwned.soilType, result: reader.soilType()) ?? .unknown("")
 
-        let freqPerYear = readField(
-            RecordKeys.iOSOwned.fertilizingFrequencyPerYear,
-            result: reader.fertilizingFrequencyPerYear()
-        ).map(Int.init) ?? 0
+        let freqPerYear =
+            readField(
+                RecordKeys.iOSOwned.fertilizingFrequencyPerYear,
+                result: reader.fertilizingFrequencyPerYear()
+            ).map(Int.init) ?? 0
 
-        let budgetPerHa = readField(
-            RecordKeys.iOSOwned.fertilizationBudgetPerHa,
-            result: reader.fertilizationBudgetPerHa()) ?? 0
+        let budgetPerHa =
+            readField(
+                RecordKeys.iOSOwned.fertilizationBudgetPerHa,
+                result: reader.fertilizationBudgetPerHa()) ?? 0
 
-        let contractCompositions = readField(
-            RecordKeys.iOSOwned.fertilizersCompositions,
-            result: reader.fertilizersCompositions()) ?? []
+        let contractCompositions =
+            readField(
+                RecordKeys.iOSOwned.fertilizersCompositions,
+                result: reader.fertilizersCompositions()) ?? []
         let fertilizerRecords = contractCompositions.enumerated().compactMap { index, item in
             mapFertilizerUsage(
                 item,
@@ -115,19 +125,21 @@ public struct PlantationDomainMapper: Sendable {
             }
 
         // 4. macOS-Owned Status & Deliverables (optional until finished)
-        let contractStatus = readOptionalMacOSField(
-            RecordKeys.MacOSOwned.progressionStatus,
-            result: reader.progressionStatus(),
-            expectPresent: false
-        ) ?? .sent
+        let contractStatus =
+            readOptionalMacOSField(
+                RecordKeys.MacOSOwned.progressionStatus,
+                result: reader.progressionStatus(),
+                expectPresent: false
+            ) ?? .sent
         let status = ReviewStatus(progressionStatus: contractStatus)
         let expectFinishedOutputs = status.isFinished
 
-        let detailEvents = (readOptionalMacOSField(
-            RecordKeys.MacOSOwned.progressionStatusDetail,
-            result: reader.progressionStatusDetail(),
-            expectPresent: false
-        ) ?? []).map { ReviewProgressionEvent(contractEvent: $0) }
+        let detailEvents =
+            (readOptionalMacOSField(
+                RecordKeys.MacOSOwned.progressionStatusDetail,
+                result: reader.progressionStatusDetail(),
+                expectPresent: false
+            ) ?? []).map { ReviewProgressionEvent(contractEvent: $0) }
 
         let plannedVisitDate = readOptionalMacOSField(
             RecordKeys.MacOSOwned.plannedOperatorVisitDate,
@@ -145,26 +157,30 @@ public struct PlantationDomainMapper: Sendable {
             result: reader.orthomosaicImage(),
             expectPresent: expectFinishedOutputs
         )
-        let zones = readOptionalMacOSField(
-            RecordKeys.MacOSOwned.fertilizingZone,
-            result: reader.fertilizingZone(),
-            expectPresent: expectFinishedOutputs
-        ) ?? []
-        let trees = readOptionalMacOSField(
-            RecordKeys.MacOSOwned.treeIdentification,
-            result: reader.treeIdentification(),
-            expectPresent: expectFinishedOutputs
-        ) ?? []
-        let fertilizerNeeds = readOptionalMacOSField(
-            RecordKeys.MacOSOwned.fertilizerNeedPerZone,
-            result: reader.fertilizerNeedPerZone(),
-            expectPresent: expectFinishedOutputs
-        ) ?? []
-        let schedulePeriods = readOptionalMacOSField(
-            RecordKeys.MacOSOwned.fertilizationScheduling,
-            result: reader.fertilizationScheduling(),
-            expectPresent: expectFinishedOutputs
-        ) ?? []
+        let zones =
+            readOptionalMacOSField(
+                RecordKeys.MacOSOwned.fertilizingZone,
+                result: reader.fertilizingZone(),
+                expectPresent: expectFinishedOutputs
+            ) ?? []
+        let trees =
+            readOptionalMacOSField(
+                RecordKeys.MacOSOwned.treeIdentification,
+                result: reader.treeIdentification(),
+                expectPresent: expectFinishedOutputs
+            ) ?? []
+        let fertilizerNeeds =
+            readOptionalMacOSField(
+                RecordKeys.MacOSOwned.fertilizerNeedPerZone,
+                result: reader.fertilizerNeedPerZone(),
+                expectPresent: expectFinishedOutputs
+            ) ?? []
+        let schedulePeriods =
+            readOptionalMacOSField(
+                RecordKeys.MacOSOwned.fertilizationScheduling,
+                result: reader.fertilizationScheduling(),
+                expectPresent: expectFinishedOutputs
+            ) ?? []
 
         let hasAnyResultData =
             resultSentAt != nil
@@ -235,10 +251,12 @@ public struct PlantationDomainMapper: Sendable {
         fieldKey: String,
         fieldErrors: inout [String: String]
     ) -> FertilizerUsage? {
-        guard let rawDoseKg = normalizeDoseToKg(
-            valueText: item.dosagePerTree.value,
-            unitText: item.dosagePerTree.valueUnit
-        ) else {
+        guard
+            let rawDoseKg = normalizeDoseToKg(
+                valueText: item.dosagePerTree.value,
+                unitText: item.dosagePerTree.valueUnit
+            )
+        else {
             fieldErrors["\(fieldKey)[\(index)].dosagePerTree"] =
                 "Nilai dosis '\(item.dosagePerTree.value) \(item.dosagePerTree.valueUnit)' untuk \(item.fertilizerType.rawValue) tidak valid."
             return nil
@@ -280,7 +298,8 @@ public struct PlantationDomainMapper: Sendable {
     }
 
     private func parseLocalizedDouble(_ raw: String) -> Double? {
-        let trimmed = raw
+        let trimmed =
+            raw
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: ",", with: ".")
         return Double(trimmed)

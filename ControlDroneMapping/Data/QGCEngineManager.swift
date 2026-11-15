@@ -442,7 +442,8 @@ public final class QGCEngineManager: ObservableObject {
                                 self.status = .failed(
                                     reason: "Proses QGC terhenti (exit code \(proc.terminationStatus)).")
                             } else {
-                                self.status = .failed(reason: "Endpoint 127.0.0.1:18080/healthz tidak merespons.")
+                                self.status = .failed(
+                                    reason: "Endpoint 127.0.0.1:18080/healthz tidak merespons.")
                             }
                         }
                         self.vehicles = []

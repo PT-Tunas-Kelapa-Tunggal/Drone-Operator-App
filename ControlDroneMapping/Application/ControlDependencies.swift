@@ -34,10 +34,12 @@ struct ControlDependencies {
             : QGCWaypointGenerator(baseURL: BundledQGCEngine.baseURL)
         planner = FlightPlannerViewModel(
             repository: FileFlightRouteRepository(
-                url: scopedSupport.appendingPathComponent(demo ? "demo-flight-routes.json" : "flight-routes.json")
+                url: scopedSupport.appendingPathComponent(
+                    demo ? "demo-flight-routes.json" : "flight-routes.json")
             ),
             trailRepository: FileFlightTrailRepository(
-                url: scopedSupport.appendingPathComponent(demo ? "demo-flight-trails.json" : "flight-trails.json")
+                url: scopedSupport.appendingPathComponent(
+                    demo ? "demo-flight-trails.json" : "flight-trails.json")
             ),
             waypointGenerator: waypointGenerator
         )

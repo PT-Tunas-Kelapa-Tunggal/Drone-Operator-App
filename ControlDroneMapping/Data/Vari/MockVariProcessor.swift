@@ -39,7 +39,9 @@ public final class MockVariProcessor: VariProcessing, @unchecked Sendable {
         return mockResult ?? Self.sampleResult(at: cachedURL)
     }
 
-    public static func sampleResult(at url: URL = URL(fileURLWithPath: "/tmp/vari_result.json")) -> VariScanResult {
+    public static func sampleResult(at url: URL = URL(fileURLWithPath: "/tmp/vari_result.json"))
+        -> VariScanResult
+    {
         let sampleZones: [VariZoneDetail] = (1...6).map { idx in
             let xOffset = Double((idx - 1) % 3) * 600.0
             let yOffset = Double((idx - 1) / 3) * 800.0

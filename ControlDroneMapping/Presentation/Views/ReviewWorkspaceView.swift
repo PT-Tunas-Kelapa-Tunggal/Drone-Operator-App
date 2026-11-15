@@ -541,8 +541,11 @@ struct ReviewWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(mission.plan.name).font(.system(size: 28, weight: .semibold))
-                        Text(activeReviewRequest?.garden.locationName ?? mission.area?.name ?? "Lokasi kebun belum diatur")
-                            .font(.title3).foregroundStyle(.secondary)
+                        Text(
+                            activeReviewRequest?.garden.locationName ?? mission.area?.name
+                                ?? "Lokasi kebun belum diatur"
+                        )
+                        .font(.title3).foregroundStyle(.secondary)
                     }
 
                     if let request = activeReviewRequest {
@@ -1218,9 +1221,11 @@ private struct CloudKitFarmerOverviewCard: View {
         VStack(alignment: .leading, spacing: 18) {
             if request.hasFieldErrors {
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("Peringatan Sinkronisasi Field CloudKit", systemImage: "exclamationmark.triangle.fill")
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(.orange)
+                    Label(
+                        "Peringatan Sinkronisasi Field CloudKit", systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.orange)
                     ForEach(request.fieldErrors.sorted(by: { $0.key < $1.key }), id: \.key) { key, message in
                         Text("• \(key): \(message)")
                             .font(.caption)
@@ -1235,7 +1240,9 @@ private struct CloudKitFarmerOverviewCard: View {
 
             sectionCard(title: "Status & Jadwal Peninjauan") {
                 row("Status CloudKit", request.status.title)
-                row("Dikirim petani", request.timeline.submittedAt.formatted(date: .abbreviated, time: .shortened))
+                row(
+                    "Dikirim petani",
+                    request.timeline.submittedAt.formatted(date: .abbreviated, time: .shortened))
                 if let visit = request.timeline.plannedOperatorVisitDate {
                     row("Rencana kunjungan", visit.formatted(date: .abbreviated, time: .shortened))
                 }
@@ -1249,8 +1256,10 @@ private struct CloudKitFarmerOverviewCard: View {
                         .foregroundStyle(.secondary)
                     ForEach(request.progressionEvents) { event in
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(event.title) · \(event.dateTime.formatted(date: .abbreviated, time: .shortened))")
-                                .font(.caption.weight(.medium))
+                            Text(
+                                "\(event.title) · \(event.dateTime.formatted(date: .abbreviated, time: .shortened))"
+                            )
+                            .font(.caption.weight(.medium))
                             Text(event.desc)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
@@ -1284,7 +1293,8 @@ private struct CloudKitFarmerOverviewCard: View {
                 if let harvest = request.agronomy.harvestRecord {
                     row(
                         "Panen terakhir",
-                        String(format: "%dx/bulan · %.0f kg", harvest.frequencyPerMonth, harvest.latestWeightKg)
+                        String(
+                            format: "%dx/bulan · %.0f kg", harvest.frequencyPerMonth, harvest.latestWeightKg)
                     )
                 }
             }
@@ -1305,7 +1315,8 @@ private struct CloudKitFarmerOverviewCard: View {
                                     .font(.caption.monospacedDigit().weight(.medium))
                             }
                             if !item.composition.isEmpty {
-                                let ratio = item.composition.map { "\($0.name): \(Int($0.value))%" }.joined(separator: " · ")
+                                let ratio = item.composition.map { "\($0.name): \(Int($0.value))%" }.joined(
+                                    separator: " · ")
                                 Text(ratio)
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)

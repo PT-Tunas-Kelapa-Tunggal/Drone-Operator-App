@@ -23,7 +23,8 @@ public enum CloudKitDispatchBuildError: LocalizedError, Equatable, Sendable {
         case .unreadableOrthomosaicJPEG(let path):
             return "File orthomosaic.jpeg rusak atau bukan JPEG valid: \(path)"
         case .pixelDimensionMismatch(let imageW, let imageH, let variW, let variH):
-            return "Dimensi orthomosaic.jpeg (\(imageW)×\(imageH)) berbeda dengan hasil VARI (\(variW)×\(variH))."
+            return
+                "Dimensi orthomosaic.jpeg (\(imageW)×\(imageH)) berbeda dengan hasil VARI (\(variW)×\(variH))."
         case .missingZones:
             return "Hasil VARI tidak memiliki zona pemupukan."
         case .missingZoneBoundingBox(let zoneID):
@@ -39,7 +40,8 @@ public enum CloudKitDispatchBuildError: LocalizedError, Equatable, Sendable {
         case .invalidScheduleDate(let rawDate):
             return "Format tanggal Jadwal Pemupukan tidak valid: '\(rawDate)'."
         case .unmappableScheduleFertilizer(let displayName, let fertilizerID):
-            return "Pupuk pada jadwal ('\(displayName)', id='\(fertilizerID ?? "-")') tidak dapat dipetakan ke enum kontrak CloudKit."
+            return
+                "Pupuk pada jadwal ('\(displayName)', id='\(fertilizerID ?? "-")') tidak dapat dipetakan ke enum kontrak CloudKit."
         case .forbiddenGenericNPKDetected:
             return "Kesalahan kontrak: macOS dilarang menulis tipe generik .npk ke CloudKit."
         }
@@ -130,9 +132,10 @@ public enum CloudKitReviewDispatchBuilder {
         let schedulePeriods = try buildSchedulePeriods(
             timingResult: timingResult,
             fertilizerIDLookup: fertilizerIDLookup,
-            preferredNPKForFallback: preferredNPKForFallback ?? variResult.budget.flatMap {
-                VariTimingBuilder.resolveSelectedNPKCandidate(from: $0.candidates)?.explicitNPKType
-            }
+            preferredNPKForFallback: preferredNPKForFallback
+                ?? variResult.budget.flatMap {
+                    VariTimingBuilder.resolveSelectedNPKCandidate(from: $0.candidates)?.explicitNPKType
+                }
         )
 
         // 5. Preserve existing progression events and append completion event (straight to .finished)
@@ -194,16 +197,16 @@ public enum CloudKitReviewDispatchBuilder {
         }
 
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let pixelWidth = props[kCGImagePropertyPixelWidth] as? Int,
-              let pixelHeight = props[kCGImagePropertyPixelHeight] as? Int,
-              pixelWidth > 0, pixelHeight > 0
+            let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+            let pixelWidth = props[kCGImagePropertyPixelWidth] as? Int,
+            let pixelHeight = props[kCGImagePropertyPixelHeight] as? Int,
+            pixelWidth > 0, pixelHeight > 0
         else {
             throw CloudKitDispatchBuildError.unreadableOrthomosaicJPEG(url.path)
         }
 
         if let variW = variResult.imageWidthPx, let variH = variResult.imageHeightPx,
-           variW != pixelWidth || variH != pixelHeight
+            variW != pixelWidth || variH != pixelHeight
         {
             throw CloudKitDispatchBuildError.pixelDimensionMismatch(
                 imageW: pixelWidth,
@@ -232,10 +235,10 @@ public enum CloudKitReviewDispatchBuilder {
 
         for candidate in candidates {
             guard let explicitType = candidate.explicitNPKType,
-                  !explicitType.isGenericNPKSentinel,
-                  !seenNPKTypes.contains(explicitType),
-                  let recommendedKg = candidate.recommendedAnnualKgFarm,
-                  recommendedKg > 0
+                !explicitType.isGenericNPKSentinel,
+                !seenNPKTypes.contains(explicitType),
+                let recommendedKg = candidate.recommendedAnnualKgFarm,
+                recommendedKg > 0
             else {
                 continue
             }
@@ -243,7 +246,7 @@ public enum CloudKitReviewDispatchBuilder {
 
             let currentDosageKg: Double
             if let userMatchedNPKType, userMatchedNPKType == explicitType,
-               let userNPKKg = variResult.userBlend?.npkProductKgFarmPerYear
+                let userNPKKg = variResult.userBlend?.npkProductKgFarmPerYear
             {
                 currentDosageKg = max(0.0, userNPKKg)
             } else {
@@ -380,12 +383,15 @@ public enum CloudKitReviewDispatchBuilder {
         preferredNPKForFallback: ContractFertilizerType?
     ) throws -> ContractFertilizerType {
         // 1. Direct lookup table passed by VariTimingBuilder
-        if let stepID = step.fertilizerId, let mapped = fertilizerIDLookup[stepID], !mapped.isGenericNPKSentinel {
+        if let stepID = step.fertilizerId, let mapped = fertilizerIDLookup[stepID],
+            !mapped.isGenericNPKSentinel
+        {
             return mapped
         }
 
         // 2. Deterministic `"krops-..."` ID embedded in cached request/result JSON
-        if let stepID = step.fertilizerId, let mapped = VariTimingBuilder.resolveContractType(fromID: stepID) {
+        if let stepID = step.fertilizerId, let mapped = VariTimingBuilder.resolveContractType(fromID: stepID)
+        {
             return mapped
         }
 
@@ -399,12 +405,12 @@ public enum CloudKitReviewDispatchBuilder {
             }
             if inputMatch.name.caseInsensitiveCompare("NPK") == .orderedSame {
                 if let comp = inputMatch.composition,
-                   let explicit = VariNPKRatio(
-                       n: comp.n,
-                       p2o5: comp.p,
-                       k2o: comp.k,
-                       mgo: comp.mg ?? 0
-                   ).toExplicitContractNPKType()
+                    let explicit = VariNPKRatio(
+                        n: comp.n,
+                        p2o5: comp.p,
+                        k2o: comp.k,
+                        mgo: comp.mg ?? 0
+                    ).toExplicitContractNPKType()
                 {
                     return explicit
                 }
@@ -435,9 +441,11 @@ public enum CloudKitReviewDispatchBuilder {
     }
 
     private static func parseNPKRatioFromDisplayName(_ text: String) -> VariNPKRatio? {
-        let cleaned = text
+        let cleaned =
+            text
             .replacingOccurrences(of: "NPK", with: "", options: .caseInsensitive)
-            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "-")))
+            .trimmingCharacters(
+                in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "-")))
         let parts = cleaned.split(separator: "-").compactMap { Double($0) }
         guard parts.count == 3 || parts.count == 4 else { return nil }
         return VariNPKRatio(

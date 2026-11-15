@@ -150,7 +150,8 @@ final class FlightPlannerViewModel: ObservableObject {
         if let last = routes.last {
             switching = true
             draft = last
-            isAreaConfirmed = last.isAreaConfirmed || (!last.visualTransects.isEmpty && last.waypoints.count >= 3)
+            isAreaConfirmed =
+                last.isAreaConfirmed || (!last.visualTransects.isEmpty && last.waypoints.count >= 3)
             checkedSOPItems = last.checkedSOPItems
             reviewed = last.isReviewed
             planningStep = (last.visualTransects.isEmpty && !isAreaConfirmed) ? .boundary : .flight

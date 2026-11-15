@@ -306,11 +306,14 @@ final class ControlViewModel: ObservableObject {
             switch ckError.code {
             case .permissionFailure:
                 let bundleID = Bundle.main.bundleIdentifier ?? "unknown-bundle-id"
-                return "\(prefix): Bundle ID '\(bundleID)' belum diotorisasi untuk container '\(containerLabel)' (\(detail))."
+                return
+                    "\(prefix): Bundle ID '\(bundleID)' belum diotorisasi untuk container '\(containerLabel)' (\(detail))."
             case .unknownItem:
-                return "\(prefix): Record type CloudKit belum tersedia di container '\(containerLabel)' (\(environmentLabel)): \(detail)."
+                return
+                    "\(prefix): Record type CloudKit belum tersedia di container '\(containerLabel)' (\(environmentLabel)): \(detail)."
             case .notAuthenticated:
-                return "\(prefix): Akun iCloud pada Mac belum masuk atau akses iCloud tidak tersedia (\(detail))."
+                return
+                    "\(prefix): Akun iCloud pada Mac belum masuk atau akses iCloud tidak tersedia (\(detail))."
             default:
                 return "\(prefix) (\(containerLabel)): \(detail)"
             }

@@ -46,9 +46,10 @@ public struct LocalVariProcessor: VariProcessing {
             )
         } else if ext == "jpeg" || ext == "jpg" {
             guard let imageSource = CGImageSourceCreateWithURL(photoURL as CFURL, nil),
-                  CGImageSourceGetCount(imageSource) > 0
+                CGImageSourceGetCount(imageSource) > 0
             else {
-                throw MappingError.invalid("Berkas JPEG rusak atau tidak dapat dibaca: \(photoURL.lastPathComponent)")
+                throw MappingError.invalid(
+                    "Berkas JPEG rusak atau tidak dapat dibaca: \(photoURL.lastPathComponent)")
             }
             if photoURL.standardizedFileURL != targetJPEGURL.standardizedFileURL {
                 if fm.fileExists(atPath: targetJPEGURL.path) {
@@ -122,17 +123,21 @@ public struct LocalVariProcessor: VariProcessing {
 
         let imageInfo = json["image"] as? [String: Any]
         let metadata = json["metadata"] as? [String: Any]
-        let treeCount = (imageInfo?["trees"] as? NSNumber)?.intValue
+        let treeCount =
+            (imageInfo?["trees"] as? NSNumber)?.intValue
             ?? (metadata?["detected_tree_count"] as? NSNumber)?.intValue
             ?? 0
-        let imageWidthPx = (imageInfo?["width"] as? NSNumber)?.intValue
+        let imageWidthPx =
+            (imageInfo?["width"] as? NSNumber)?.intValue
             ?? (metadata?["image_width_px"] as? NSNumber)?.intValue
-        let imageHeightPx = (imageInfo?["height"] as? NSNumber)?.intValue
+        let imageHeightPx =
+            (imageInfo?["height"] as? NSNumber)?.intValue
             ?? (metadata?["image_height_px"] as? NSNumber)?.intValue
 
         // Summary
         let summaryDict = json["summary"] as? [String: Any]
-        let refMean = (summaryDict?["reference_zone_mean_vari"] as? NSNumber)?.doubleValue
+        let refMean =
+            (summaryDict?["reference_zone_mean_vari"] as? NSNumber)?.doubleValue
             ?? (metadata?["reference_zone_mean_vari"] as? NSNumber)?.doubleValue
         let overallConfidence = (metadata?["overall_field_confidence"] as? NSNumber)?.doubleValue
 
@@ -172,7 +177,8 @@ public struct LocalVariProcessor: VariProcessing {
             let areaHa = (rec?["zone_area_ha"] as? NSNumber)?.doubleValue
 
             let fert = rec?["fertilizers"] as? [String: Any]
-            let mgKg = (fert?["dolomite_Mg_cheaper"] as? [String: Any])?["annual_total_kg"] as? Double
+            let mgKg =
+                (fert?["dolomite_Mg_cheaper"] as? [String: Any])?["annual_total_kg"] as? Double
                 ?? (fert?["kieserite_Mg_expensive"] as? [String: Any])?["annual_total_kg"] as? Double
             let nKg = (fert?["urea_N_expensive"] as? [String: Any])?["annual_total_kg"] as? Double
 
@@ -252,14 +258,16 @@ public struct LocalVariProcessor: VariProcessing {
         var budgetSummary: VariBudgetSummary?
 
         if let combinedCalc = json["combined_fertilizer_calculations"] as? [String: Any],
-           let npkAnalysis = combinedCalc["field_wide_npk_baseline_comparison"] as? [String: Any]
+            let npkAnalysis = combinedCalc["field_wide_npk_baseline_comparison"] as? [String: Any]
         {
             if let userBlendDict = npkAnalysis["user_blend"] as? [String: Any] {
                 let ratio = parseNPKRatio(userBlendDict["label_percent"] as? [String: Any])
                 let bagSize = (userBlendDict["bag_size_kg"] as? NSNumber)?.doubleValue ?? 50.0
                 let areaHaUsed = (userBlendDict["farm_area_ha_used"] as? NSNumber)?.doubleValue
-                let npkFarmKg = (userBlendDict["npk_product_kg_farm_per_year"] as? NSNumber)?.doubleValue ?? 0.0
-                let dosePerTree = (userBlendDict["dose_per_tree_kg_per_application"] as? NSNumber)?.doubleValue
+                let npkFarmKg =
+                    (userBlendDict["npk_product_kg_farm_per_year"] as? NSNumber)?.doubleValue ?? 0.0
+                let dosePerTree = (userBlendDict["dose_per_tree_kg_per_application"] as? NSNumber)?
+                    .doubleValue
                 let appFreq = (userBlendDict["fertilizer_applications_per_year"] as? NSNumber)?.doubleValue
 
                 userBlendSummary = VariUserBlendSummary(
@@ -277,7 +285,8 @@ public struct LocalVariProcessor: VariProcessing {
 
             let rankingDict = npkAnalysis["closest_to_budget_ranking"] as? [String: Any]
             let rankingTargetBudget = (rankingDict?["annual_budget_rp"] as? NSNumber)?.doubleValue
-            let rankingTopupCost = (rankingDict?["selected_zone_mg_urea_whole_bag_cost_farm_year_rp"] as? NSNumber)?
+            let rankingTopupCost =
+                (rankingDict?["selected_zone_mg_urea_whole_bag_cost_farm_year_rp"] as? NSNumber)?
                 .doubleValue
             let rankingClosestOpt = rankingDict?["closest_blend_option"] as? String
 
@@ -290,23 +299,27 @@ public struct LocalVariProcessor: VariProcessing {
                 }
             }
 
-            var targetBudget = (npkAnalysis["target_annual_budget_idr"] as? NSNumber)?.doubleValue
+            var targetBudget =
+                (npkAnalysis["target_annual_budget_idr"] as? NSNumber)?.doubleValue
                 ?? rankingTargetBudget
-            var topupCost = (npkAnalysis["selected_zone_topup_cost_idr"] as? NSNumber)?.doubleValue
+            var topupCost =
+                (npkAnalysis["selected_zone_topup_cost_idr"] as? NSNumber)?.doubleValue
                 ?? rankingTopupCost
             let closestOpt = npkAnalysis["closest_option"] as? String ?? rankingClosestOpt
 
             var candidates: [VariBudgetCandidate] = []
 
             if let estimateList = npkAnalysis["blend_purchase_price_estimates"] as? [[String: Any]],
-               !estimateList.isEmpty
+                !estimateList.isEmpty
             {
                 for (idx, item) in estimateList.enumerated() {
                     let blend = item["blend_option"] as? String ?? "Option \(idx + 1)"
                     let ranked = rankedByOption[blend]
 
-                    let parsedRatio = parseNPKRatio(item["label_percent_n_p2o5_k2o_mgo"] as? [String: Any])
-                        ?? parseNPKRatio(ranked?["composition_label_percent_n_p2o5_k2o_mgo"] as? [String: Any])
+                    let parsedRatio =
+                        parseNPKRatio(item["label_percent_n_p2o5_k2o_mgo"] as? [String: Any])
+                        ?? parseNPKRatio(
+                            ranked?["composition_label_percent_n_p2o5_k2o_mgo"] as? [String: Any])
                     let ratioLabel: String
                     if let parsedRatio {
                         ratioLabel = String(
@@ -330,13 +343,16 @@ public struct LocalVariProcessor: VariProcessing {
                         topupCost = capZoneCost
                     }
 
-                    let perHaExactBags = (item["age_adjusted_exact_bags_per_ha_year"] as? NSNumber)?.doubleValue
+                    let perHaExactBags =
+                        (item["age_adjusted_exact_bags_per_ha_year"] as? NSNumber)?.doubleValue
                         ?? (item["baseline_exact_bags_per_ha_year"] as? NSNumber)?.doubleValue
-                    let exactBagsFarm = (ranked?["age_adjusted_exact_bags_farm_year"] as? NSNumber)?.doubleValue
+                    let exactBagsFarm =
+                        (ranked?["age_adjusted_exact_bags_farm_year"] as? NSNumber)?.doubleValue
                         ?? perHaExactBags.map { $0 * farmAreaHa }
                     let exactKgFarm = exactBagsFarm.map { $0 * bagSizeKg }
 
-                    let fullBagsFarm = (ranked?["age_adjusted_full_bags_farm_year"] as? NSNumber)?.intValue
+                    let fullBagsFarm =
+                        (ranked?["age_adjusted_full_bags_farm_year"] as? NSNumber)?.intValue
                         ?? (ageCap?["estimated_npk_full_bags_for_farm"] as? NSNumber)?.intValue
                         ?? (ageCap?["baseline_full_bags_for_farm_year"] as? NSNumber)?.intValue
                         ?? exactBagsFarm.map { Int(ceil($0)) }
@@ -344,7 +360,8 @@ public struct LocalVariProcessor: VariProcessing {
                         ?? (item["baseline_full_bags_per_ha_year"] as? NSNumber)?.intValue
                         ?? 0
 
-                    let npkCostFarm = (ranked?["npk_full_bag_cost_farm_year_rp"] as? NSNumber)?.doubleValue
+                    let npkCostFarm =
+                        (ranked?["npk_full_bag_cost_farm_year_rp"] as? NSNumber)?.doubleValue
                         ?? (item["age_adjusted_full_bag_cost_rp_per_ha_year"] as? NSNumber).map {
                             $0.doubleValue * farmAreaHa
                         }
@@ -353,19 +370,22 @@ public struct LocalVariProcessor: VariProcessing {
                         }
                         ?? 0.0
 
-                    let zoneCost = (ranked?["selected_zone_mg_urea_whole_bag_cost_farm_year_rp"] as? NSNumber)?
+                    let zoneCost =
+                        (ranked?["selected_zone_mg_urea_whole_bag_cost_farm_year_rp"] as? NSNumber)?
                         .doubleValue
                         ?? capZoneCost
                         ?? topupCost
                         ?? 0.0
 
-                    let combinedCost = (ranked?["combined_estimated_cost_farm_year_rp"] as? NSNumber)?.doubleValue
+                    let combinedCost =
+                        (ranked?["combined_estimated_cost_farm_year_rp"] as? NSNumber)?.doubleValue
                         ?? (ageCap?["estimated_combined_whole_bag_cost_rp"] as? NSNumber)?.doubleValue
                         ?? (ageCap?["baseline_combined_whole_bag_cost_rp"] as? NSNumber)?.doubleValue
                         ?? (npkCostFarm + zoneCost)
 
                     let effectiveTarget = capBudget ?? targetBudget ?? 0.0
-                    let delta = (ranked?["budget_difference_rp"] as? NSNumber)?.doubleValue
+                    let delta =
+                        (ranked?["budget_difference_rp"] as? NSNumber)?.doubleValue
                         ?? (combinedCost - effectiveTarget)
                     let isClose = (ranked?["closest_to_budget"] as? Bool) ?? (closestOpt == blend)
 
@@ -390,14 +410,16 @@ public struct LocalVariProcessor: VariProcessing {
                 }
             } else if let candidateList = npkAnalysis["candidate_comparison_table"] as? [[String: Any]] {
                 for (cIdx, c) in candidateList.enumerated() {
-                    let blend = c["blend_option"] as? String ?? c["blendOption"] as? String ?? "Option \(cIdx + 1)"
+                    let blend =
+                        c["blend_option"] as? String ?? c["blendOption"] as? String ?? "Option \(cIdx + 1)"
                     let ratio = c["label_ratio"] as? String ?? c["labelRatio"] as? String ?? ""
                     let fullBags = (c["npk_full_bags"] as? NSNumber)?.intValue ?? 0
                     let npkCost = (c["npk_cost_rp"] as? NSNumber)?.doubleValue ?? 0.0
                     let topup = (c["zone_topup_cost_rp"] as? NSNumber)?.doubleValue ?? (topupCost ?? 0.0)
                     let combinedCost = (c["combined_cost_rp"] as? NSNumber)?.doubleValue ?? (npkCost + topup)
                     let target = (c["budget_target_rp"] as? NSNumber)?.doubleValue ?? (targetBudget ?? 0.0)
-                    let delta = (c["budget_difference_rp"] as? NSNumber)?.doubleValue ?? (combinedCost - target)
+                    let delta =
+                        (c["budget_difference_rp"] as? NSNumber)?.doubleValue ?? (combinedCost - target)
                     let isClose = (c["is_closest"] as? Bool) ?? (closestOpt == blend)
                     let parsedRatio = parseRatioString(ratio)
 
@@ -436,16 +458,19 @@ public struct LocalVariProcessor: VariProcessing {
             return FileManager.default.fileExists(atPath: fileURL.path) ? fileURL : nil
         }
 
-        let sourceImageURL: URL? = assetIfPresent(Self.canonicalJPEGFileName) ?? {
-            guard let rawPath = metadata?["source_image"] as? String else { return nil }
-            let metaURL = URL(fileURLWithPath: rawPath)
-            return FileManager.default.fileExists(atPath: metaURL.path) ? metaURL : nil
-        }()
+        let sourceImageURL: URL? =
+            assetIfPresent(Self.canonicalJPEGFileName)
+            ?? {
+                guard let rawPath = metadata?["source_image"] as? String else { return nil }
+                let metaURL = URL(fileURLWithPath: rawPath)
+                return FileManager.default.fileExists(atPath: metaURL.path) ? metaURL : nil
+            }()
 
         let assets = VariAssetURLs(
             sourceImageURL: sourceImageURL,
             annotatedMapURL: assetIfPresent("oil_palm_zones_annotated.jpg"),
-            whiteSeparatorsWithNumbersURL: assetIfPresent("oil_palm_zones_white_separators_with_zone_numbers.jpg"),
+            whiteSeparatorsWithNumbersURL: assetIfPresent(
+                "oil_palm_zones_white_separators_with_zone_numbers.jpg"),
             quartilesMapURL: assetIfPresent("oil_palm_field_tree_vari_quartiles.jpg"),
             heatmapMontageURL: assetIfPresent("oil_palm_tree_vari_heatmap_montage.png"),
             pipelinePlotURL: assetIfPresent("oil_palm_pipeline_stages.jpg"),
@@ -474,10 +499,10 @@ public struct LocalVariProcessor: VariProcessing {
 
     private static func parsePixelBox(_ dict: [String: Any]?) -> VariPixelBox? {
         guard let dict,
-              let x1 = (dict["x1"] as? NSNumber)?.doubleValue,
-              let y1 = (dict["y1"] as? NSNumber)?.doubleValue,
-              let x2 = (dict["x2"] as? NSNumber)?.doubleValue,
-              let y2 = (dict["y2"] as? NSNumber)?.doubleValue
+            let x1 = (dict["x1"] as? NSNumber)?.doubleValue,
+            let y1 = (dict["y1"] as? NSNumber)?.doubleValue,
+            let x2 = (dict["x2"] as? NSNumber)?.doubleValue,
+            let y2 = (dict["y2"] as? NSNumber)?.doubleValue
         else {
             return nil
         }
@@ -487,8 +512,8 @@ public struct LocalVariProcessor: VariProcessing {
     private static func parseNPKRatio(_ dict: [String: Any]?) -> VariNPKRatio? {
         guard let dict else { return nil }
         guard let n = (dict["N"] as? NSNumber)?.doubleValue,
-              let p = (dict["P2O5"] as? NSNumber)?.doubleValue,
-              let k = (dict["K2O"] as? NSNumber)?.doubleValue
+            let p = (dict["P2O5"] as? NSNumber)?.doubleValue,
+            let k = (dict["K2O"] as? NSNumber)?.doubleValue
         else {
             return nil
         }
