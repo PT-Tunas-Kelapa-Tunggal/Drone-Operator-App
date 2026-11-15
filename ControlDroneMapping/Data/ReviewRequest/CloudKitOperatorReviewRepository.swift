@@ -3,6 +3,7 @@ import Foundation
 
 public final class CloudKitOperatorReviewRepository: OperatorReviewRepository, @unchecked Sendable {
     public static let shared = CloudKitOperatorReviewRepository()
+    private static let pollingIntervalNanoseconds: UInt64 = 10 * 60 * 1_000_000_000
 
     private let containerIdentifier: String
     private let database: CKDatabase
@@ -103,7 +104,7 @@ public final class CloudKitOperatorReviewRepository: OperatorReviewRepository, @
                     if let requests = try? await self.fetchAllRequests() {
                         continuation.yield(requests)
                     }
-                    try? await Task.sleep(nanoseconds: 8_000_000_000)
+                    try? await Task.sleep(nanoseconds: Self.pollingIntervalNanoseconds)
                 }
             }
             continuation.onTermination = { _ in
