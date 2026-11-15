@@ -51,6 +51,8 @@ public struct LocalVariTimingProcessor: VariTimingProcessing {
         }
 
         var environment = ProcessInfo.processInfo.environment
+        environment["PYTHONUNBUFFERED"] = "1"
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
         if let wk = options.weatherKit, fm.isReadableFile(atPath: wk.keyFileURL.path) {
             environment["WK_TEAM_ID"] = wk.teamID
             environment["WK_KEY_ID"] = wk.keyID

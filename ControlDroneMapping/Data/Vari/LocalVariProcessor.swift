@@ -4,18 +4,65 @@ import ImageIO
 /// Executes the bundled VariEngine to process an orthomosaic into VARI and HARA analysis.
 public struct LocalVariProcessor: VariProcessing {
     public static let canonicalJPEGFileName = "orthomosaic.jpeg"
+    public static let logFileName = "vari_processing.log"
+    private static let workerQueue = DispatchQueue(label: "mapping.vari", qos: .userInitiated)
+    private static let maxDiagnosticsBytes = 8192
 
     public init() {}
 
     public func checkEngine() async throws -> String {
-        try BundledVariEngine.check()
+        try await withCheckedThrowingContinuation { continuation in
+            Self.workerQueue.async {
+                continuation.resume(with: Result { try BundledVariEngine.check() })
+            }
+        }
     }
 
     public func process(
         photoURL: URL,
         submission: VariEngineSubmissionRequest? = nil,
-        outputFolder: URL? = nil
+        outputFolder: URL? = nil,
+        cancellation: VariProcessCancellation? = nil,
+        onStage: (@Sendable (VariProcessingStage) -> Void)? = nil
     ) async throws -> VariScanResult {
+        let token = cancellation ?? VariProcessCancellation()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                Self.workerQueue.async {
+                    continuation.resume(
+                        with: Result {
+                            try Self.executeSync(
+                                photoURL: photoURL,
+                                submission: submission,
+                                outputFolder: outputFolder,
+                                cancellation: token,
+                                onStage: onStage
+                            )
+                        }
+                    )
+                }
+            }
+        } onCancel: {
+            token.cancel()
+        }
+    }
+
+    private static func executeSync(
+        photoURL: URL,
+        submission: VariEngineSubmissionRequest?,
+        outputFolder: URL?,
+        cancellation: VariProcessCancellation,
+        onStage: (@Sendable (VariProcessingStage) -> Void)?
+    ) throws -> VariScanResult {
+        let activity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated, .idleSystemSleepDisabled],
+            reason: "Menjalankan analisis VARI & HARA"
+        )
+        defer { ProcessInfo.processInfo.endActivity(activity) }
+
+        onStage?(.validatingEngine)
+        try cancellation.check()
+
         try BundledVariEngine.validateEmbedded()
         guard let helper = BundledVariEngine.helperExecutable else {
             throw MappingError.invalid("Helper binary VariPython tidak ditemukan.")
@@ -35,70 +82,124 @@ public struct LocalVariProcessor: VariProcessing {
             throw MappingError.invalid("Berkas citra tidak ditemukan di: \(photoURL.path)")
         }
 
-        let targetJPEGURL = destinationFolder.appendingPathComponent(Self.canonicalJPEGFileName)
-        let effectiveImageURL: URL
+        // Stage inside a hidden run folder so failed/cancelled reruns leave any previous results untouched.
+        let stagingFolder = destinationFolder.appendingPathComponent(".vari-run-\(UUID().uuidString)")
+        try fm.createDirectory(at: stagingFolder, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: stagingFolder) }
+
+        let stagedJPEGURL = stagingFolder.appendingPathComponent(Self.canonicalJPEGFileName)
         let ext = photoURL.pathExtension.lowercased()
         if ext == "tif" || ext == "tiff" {
-            effectiveImageURL = try TIFFToJPEGConverter.convert(
+            onStage?(.convertingImage)
+            try cancellation.check()
+            try TIFFToJPEGConverter.convert(
                 from: photoURL,
-                to: targetJPEGURL,
-                quality: 0.5
+                to: stagedJPEGURL,
+                quality: 0.5,
+                shouldCancel: { cancellation.isCancelled }
             )
         } else if ext == "jpeg" || ext == "jpg" {
+            onStage?(.copyingImage)
+            try cancellation.check()
             guard let imageSource = CGImageSourceCreateWithURL(photoURL as CFURL, nil),
                 CGImageSourceGetCount(imageSource) > 0
             else {
                 throw MappingError.invalid(
                     "Berkas JPEG rusak atau tidak dapat dibaca: \(photoURL.lastPathComponent)")
             }
-            if photoURL.standardizedFileURL != targetJPEGURL.standardizedFileURL {
-                if fm.fileExists(atPath: targetJPEGURL.path) {
-                    try fm.removeItem(at: targetJPEGURL)
-                }
-                try fm.copyItem(at: photoURL, to: targetJPEGURL)
-            }
-            effectiveImageURL = targetJPEGURL
+            try fm.copyItem(at: photoURL, to: stagedJPEGURL)
         } else {
             throw MappingError.invalid(
                 "Format citra '.\(photoURL.pathExtension)' tidak didukung untuk analisis VARI. Harap sediakan citra TIFF (.tif/.tiff) atau JPEG (.jpg/.jpeg)."
             )
         }
 
-        let jsonString = try submission.toJSONString()
+        try cancellation.check()
+        onStage?(.runningEngine)
 
+        let jsonString = try submission.toJSONString()
         let process = Process()
         process.executableURL = helper
         process.arguments = [
             "-m", "krops_vari.main",
-            "--image", effectiveImageURL.path,
+            "--image", stagedJPEGURL.path,
             "--user-request-submission-json", jsonString,
-            "--output-dir", destinationFolder.path,
+            "--output-dir", stagingFolder.path,
         ]
+        var environment = ProcessInfo.processInfo.environment
+        environment["PYTHONUNBUFFERED"] = "1"
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
+        process.environment = environment
 
         let pipe = Pipe()
         process.standardError = pipe
         process.standardOutput = pipe
 
-        try process.run()
+        let logURL = destinationFolder.appendingPathComponent(Self.logFileName)
+        fm.createFile(atPath: logURL.path, contents: nil)
+        let logHandle = try? FileHandle(forWritingTo: logURL)
+        defer { try? logHandle?.close() }
+
+        try cancellation.launch(process)
+        defer {
+            cancellation.clear()
+            if process.isRunning {
+                cancellation.cancel()
+                process.waitUntilExit()
+            }
+        }
+
+        // Continuously drain stdout+stderr before waitUntilExit() to prevent pipe buffer deadlocks.
+        var diagnostics = Data()
+        while true {
+            let chunk = pipe.fileHandleForReading.availableData
+            if chunk.isEmpty { break }
+            try? logHandle?.write(contentsOf: chunk)
+            diagnostics.append(chunk)
+            if diagnostics.count > Self.maxDiagnosticsBytes {
+                diagnostics.removeFirst(diagnostics.count - Self.maxDiagnosticsBytes)
+            }
+        }
         process.waitUntilExit()
 
+        try cancellation.check()
+
         guard process.terminationStatus == 0 else {
-            let errData = pipe.fileHandleForReading.readDataToEndOfFile()
-            let errMsg = String(data: errData, encoding: .utf8) ?? "Unknown error"
+            let errMsg = String(decoding: diagnostics, as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             throw MappingError.invalid(
-                "Pengolahan VARI gagal (exit code \(process.terminationStatus)): \(errMsg)")
+                "Pengolahan VARI gagal (exit code \(process.terminationStatus)): "
+                    + (errMsg.isEmpty ? "Periksa vari_processing.log." : errMsg)
+            )
         }
 
-        let outputJSONURL = destinationFolder.appendingPathComponent("vari_result.json")
-        guard fm.fileExists(atPath: outputJSONURL.path) else {
-            let fallbackJSONURL = destinationFolder.appendingPathComponent("oil_palm_zones_vari.json")
-            if fm.fileExists(atPath: fallbackJSONURL.path) {
-                return try Self.parseScanResult(from: fallbackJSONURL, in: destinationFolder)
+        onStage?(.parsingResults)
+
+        let stagedOutputJSON = stagingFolder.appendingPathComponent("vari_result.json")
+        let stagedFallbackJSON = stagingFolder.appendingPathComponent("oil_palm_zones_vari.json")
+        let stagedResultName: String
+        if fm.fileExists(atPath: stagedOutputJSON.path) {
+            _ = try Self.parseScanResult(from: stagedOutputJSON, in: stagingFolder)
+            stagedResultName = "vari_result.json"
+        } else if fm.fileExists(atPath: stagedFallbackJSON.path) {
+            _ = try Self.parseScanResult(from: stagedFallbackJSON, in: stagingFolder)
+            stagedResultName = "oil_palm_zones_vari.json"
+        } else {
+            throw MappingError.invalid("Berkas hasil VARI tidak ditemukan di \(stagedOutputJSON.path)")
+        }
+
+        // Promote validated artifacts from staging into destinationFolder without touching Orthomosaic or Timing files.
+        let stagedItems = try fm.contentsOfDirectory(at: stagingFolder, includingPropertiesForKeys: nil)
+        for item in stagedItems {
+            let target = destinationFolder.appendingPathComponent(item.lastPathComponent)
+            if fm.fileExists(atPath: target.path) {
+                try fm.removeItem(at: target)
             }
-            throw MappingError.invalid("Berkas hasil VARI tidak ditemukan di \(outputJSONURL.path)")
+            try fm.moveItem(at: item, to: target)
         }
 
-        return try Self.parseScanResult(from: outputJSONURL, in: destinationFolder)
+        let finalJSONURL = destinationFolder.appendingPathComponent(stagedResultName)
+        return try Self.parseScanResult(from: finalJSONURL, in: destinationFolder)
     }
 
     public func loadCachedResult(from folder: URL) throws -> VariScanResult? {

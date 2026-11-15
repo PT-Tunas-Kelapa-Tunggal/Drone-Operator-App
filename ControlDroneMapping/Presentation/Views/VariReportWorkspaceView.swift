@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -703,12 +704,8 @@ public struct VariReportWorkspaceView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if let plotURL = result.assets.variDistributionPlotURL,
-                   let plotImg = NSImage(contentsOf: plotURL) {
-                    Image(nsImage: plotImg)
-                        .resizable()
-                        .scaledToFit()
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                if let plotURL = result.assets.variDistributionPlotURL {
+                    VariAsyncReportImage(url: plotURL)
                 } else {
                     RoundedRectangle(cornerRadius: 10)
                         .fill(Color.secondary.opacity(0.08))
@@ -733,12 +730,8 @@ public struct VariReportWorkspaceView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if let montageURL = result.assets.heatmapMontageURL,
-                   let montageImg = NSImage(contentsOf: montageURL) {
-                    Image(nsImage: montageImg)
-                        .resizable()
-                        .scaledToFit()
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                if let montageURL = result.assets.heatmapMontageURL {
+                    VariAsyncReportImage(url: montageURL)
                 } else {
                     RoundedRectangle(cornerRadius: 10)
                         .fill(Color.secondary.opacity(0.08))
@@ -869,11 +862,8 @@ private struct ZoneCropDetailSheet: View {
                 // Base Crop
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Citra RGB Asli").font(.headline)
-                    if let url = zone.baseImageCropURL, let img = NSImage(contentsOf: url) {
-                        Image(nsImage: img)
-                            .resizable()
-                            .scaledToFit()
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    if let url = zone.baseImageCropURL {
+                        VariAsyncReportImage(url: url)
                     } else {
                         placeholder("Crop citra asli tidak ditemukan")
                     }
@@ -883,11 +873,8 @@ private struct ZoneCropDetailSheet: View {
                 // ExG Crop
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Segmentasi ExG & Kanopi").font(.headline)
-                    if let url = zone.exgImageCropURL, let img = NSImage(contentsOf: url) {
-                        Image(nsImage: img)
-                            .resizable()
-                            .scaledToFit()
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    if let url = zone.exgImageCropURL {
+                        VariAsyncReportImage(url: url)
                     } else {
                         placeholder("Crop ExG tidak ditemukan")
                     }
@@ -1124,19 +1111,101 @@ private struct InteractiveImageViewport: View {
         .task(id: imageURL) {
             guard let imageURL else {
                 image = nil
+                isLoading = false
                 return
             }
+            // Drop any previously retained full-resolution image before decoding the next layer
+            // so two giant (>20k x 20k) bitmaps do not overlap in memory simultaneously.
+            image = nil
             isLoading = true
             let loaded = await Task.detached(priority: .userInitiated) {
-                NSImage(contentsOf: imageURL)
+                decodeFullResolutionNSImage(at: imageURL)
             }.value
-            await MainActor.run {
-                self.image = loaded
-                self.isLoading = false
-                self.zoomScale = 1.0
-                self.panOffset = .zero
-                self.dragTranslation = .zero
+            guard !Task.isCancelled else { return }
+            self.image = loaded
+            self.isLoading = false
+            self.zoomScale = 1.0
+            self.panOffset = .zero
+            self.dragTranslation = .zero
+        }
+        .onDisappear {
+            image = nil
+        }
+    }
+}
+
+/// Decodes a raster image at its full pixel dimensions off the main actor
+/// so ImageIO decompresses pixels eagerly before AppKit draws the layer.
+private func decodeFullResolutionNSImage(at url: URL) -> NSImage? {
+    let sourceOptions: [CFString: Any] = [
+        kCGImageSourceShouldCache: false
+    ]
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else {
+        return nil
+    }
+    let decodeOptions: [CFString: Any] = [
+        kCGImageSourceShouldCache: true,
+        kCGImageSourceShouldCacheImmediately: true,
+    ]
+    if let cgImage = CGImageSourceCreateImageAtIndex(source, 0, decodeOptions as CFDictionary) {
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+    }
+    return NSImage(contentsOf: url)
+}
+
+/// Loads secondary report plots, montages, and zone crop previews off `@MainActor`
+/// without downsampling away diagnostic detail.
+private struct VariAsyncReportImage: View {
+    let url: URL?
+    var cornerRadius: CGFloat = 10
+    var maxHeight: CGFloat?
+
+    @State private var image: NSImage?
+    @State private var isLoading = false
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: maxHeight)
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            } else if isLoading {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(KropsStyle.canvas)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: min(maxHeight ?? 240, 240))
+                    .overlay { ProgressView().controlSize(.small) }
+            } else if url != nil {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(KropsStyle.canvas)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 160)
+                    .overlay {
+                        Label("Citra tidak dapat dimuat", systemImage: "photo.badge.exclamationmark")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
             }
+        }
+        .task(id: url) {
+            guard let url else {
+                image = nil
+                isLoading = false
+                return
+            }
+            image = nil
+            isLoading = true
+            let decoded = await Task.detached(priority: .userInitiated) {
+                decodeFullResolutionNSImage(at: url)
+            }.value
+            guard !Task.isCancelled else { return }
+            image = decoded
+            isLoading = false
+        }
+        .onDisappear {
+            image = nil
         }
     }
 }

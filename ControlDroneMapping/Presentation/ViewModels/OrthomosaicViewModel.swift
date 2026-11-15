@@ -93,6 +93,11 @@ final class OrthomosaicViewModel: ObservableObject {
     }
 
     func project(_ id: UUID) -> OrthomosaicProject? { projects.first { $0.id == id } }
+    func select(_ id: UUID) {
+        guard project(id) != nil else { return }
+        selectedID = id
+    }
+
     func open(_ id: UUID) {
         guard project(id) != nil else { return }
         selectedID = id
