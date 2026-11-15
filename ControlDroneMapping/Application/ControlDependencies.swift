@@ -45,7 +45,8 @@ struct ControlDependencies {
             waypointGenerator: waypointGenerator
         )
         let repository = DatasetStore(root: demo ? nil : scopedDocuments)
-        let link = LocalLink(camera: false, enabled: !demo, store: repository)
+        let link = LocalLink(
+            camera: false, enabled: !demo && IPhoneConnectionSettings.isEnabled(), store: repository)
         self.link = link
         let reviewRepository: any OperatorReviewRepository =
             demo
