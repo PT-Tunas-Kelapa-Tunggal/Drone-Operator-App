@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import ImageIO
 
 final class OrthomosaicViewModel: ObservableObject {
     @Published private(set) var projects: [OrthomosaicProject] = []
@@ -51,6 +52,17 @@ final class OrthomosaicViewModel: ObservableObject {
         } catch { engineMessage = "Pilih kembali folder engine: " + error.localizedDescription }
     }
     var selected: OrthomosaicProject? { projects.first { $0.id == selectedID } }
+    var hasValidOutput: Bool {
+        selected?.outputs.contains { output in
+            guard output.width > 0, output.height > 0,
+                let source = CGImageSourceCreateWithURL(output.image as CFURL, nil),
+                CGImageSourceGetCount(source) > 0,
+                let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]
+            else { return false }
+            return (properties[kCGImagePropertyPixelWidth as String] as? Int) == output.width
+                && (properties[kCGImagePropertyPixelHeight as String] as? Int) == output.height
+        } ?? false
+    }
     var canStart: Bool {
         guard let project = selected else { return false }
         return engineReady && !engineInstalling && !busy && storageError == nil
@@ -446,7 +458,9 @@ final class OrthomosaicViewModel: ObservableObject {
                         finishWithError(MappingError.invalid("Misi pengolahan hilang."))
                         return
                     }
-                    current.outputs.insert(output, at: 0)
+                    // Publish only after a successful run. Failed/cancelled reruns keep
+                    // the previous output and its downstream VARI/timing artifacts.
+                    current.outputs = [output]
                     current.state = .completed
                     current.fraction = 1
                     current.message =
