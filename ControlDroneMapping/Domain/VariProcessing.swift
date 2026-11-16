@@ -71,11 +71,13 @@ public struct VariTreeDetection: Identifiable, Sendable, Equatable {
     public let id: Int
     public let zoneID: Int
     public let boundingBox: VariPixelBox
+    public let variQuartile: String?
 
-    public init(id: Int, zoneID: Int, boundingBox: VariPixelBox) {
+    public init(id: Int, zoneID: Int, boundingBox: VariPixelBox, variQuartile: String? = nil) {
         self.id = id
         self.zoneID = zoneID
         self.boundingBox = boundingBox
+        self.variQuartile = variQuartile
     }
 }
 

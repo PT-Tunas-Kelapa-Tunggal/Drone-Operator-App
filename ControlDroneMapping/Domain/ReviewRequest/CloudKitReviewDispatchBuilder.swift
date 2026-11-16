@@ -105,13 +105,12 @@ public enum CloudKitReviewDispatchBuilder {
                         height: imgHeight
                     )
                 }
-                // HELD OFF: ML tree-health label is not yet available; emit temporary `.unknown`.
                 treeItems.append(
                     TreeIdentificationItem(
                         id: Int64(tree.id),
                         boundingBox: tree.boundingBox.corners,
                         zoneId: Int64(zone.zoneID),
-                        healthynessLabel: .unknown
+                        healthynessLabel: TreeHealthLabel(engineValue: tree.variQuartile)
                     )
                 )
             }

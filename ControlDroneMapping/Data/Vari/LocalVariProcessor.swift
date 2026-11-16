@@ -293,7 +293,14 @@ public struct LocalVariProcessor: VariProcessing {
                 if let treeBox = parsePixelBox(t["bbox"] as? [String: Any])
                     ?? parsePixelBox(t["bounding_box_pixels"] as? [String: Any])
                 {
-                    trees.append(VariTreeDetection(id: treeID, zoneID: zoneID, boundingBox: treeBox))
+                    trees.append(
+                        VariTreeDetection(
+                            id: treeID,
+                            zoneID: zoneID,
+                            boundingBox: treeBox,
+                            variQuartile: t["vari_quartile"] as? String
+                        )
+                    )
                 }
             }
 
