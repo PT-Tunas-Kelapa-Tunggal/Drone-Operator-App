@@ -8,7 +8,7 @@ nonisolated public enum TreeHealthLabel: String, Codable, Equatable, Sendable {
     case tidakWajar = "Tidak Wajar"
     case unknown = "Unknown"
 
-    /// Converts a VARI tree quartile into the contract label.
+    /// Accepts both the VARI quartile and the stored contract label.
     /// The engine may vary casing and whitespace, so normalize before matching.
     public init(engineValue: String?) {
         let normalized = (engineValue ?? "")
@@ -16,10 +16,10 @@ nonisolated public enum TreeHealthLabel: String, Codable, Equatable, Sendable {
             .filter { !$0.isWhitespace && $0 != "_" && $0 != "-" }
 
         switch normalized {
-        case "q1": self = .tidakWajar
-        case "q2": self = .defisiensi
-        case "q3": self = .terindikasi
-        case "q4": self = .normal
+        case "q1", "tidakwajar": self = .tidakWajar
+        case "q2", "defisiensi": self = .defisiensi
+        case "q3", "terindikasi": self = .terindikasi
+        case "q4", "normal": self = .normal
         default: self = .unknown
         }
     }
