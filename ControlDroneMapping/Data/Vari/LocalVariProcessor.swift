@@ -413,10 +413,10 @@ public struct LocalVariProcessor: VariProcessing {
 
                 for (key, nutrientType) in nutrientTypes {
                     guard let comparison = rawComparisons[key],
-                        let baseline = (comparison["baseline_elemental_kg_ha_year"] as? NSNumber)?
+                        let baseline = (comparison["recorded_fertilizer_supply_elemental_kg_ha_year"] as? NSNumber)?
                             .doubleValue,
                         let recordedSupply =
-                            (comparison["recorded_fertilizer_supply_elemental_kg_ha_year"] as? NSNumber)?
+                            (comparison["baseline_elemental_kg_farm_year"] as? NSNumber)?
                             .doubleValue,
                         baseline.isFinite,
                         recordedSupply.isFinite
