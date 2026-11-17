@@ -291,7 +291,7 @@ public enum CloudKitReviewDispatchBuilder {
                 FertilizerNeedItem(
                     fertilizerApplicationType: .general,
                     fertilizerType: explicitType,
-                    recommendedDosage: recommendedKg,
+                    recommendedDosagePerZonePerYear: recommendedKg,
                     dosageUnit: "kg",
                     currentDosage: currentDosageKg,
                     zoneId: nil
@@ -330,7 +330,8 @@ public enum CloudKitReviewDispatchBuilder {
                 FertilizerNeedItem(
                     fertilizerApplicationType: .zoneSpecific,
                     fertilizerType: contractType,
-                    recommendedDosage: row.roundedCombinedKg,
+                    recommendedDosagePerZonePerYear: row.supplementKg,
+                    recommendedDosagePerTreePerZonePerYear: row.fertilizerAmountPerTreeKgPerYear,
                     dosageUnit: "kg",
                     currentDosage: farmerAnnualDose,
                     zoneId: Int64(zoneID)

@@ -340,6 +340,7 @@ public struct LocalVariProcessor: VariProcessing {
             let prodName = p["product"] as? String ?? ""
             let nutrient = p["nutrient"] as? String
             let supp = (p["product_kg_per_zone_per_year"] as? NSNumber)?.doubleValue ?? 0.0
+            let perTreeKg = (p["product_kg_per_palm_per_year"] as? NSNumber)?.doubleValue
             let base = (p["base_product_kg_per_zone_per_year"] as? NSNumber)?.doubleValue ?? 0.0
             let comb = supp + base
             let estBags = comb / 50.0
@@ -353,6 +354,7 @@ public struct LocalVariProcessor: VariProcessing {
                     productName: prodName,
                     nutrientType: nutrient,
                     supplementKg: supp,
+                    fertilizerAmountPerTreeKgPerYear: perTreeKg,
                     baseProductKg: base,
                     combinedKg: comb,
                     estimatedBags: estBags,
@@ -501,13 +503,7 @@ public struct LocalVariProcessor: VariProcessing {
                         ?? 0
 
                     let npkCostFarm =
-                        (ranked?["npk_full_bag_cost_farm_year_rp"] as? NSNumber)?.doubleValue
-                        ?? (item["age_adjusted_full_bag_cost_rp_per_ha_year"] as? NSNumber).map {
-                            $0.doubleValue * farmAreaHa
-                        }
-                        ?? (item["baseline_full_bag_cost_rp_per_ha_year"] as? NSNumber).map {
-                            $0.doubleValue * farmAreaHa
-                        }
+                        (ranked?["npk_full_bag_cost_farm_per_year"] as? NSNumber)?.doubleValue
                         ?? 0.0
 
                     let zoneCost =
@@ -554,7 +550,10 @@ public struct LocalVariProcessor: VariProcessing {
                         c["blend_option"] as? String ?? c["blendOption"] as? String ?? "Option \(cIdx + 1)"
                     let ratio = c["label_ratio"] as? String ?? c["labelRatio"] as? String ?? ""
                     let fullBags = (c["npk_full_bags"] as? NSNumber)?.intValue ?? 0
-                    let npkCost = (c["npk_cost_rp"] as? NSNumber)?.doubleValue ?? 0.0
+                    let npkCost =
+                        (rankedByOption[blend]?["npk_full_bag_cost_farm_per_year"] as? NSNumber)?.doubleValue
+                        ?? (c["npk_full_bag_cost_farm_per_year"] as? NSNumber)?.doubleValue
+                        ?? 0.0
                     let topup = (c["zone_topup_cost_rp"] as? NSNumber)?.doubleValue ?? (topupCost ?? 0.0)
                     let combinedCost = (c["combined_cost_rp"] as? NSNumber)?.doubleValue ?? (npkCost + topup)
                     let target = (c["budget_target_rp"] as? NSNumber)?.doubleValue ?? (targetBudget ?? 0.0)

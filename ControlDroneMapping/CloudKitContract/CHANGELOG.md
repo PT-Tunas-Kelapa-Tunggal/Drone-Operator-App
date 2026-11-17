@@ -3,6 +3,11 @@
 Every modification to the `CloudKitContract` folder must be documented here and accompanied by a bump to `ContractInfo.version`.
 
 ## 1 — 2026-11-17
+- Renamed `FertilizerNeedItem.recommendedDosage` to `recommendedDosagePerZonePerYear` in Swift, preserving the `recommended_dosage` JSON key. Zone-specific recommendations now copy VARI's `product_kg_per_zone_per_year` without adding the base amount or rounding; general NPK entries retain their farm-wide annual amount.
+- Added optional `recommendedDosagePerTreePerZonePerYear` (`recommended_dosage_per_tree_per_zone_per_year` in JSON), copied from VARI's `product_kg_per_palm_per_year`. Existing records without this key still decode, and general NPK entries omit it.
+- No top-level CloudKit fields were added; the new value is inside the existing `fertilizerNeedPerZone` JSON envelope.
+
+## 1 — 2026-11-17
 - Integrated the iOS contract's detailed JSON decoding errors, preserving coding paths and missing-key context in diagnostics.
 - Documented that tree health decoding accepts both stored labels (`Normal`, `Terindikasi`, `Defisiensi`, `Tidak Wajar`) and VARI quartiles (`q1`–`q4`), preserving unknown values as `Unknown`. The decoding logic was already present in the macOS working tree.
 - No CloudKit field or payload shape changes.

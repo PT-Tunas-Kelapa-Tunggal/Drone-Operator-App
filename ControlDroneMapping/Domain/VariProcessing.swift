@@ -149,6 +149,7 @@ public struct VariProductRow: Identifiable, Sendable, Equatable {
     public let productName: String
     public let nutrientType: String?
     public let supplementKg: Double
+    public let fertilizerAmountPerTreeKgPerYear: Double?
     public let baseProductKg: Double
     public let combinedKg: Double
     public let estimatedBags: Double
@@ -161,6 +162,7 @@ public struct VariProductRow: Identifiable, Sendable, Equatable {
         productName: String,
         nutrientType: String? = nil,
         supplementKg: Double,
+        fertilizerAmountPerTreeKgPerYear: Double? = nil,
         baseProductKg: Double,
         combinedKg: Double,
         estimatedBags: Double,
@@ -172,6 +174,7 @@ public struct VariProductRow: Identifiable, Sendable, Equatable {
         self.productName = productName
         self.nutrientType = nutrientType
         self.supplementKg = supplementKg
+        self.fertilizerAmountPerTreeKgPerYear = fertilizerAmountPerTreeKgPerYear
         self.baseProductKg = baseProductKg
         self.combinedKg = combinedKg
         self.estimatedBags = estimatedBags
