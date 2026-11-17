@@ -71,6 +71,8 @@ nonisolated public enum RecordKeys {
         public static let fertilizingZone = "fertilizingZone"
         /// JSON envelope defining fertilizer requirements per zone or general (String).
         public static let fertilizerNeedPerZone = "fertilizerNeedPerZone"
+        /// JSON envelope containing annual bags and prices keyed by known fertilizer raw values (String).
+        public static let fertilizerCostPredictions = "fertilizer_cost_predictions"
         /// JSON envelope with ML-reported current and recommended annual amounts per hectare (String).
         public static let farmNutrientComparisonStatus = "farmNutrientComparisonStatus"
         /// JSON envelope with tree coordinates and health classification (String).
@@ -87,7 +89,7 @@ nonisolated public enum RecordKeys {
         public static let allKeys: Set<String> = [
             progressionStatus, progressionStatusDetail, orthomosaicImage,
             variPlainZoneOverlayImage, variTreeQuartileOverlayImage,
-            fertilizingZone, fertilizerNeedPerZone, farmNutrientComparisonStatus,
+            fertilizingZone, fertilizerNeedPerZone, fertilizerCostPredictions, farmNutrientComparisonStatus,
             treeIdentification,
             plannedOperatorVisitDate, resultSentAt, fertilizationScheduling,
             RecordKeys.schemaVersion,

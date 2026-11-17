@@ -12,6 +12,7 @@ nonisolated public struct MacOSScanRequestRecordWriter: Sendable {
     public var variTreeQuartileOverlayImageURL: URL?
     public var fertilizingZone: [FertilizingZoneItem]?
     public var fertilizerNeedPerZone: [FertilizerNeedItem]?
+    public var fertilizerCostPredictions: FertilizerCostPredictions?
     public var farmNutrientComparisonStatus: [FarmNutrientComparisonStatusItem]?
     public var treeIdentification: [TreeIdentificationItem]?
     public var plannedOperatorVisitDate: Date?
@@ -27,6 +28,7 @@ nonisolated public struct MacOSScanRequestRecordWriter: Sendable {
         variTreeQuartileOverlayImageURL: URL? = nil,
         fertilizingZone: [FertilizingZoneItem]? = nil,
         fertilizerNeedPerZone: [FertilizerNeedItem]? = nil,
+        fertilizerCostPredictions: FertilizerCostPredictions? = nil,
         farmNutrientComparisonStatus: [FarmNutrientComparisonStatusItem]? = nil,
         treeIdentification: [TreeIdentificationItem]? = nil,
         plannedOperatorVisitDate: Date? = nil,
@@ -41,6 +43,7 @@ nonisolated public struct MacOSScanRequestRecordWriter: Sendable {
         self.variTreeQuartileOverlayImageURL = variTreeQuartileOverlayImageURL
         self.fertilizingZone = fertilizingZone
         self.fertilizerNeedPerZone = fertilizerNeedPerZone
+        self.fertilizerCostPredictions = fertilizerCostPredictions
         self.farmNutrientComparisonStatus = farmNutrientComparisonStatus
         self.treeIdentification = treeIdentification
         self.plannedOperatorVisitDate = plannedOperatorVisitDate
@@ -71,6 +74,8 @@ nonisolated public struct MacOSScanRequestRecordWriter: Sendable {
         try encodeEnvelope(fertilizingZone, forKey: RecordKeys.MacOSOwned.fertilizingZone, into: record)
         try encodeEnvelope(
             fertilizerNeedPerZone, forKey: RecordKeys.MacOSOwned.fertilizerNeedPerZone, into: record)
+        try encodeEnvelope(
+            fertilizerCostPredictions, forKey: RecordKeys.MacOSOwned.fertilizerCostPredictions, into: record)
         try encodeEnvelope(
             farmNutrientComparisonStatus,
             forKey: RecordKeys.MacOSOwned.farmNutrientComparisonStatus,

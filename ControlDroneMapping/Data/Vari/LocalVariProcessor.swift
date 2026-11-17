@@ -340,6 +340,7 @@ public struct LocalVariProcessor: VariProcessing {
             let prodName = p["product"] as? String ?? ""
             let nutrient = p["nutrient"] as? String
             let supp = (p["product_kg_per_zone_per_year"] as? NSNumber)?.doubleValue ?? 0.0
+            let perTreeKg = (p["product_kg_per_palm_per_year"] as? NSNumber)?.doubleValue
             let base = (p["base_product_kg_per_zone_per_year"] as? NSNumber)?.doubleValue ?? 0.0
             let comb = supp + base
             let estBags = comb / 50.0
@@ -353,6 +354,7 @@ public struct LocalVariProcessor: VariProcessing {
                     productName: prodName,
                     nutrientType: nutrient,
                     supplementKg: supp,
+                    fertilizerAmountPerTreeKgPerYear: perTreeKg,
                     baseProductKg: base,
                     combinedKg: comb,
                     estimatedBags: estBags,
@@ -364,11 +366,43 @@ public struct LocalVariProcessor: VariProcessing {
         // NPK Baseline, User Blend, and Budget Ranking
         var userBlendSummary: VariUserBlendSummary?
         var budgetSummary: VariBudgetSummary?
+        var fertilizerCostPredictions: [ContractFertilizerType: VariFertilizerCostPrediction] = [:]
         var nutrientComparisons: [VariElementalNutrientComparison] = []
 
-        if let combinedCalc = json["combined_fertilizer_calculations"] as? [String: Any],
-            let npkAnalysis = combinedCalc["field_wide_npk_baseline_comparison"] as? [String: Any]
+        let combinedCalc = json["combined_fertilizer_calculations"] as? [String: Any]
+        if let annualBudget = combinedCalc?["annual_npk_budget_matching"] as? [String: Any],
+            let breakdown = annualBudget["selected_zone_mg_urea_cost_breakdown"] as? [[String: Any]]
         {
+            for item in breakdown {
+                guard let product = item["product"] as? String ?? item["product_key"] as? String else {
+                    continue
+                }
+                let type: ContractFertilizerType
+                switch product {
+                case "dolomite_Mg_cheaper": type = .dolomite
+                case "urea_N_expensive": type = .urea
+                default: continue
+                }
+                guard fertilizerCostPredictions[type] == nil,
+                    let bagValue = (item["full_bags_to_buy"] as? NSNumber)?.doubleValue,
+                    let bags = Int(exactly: bagValue), bags >= 0
+                else { continue }
+                let bagSizeKg = (item["bag_size_kg"] as? NSNumber)?.doubleValue
+                let totalKg = bagSizeKg.flatMap { bagSize -> Double? in
+                    guard bagSize.isFinite, bagSize > 0 else { return nil }
+                    let mass = Double(bags) * bagSize
+                    return mass.isFinite ? mass : nil
+                }
+                let cost = (item["full_bag_purchase_cost_rp"] as? NSNumber)?.doubleValue
+                fertilizerCostPredictions[type] = VariFertilizerCostPrediction(
+                    totalBagsPerYear: bags,
+                    totalKgPerYear: totalKg,
+                    totalPricePerYearRp: cost.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+                )
+            }
+        }
+
+        if let npkAnalysis = combinedCalc?["field_wide_npk_baseline_comparison"] as? [String: Any] {
             if let rawComparisons = npkAnalysis["nutrient_comparison"] as? [String: [String: Any]] {
                 let nutrientTypes: [(String, ContractNutrientType)] = [
                     ("N", .nitrogen),
@@ -379,10 +413,10 @@ public struct LocalVariProcessor: VariProcessing {
 
                 for (key, nutrientType) in nutrientTypes {
                     guard let comparison = rawComparisons[key],
-                        let baseline = (comparison["baseline_elemental_kg_ha_year"] as? NSNumber)?
+                        let baseline = (comparison["recorded_fertilizer_supply_elemental_kg_ha_year"] as? NSNumber)?
                             .doubleValue,
                         let recordedSupply =
-                            (comparison["recorded_fertilizer_supply_elemental_kg_ha_year"] as? NSNumber)?
+                            (comparison["baseline_elemental_kg_farm_year"] as? NSNumber)?
                             .doubleValue,
                         baseline.isFinite,
                         recordedSupply.isFinite
@@ -436,6 +470,22 @@ public struct LocalVariProcessor: VariProcessing {
                     if let key = opt["blend_option"] as? String {
                         rankedByOption[key] = opt
                     }
+                    // Export the ML's purchase values independently of the report estimate table.
+                    guard
+                        let ratio = parseNPKRatio(
+                            opt["composition_label_percent_n_p2o5_k2o_mgo"] as? [String: Any]),
+                        let type = ratio.toExplicitContractNPKType(),
+                        fertilizerCostPredictions[type] == nil,
+                        let bagValue = (opt["age_adjusted_full_bags_farm_year"] as? NSNumber)?.doubleValue,
+                        let bags = Int(exactly: bagValue), bags >= 0
+                    else { continue }
+                    let totalKg = (opt["total_kg"] as? NSNumber)?.doubleValue
+                    let cost = (opt["npk_full_bag_cost_farm_year_rp"] as? NSNumber)?.doubleValue
+                    fertilizerCostPredictions[type] = VariFertilizerCostPrediction(
+                        totalBagsPerYear: bags,
+                        totalKgPerYear: totalKg.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil },
+                        totalPricePerYearRp: cost.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+                    )
                 }
             }
 
@@ -502,12 +552,6 @@ public struct LocalVariProcessor: VariProcessing {
 
                     let npkCostFarm =
                         (ranked?["npk_full_bag_cost_farm_year_rp"] as? NSNumber)?.doubleValue
-                        ?? (item["age_adjusted_full_bag_cost_rp_per_ha_year"] as? NSNumber).map {
-                            $0.doubleValue * farmAreaHa
-                        }
-                        ?? (item["baseline_full_bag_cost_rp_per_ha_year"] as? NSNumber).map {
-                            $0.doubleValue * farmAreaHa
-                        }
                         ?? 0.0
 
                     let zoneCost =
@@ -554,7 +598,10 @@ public struct LocalVariProcessor: VariProcessing {
                         c["blend_option"] as? String ?? c["blendOption"] as? String ?? "Option \(cIdx + 1)"
                     let ratio = c["label_ratio"] as? String ?? c["labelRatio"] as? String ?? ""
                     let fullBags = (c["npk_full_bags"] as? NSNumber)?.intValue ?? 0
-                    let npkCost = (c["npk_cost_rp"] as? NSNumber)?.doubleValue ?? 0.0
+                    let npkCost =
+                        (rankedByOption[blend]?["npk_full_bag_cost_farm_year_rp"] as? NSNumber)?.doubleValue
+                        ?? (c["npk_full_bag_cost_farm_year_rp"] as? NSNumber)?.doubleValue
+                        ?? 0.0
                     let topup = (c["zone_topup_cost_rp"] as? NSNumber)?.doubleValue ?? (topupCost ?? 0.0)
                     let combinedCost = (c["combined_cost_rp"] as? NSNumber)?.doubleValue ?? (npkCost + topup)
                     let target = (c["budget_target_rp"] as? NSNumber)?.doubleValue ?? (targetBudget ?? 0.0)
@@ -635,6 +682,7 @@ public struct LocalVariProcessor: VariProcessing {
             products: products,
             userBlend: userBlendSummary,
             budget: budgetSummary,
+            fertilizerCostPredictions: fertilizerCostPredictions,
             nutrientComparison: nutrientComparisons,
             assets: assets
         )

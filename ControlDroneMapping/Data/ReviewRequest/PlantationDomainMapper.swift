@@ -185,6 +185,12 @@ public struct PlantationDomainMapper: Sendable {
                 result: reader.fertilizerNeedPerZone(),
                 expectPresent: expectFinishedOutputs
             ) ?? []
+        let fertilizerCostPredictions =
+            readOptionalMacOSField(
+                RecordKeys.MacOSOwned.fertilizerCostPredictions,
+                result: reader.fertilizerCostPredictions(),
+                expectPresent: false
+            ) ?? FertilizerCostPredictions()
         let nutrientComparisonStatus =
             readOptionalMacOSField(
                 RecordKeys.MacOSOwned.farmNutrientComparisonStatus,
@@ -206,6 +212,7 @@ public struct PlantationDomainMapper: Sendable {
             || !zones.isEmpty
             || !trees.isEmpty
             || !fertilizerNeeds.isEmpty
+            || !fertilizerCostPredictions.byFertilizer.isEmpty
             || !nutrientComparisonStatus.isEmpty
             || !schedulePeriods.isEmpty
 
@@ -219,6 +226,7 @@ public struct PlantationDomainMapper: Sendable {
                     zones: zones,
                     trees: trees,
                     fertilizerNeeds: fertilizerNeeds,
+                    fertilizerCostPredictions: fertilizerCostPredictions,
                     farmNutrientComparisonStatus: nutrientComparisonStatus,
                     schedulePeriods: schedulePeriods
                 )

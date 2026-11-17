@@ -137,6 +137,16 @@ public enum CloudKitReviewDispatchBuilder {
             zones: sortedZones
         )
 
+        let fertilizerCostPredictions = FertilizerCostPredictions(
+            byFertilizer: variResult.fertilizerCostPredictions.mapValues { prediction in
+                FertilizerCostPredictionItem(
+                    totalBagsNeeded: prediction.totalBagsPerYear,
+                    totalKg: prediction.totalKgPerYear,
+                    totalCost: prediction.totalPricePerYearRp
+                )
+            }
+        )
+
         // 3b. Copy the ML's farm-wide baseline and recorded nutrient supply into the CloudKit payload.
         let nutrientComparisonStatus = variResult.nutrientComparison.map { comparison in
             FarmNutrientComparisonStatusItem(
@@ -178,6 +188,7 @@ public enum CloudKitReviewDispatchBuilder {
             variTreeQuartileOverlayImageURL: treeQuartileImageURL,
             fertilizingZone: zoneItems,
             fertilizerNeedPerZone: fertilizerNeeds,
+            fertilizerCostPredictions: fertilizerCostPredictions,
             farmNutrientComparisonStatus: nutrientComparisonStatus,
             treeIdentification: treeItems,
             plannedOperatorVisitDate: nil,
@@ -193,6 +204,7 @@ public enum CloudKitReviewDispatchBuilder {
             zones: zoneItems,
             trees: treeItems,
             fertilizerNeeds: fertilizerNeeds,
+            fertilizerCostPredictions: fertilizerCostPredictions,
             farmNutrientComparisonStatus: nutrientComparisonStatus,
             schedulePeriods: schedulePeriods
         )
@@ -291,7 +303,7 @@ public enum CloudKitReviewDispatchBuilder {
                 FertilizerNeedItem(
                     fertilizerApplicationType: .general,
                     fertilizerType: explicitType,
-                    recommendedDosage: recommendedKg,
+                    recommendedDosagePerZonePerYear: recommendedKg,
                     dosageUnit: "kg",
                     currentDosage: currentDosageKg,
                     zoneId: nil
@@ -330,7 +342,8 @@ public enum CloudKitReviewDispatchBuilder {
                 FertilizerNeedItem(
                     fertilizerApplicationType: .zoneSpecific,
                     fertilizerType: contractType,
-                    recommendedDosage: row.roundedCombinedKg,
+                    recommendedDosagePerZonePerYear: row.supplementKg,
+                    recommendedDosagePerTreePerZonePerYear: row.fertilizerAmountPerTreeKgPerYear,
                     dosageUnit: "kg",
                     currentDosage: farmerAnnualDose,
                     zoneId: Int64(zoneID)
