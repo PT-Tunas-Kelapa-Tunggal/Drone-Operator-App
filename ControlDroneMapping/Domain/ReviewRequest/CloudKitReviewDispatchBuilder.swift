@@ -127,6 +127,15 @@ public enum CloudKitReviewDispatchBuilder {
             zones: sortedZones
         )
 
+        // 3b. Copy the ML's farm-wide baseline and recorded nutrient supply into the CloudKit payload.
+        let nutrientComparisonStatus = variResult.nutrientComparison.map { comparison in
+            FarmNutrientComparisonStatusItem(
+                nutrientType: comparison.nutrientType,
+                current: comparison.baselineElementalKgHaYear,
+                recommendation: comparison.recordedFertilizerSupplyElementalKgHaYear
+            )
+        }
+
         // 4. Map fertilizationScheduling preserving explicit NPK enum via deterministic lookup
         let schedulePeriods = try buildSchedulePeriods(
             timingResult: timingResult,
@@ -157,6 +166,7 @@ public enum CloudKitReviewDispatchBuilder {
             orthomosaicImageURL: orthomosaicJPEGURL,
             fertilizingZone: zoneItems,
             fertilizerNeedPerZone: fertilizerNeeds,
+            farmNutrientComparisonStatus: nutrientComparisonStatus,
             treeIdentification: treeItems,
             plannedOperatorVisitDate: nil,
             resultSentAt: sentAt,
@@ -169,6 +179,7 @@ public enum CloudKitReviewDispatchBuilder {
             zones: zoneItems,
             trees: treeItems,
             fertilizerNeeds: fertilizerNeeds,
+            farmNutrientComparisonStatus: nutrientComparisonStatus,
             schedulePeriods: schedulePeriods
         )
 

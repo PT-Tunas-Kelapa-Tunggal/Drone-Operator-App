@@ -123,6 +123,12 @@ nonisolated public struct ScanRequestRecord: Sendable {
         decodeEnvelope(RecordKeys.MacOSOwned.fertilizerNeedPerZone)
     }
 
+    public func farmNutrientComparisonStatus()
+        -> Result<[FarmNutrientComparisonStatusItem], FieldError>
+    {
+        decodeEnvelope(RecordKeys.MacOSOwned.farmNutrientComparisonStatus)
+    }
+
     public func treeIdentification() -> Result<[TreeIdentificationItem], FieldError> {
         decodeEnvelope(RecordKeys.MacOSOwned.treeIdentification)
     }

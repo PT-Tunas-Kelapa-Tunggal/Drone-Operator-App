@@ -67,6 +67,8 @@ nonisolated public enum RecordKeys {
         public static let fertilizingZone = "fertilizingZone"
         /// JSON envelope defining fertilizer requirements per zone or general (String).
         public static let fertilizerNeedPerZone = "fertilizerNeedPerZone"
+        /// JSON envelope with ML-reported current and recommended annual amounts per hectare (String).
+        public static let farmNutrientComparisonStatus = "farmNutrientComparisonStatus"
         /// JSON envelope with tree coordinates and health classification (String).
         public static let treeIdentification = "treeIdentification"
         /// Operator's planned visit schedule date (Date).
@@ -80,7 +82,8 @@ nonisolated public enum RecordKeys {
         /// Set of all field keys owned by the macOS application.
         public static let allKeys: Set<String> = [
             progressionStatus, progressionStatusDetail, orthomosaicImage,
-            fertilizingZone, fertilizerNeedPerZone, treeIdentification,
+            fertilizingZone, fertilizerNeedPerZone, farmNutrientComparisonStatus,
+            treeIdentification,
             plannedOperatorVisitDate, resultSentAt, fertilizationScheduling,
             RecordKeys.schemaVersion,
         ]

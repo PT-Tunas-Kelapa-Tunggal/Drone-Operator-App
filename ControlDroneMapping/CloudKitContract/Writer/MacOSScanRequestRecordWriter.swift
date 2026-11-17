@@ -10,6 +10,7 @@ nonisolated public struct MacOSScanRequestRecordWriter: Sendable {
     public var orthomosaicImageURL: URL?
     public var fertilizingZone: [FertilizingZoneItem]?
     public var fertilizerNeedPerZone: [FertilizerNeedItem]?
+    public var farmNutrientComparisonStatus: [FarmNutrientComparisonStatusItem]?
     public var treeIdentification: [TreeIdentificationItem]?
     public var plannedOperatorVisitDate: Date?
     public var resultSentAt: Date?
@@ -22,6 +23,7 @@ nonisolated public struct MacOSScanRequestRecordWriter: Sendable {
         orthomosaicImageURL: URL? = nil,
         fertilizingZone: [FertilizingZoneItem]? = nil,
         fertilizerNeedPerZone: [FertilizerNeedItem]? = nil,
+        farmNutrientComparisonStatus: [FarmNutrientComparisonStatusItem]? = nil,
         treeIdentification: [TreeIdentificationItem]? = nil,
         plannedOperatorVisitDate: Date? = nil,
         resultSentAt: Date? = nil,
@@ -33,6 +35,7 @@ nonisolated public struct MacOSScanRequestRecordWriter: Sendable {
         self.orthomosaicImageURL = orthomosaicImageURL
         self.fertilizingZone = fertilizingZone
         self.fertilizerNeedPerZone = fertilizerNeedPerZone
+        self.farmNutrientComparisonStatus = farmNutrientComparisonStatus
         self.treeIdentification = treeIdentification
         self.plannedOperatorVisitDate = plannedOperatorVisitDate
         self.resultSentAt = resultSentAt
@@ -54,6 +57,11 @@ nonisolated public struct MacOSScanRequestRecordWriter: Sendable {
         try encodeEnvelope(fertilizingZone, forKey: RecordKeys.MacOSOwned.fertilizingZone, into: record)
         try encodeEnvelope(
             fertilizerNeedPerZone, forKey: RecordKeys.MacOSOwned.fertilizerNeedPerZone, into: record)
+        try encodeEnvelope(
+            farmNutrientComparisonStatus,
+            forKey: RecordKeys.MacOSOwned.farmNutrientComparisonStatus,
+            into: record
+        )
         try encodeEnvelope(treeIdentification, forKey: RecordKeys.MacOSOwned.treeIdentification, into: record)
         if let plannedOperatorVisitDate {
             record[RecordKeys.MacOSOwned.plannedOperatorVisitDate] = plannedOperatorVisitDate as CKRecordValue

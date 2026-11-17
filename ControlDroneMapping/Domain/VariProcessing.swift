@@ -334,6 +334,23 @@ public struct VariBudgetSummary: Sendable, Equatable {
     }
 }
 
+/// ML-reported elemental nutrient comparison values (kg/ha/year).
+public struct VariElementalNutrientComparison: Sendable, Equatable {
+    public let nutrientType: ContractNutrientType
+    public let baselineElementalKgHaYear: Double
+    public let recordedFertilizerSupplyElementalKgHaYear: Double
+
+    public init(
+        nutrientType: ContractNutrientType,
+        baselineElementalKgHaYear: Double,
+        recordedFertilizerSupplyElementalKgHaYear: Double
+    ) {
+        self.nutrientType = nutrientType
+        self.baselineElementalKgHaYear = baselineElementalKgHaYear
+        self.recordedFertilizerSupplyElementalKgHaYear = recordedFertilizerSupplyElementalKgHaYear
+    }
+}
+
 /// File URLs for all generated visual maps, CSVs, plots, and JSON payloads.
 public struct VariAssetURLs: Sendable, Equatable {
     public let sourceImageURL: URL?
@@ -389,6 +406,7 @@ public struct VariScanResult: Sendable, Identifiable {
     public let products: [VariProductRow]
     public let userBlend: VariUserBlendSummary?
     public let budget: VariBudgetSummary?
+    public let nutrientComparison: [VariElementalNutrientComparison]
     public let assets: VariAssetURLs
 
     public init(
@@ -405,6 +423,7 @@ public struct VariScanResult: Sendable, Identifiable {
         products: [VariProductRow] = [],
         userBlend: VariUserBlendSummary? = nil,
         budget: VariBudgetSummary? = nil,
+        nutrientComparison: [VariElementalNutrientComparison] = [],
         assets: VariAssetURLs = VariAssetURLs()
     ) {
         self.id = id
@@ -420,6 +439,7 @@ public struct VariScanResult: Sendable, Identifiable {
         self.products = products
         self.userBlend = userBlend
         self.budget = budget
+        self.nutrientComparison = nutrientComparison
         self.assets = assets
     }
 }

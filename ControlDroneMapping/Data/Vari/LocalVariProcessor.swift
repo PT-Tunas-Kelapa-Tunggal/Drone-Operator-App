@@ -364,10 +364,42 @@ public struct LocalVariProcessor: VariProcessing {
         // NPK Baseline, User Blend, and Budget Ranking
         var userBlendSummary: VariUserBlendSummary?
         var budgetSummary: VariBudgetSummary?
+        var nutrientComparisons: [VariElementalNutrientComparison] = []
 
         if let combinedCalc = json["combined_fertilizer_calculations"] as? [String: Any],
             let npkAnalysis = combinedCalc["field_wide_npk_baseline_comparison"] as? [String: Any]
         {
+            if let rawComparisons = npkAnalysis["nutrient_comparison"] as? [String: [String: Any]] {
+                let nutrientTypes: [(String, ContractNutrientType)] = [
+                    ("N", .nitrogen),
+                    ("P", .phosphorus),
+                    ("K", .potassium),
+                    ("Mg", .magnesium),
+                ]
+
+                for (key, nutrientType) in nutrientTypes {
+                    guard let comparison = rawComparisons[key],
+                        let baseline = (comparison["baseline_elemental_kg_ha_year"] as? NSNumber)?
+                            .doubleValue,
+                        let recordedSupply =
+                            (comparison["recorded_fertilizer_supply_elemental_kg_ha_year"] as? NSNumber)?
+                            .doubleValue,
+                        baseline.isFinite,
+                        recordedSupply.isFinite
+                    else {
+                        continue
+                    }
+
+                    nutrientComparisons.append(
+                        VariElementalNutrientComparison(
+                            nutrientType: nutrientType,
+                            baselineElementalKgHaYear: baseline,
+                            recordedFertilizerSupplyElementalKgHaYear: recordedSupply
+                        )
+                    )
+                }
+            }
+
             if let userBlendDict = npkAnalysis["user_blend"] as? [String: Any] {
                 let ratio = parseNPKRatio(userBlendDict["label_percent"] as? [String: Any])
                 let bagSize = (userBlendDict["bag_size_kg"] as? NSNumber)?.doubleValue ?? 50.0
