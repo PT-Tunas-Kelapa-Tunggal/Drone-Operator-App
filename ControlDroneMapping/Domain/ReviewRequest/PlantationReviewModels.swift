@@ -231,6 +231,7 @@ public struct PlantationReviewResult: Sendable, Equatable {
     public let zones: [FertilizingZoneItem]
     public let trees: [TreeIdentificationItem]
     public let fertilizerNeeds: [FertilizerNeedItem]
+    public let fertilizerCostPredictions: FertilizerCostPredictions
     public let farmNutrientComparisonStatus: [FarmNutrientComparisonStatusItem]
     public let schedulePeriods: [FertilizationSchedulePeriodItem]
 
@@ -246,6 +247,7 @@ public struct PlantationReviewResult: Sendable, Equatable {
         zones: [FertilizingZoneItem] = [],
         trees: [TreeIdentificationItem] = [],
         fertilizerNeeds: [FertilizerNeedItem] = [],
+        fertilizerCostPredictions: FertilizerCostPredictions = FertilizerCostPredictions(),
         farmNutrientComparisonStatus: [FarmNutrientComparisonStatusItem] = [],
         schedulePeriods: [FertilizationSchedulePeriodItem] = []
     ) {
@@ -256,6 +258,7 @@ public struct PlantationReviewResult: Sendable, Equatable {
         self.zones = zones
         self.trees = trees
         self.fertilizerNeeds = fertilizerNeeds
+        self.fertilizerCostPredictions = fertilizerCostPredictions
         self.farmNutrientComparisonStatus = farmNutrientComparisonStatus
         self.schedulePeriods = schedulePeriods
     }

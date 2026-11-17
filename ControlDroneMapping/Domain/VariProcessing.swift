@@ -317,6 +317,19 @@ public struct VariBudgetCandidate: Identifiable, Sendable, Equatable {
     }
 }
 
+/// Annual purchase prediction from an ML-ranked NPK option or selected Dolomite/Urea breakdown.
+public struct VariFertilizerCostPrediction: Sendable, Equatable {
+    public let totalBagsPerYear: Int
+    public let totalKgPerYear: Double?
+    public let totalPricePerYearRp: Double?
+
+    public init(totalBagsPerYear: Int, totalKgPerYear: Double?, totalPricePerYearRp: Double?) {
+        self.totalBagsPerYear = totalBagsPerYear
+        self.totalKgPerYear = totalKgPerYear
+        self.totalPricePerYearRp = totalPricePerYearRp
+    }
+}
+
 /// Comprehensive budget recap matching commercial NPK blends and zone Mg/Urea top-ups.
 public struct VariBudgetSummary: Sendable, Equatable {
     public let targetBudgetRp: Double?
@@ -412,6 +425,7 @@ public struct VariScanResult: Sendable, Identifiable {
     public let products: [VariProductRow]
     public let userBlend: VariUserBlendSummary?
     public let budget: VariBudgetSummary?
+    public let fertilizerCostPredictions: [ContractFertilizerType: VariFertilizerCostPrediction]
     public let nutrientComparison: [VariElementalNutrientComparison]
     public let assets: VariAssetURLs
 
@@ -429,6 +443,7 @@ public struct VariScanResult: Sendable, Identifiable {
         products: [VariProductRow] = [],
         userBlend: VariUserBlendSummary? = nil,
         budget: VariBudgetSummary? = nil,
+        fertilizerCostPredictions: [ContractFertilizerType: VariFertilizerCostPrediction] = [:],
         nutrientComparison: [VariElementalNutrientComparison] = [],
         assets: VariAssetURLs = VariAssetURLs()
     ) {
@@ -445,6 +460,7 @@ public struct VariScanResult: Sendable, Identifiable {
         self.products = products
         self.userBlend = userBlend
         self.budget = budget
+        self.fertilizerCostPredictions = fertilizerCostPredictions
         self.nutrientComparison = nutrientComparison
         self.assets = assets
     }
