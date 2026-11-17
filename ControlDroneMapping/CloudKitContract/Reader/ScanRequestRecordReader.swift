@@ -131,6 +131,10 @@ nonisolated public struct ScanRequestRecord: Sendable {
         decodeEnvelope(RecordKeys.MacOSOwned.fertilizerNeedPerZone)
     }
 
+    public func fertilizerCostPredictions() -> Result<FertilizerCostPredictions, FieldError> {
+        decodeEnvelope(RecordKeys.MacOSOwned.fertilizerCostPredictions)
+    }
+
     public func farmNutrientComparisonStatus()
         -> Result<[FarmNutrientComparisonStatusItem], FieldError>
     {
