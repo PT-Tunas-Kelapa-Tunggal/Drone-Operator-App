@@ -8,6 +8,8 @@ nonisolated public struct MacOSScanRequestRecordWriter: Sendable {
     public var progressionStatus: ProgressionStatus?
     public var progressionStatusDetail: [ProgressionStatusDetailEvent]?
     public var orthomosaicImageURL: URL?
+    public var variPlainZoneOverlayImageURL: URL?
+    public var variTreeQuartileOverlayImageURL: URL?
     public var fertilizingZone: [FertilizingZoneItem]?
     public var fertilizerNeedPerZone: [FertilizerNeedItem]?
     public var farmNutrientComparisonStatus: [FarmNutrientComparisonStatusItem]?
@@ -21,6 +23,8 @@ nonisolated public struct MacOSScanRequestRecordWriter: Sendable {
         progressionStatus: ProgressionStatus? = nil,
         progressionStatusDetail: [ProgressionStatusDetailEvent]? = nil,
         orthomosaicImageURL: URL? = nil,
+        variPlainZoneOverlayImageURL: URL? = nil,
+        variTreeQuartileOverlayImageURL: URL? = nil,
         fertilizingZone: [FertilizingZoneItem]? = nil,
         fertilizerNeedPerZone: [FertilizerNeedItem]? = nil,
         farmNutrientComparisonStatus: [FarmNutrientComparisonStatusItem]? = nil,
@@ -33,6 +37,8 @@ nonisolated public struct MacOSScanRequestRecordWriter: Sendable {
         self.progressionStatus = progressionStatus
         self.progressionStatusDetail = progressionStatusDetail
         self.orthomosaicImageURL = orthomosaicImageURL
+        self.variPlainZoneOverlayImageURL = variPlainZoneOverlayImageURL
+        self.variTreeQuartileOverlayImageURL = variTreeQuartileOverlayImageURL
         self.fertilizingZone = fertilizingZone
         self.fertilizerNeedPerZone = fertilizerNeedPerZone
         self.farmNutrientComparisonStatus = farmNutrientComparisonStatus
@@ -53,6 +59,14 @@ nonisolated public struct MacOSScanRequestRecordWriter: Sendable {
             progressionStatusDetail, forKey: RecordKeys.MacOSOwned.progressionStatusDetail, into: record)
         if let orthomosaicImageURL {
             record[RecordKeys.MacOSOwned.orthomosaicImage] = CKAsset(fileURL: orthomosaicImageURL)
+        }
+        if let variPlainZoneOverlayImageURL {
+            record[RecordKeys.MacOSOwned.variPlainZoneOverlayImage] = CKAsset(
+                fileURL: variPlainZoneOverlayImageURL)
+        }
+        if let variTreeQuartileOverlayImageURL {
+            record[RecordKeys.MacOSOwned.variTreeQuartileOverlayImage] = CKAsset(
+                fileURL: variTreeQuartileOverlayImageURL)
         }
         try encodeEnvelope(fertilizingZone, forKey: RecordKeys.MacOSOwned.fertilizingZone, into: record)
         try encodeEnvelope(

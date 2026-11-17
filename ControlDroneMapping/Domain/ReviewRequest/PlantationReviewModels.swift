@@ -226,9 +226,12 @@ public struct ReviewTimeline: Sendable, Equatable {
 public struct PlantationReviewResult: Sendable, Equatable {
     public let completedAt: Date
     public let orthomosaicImageURL: URL?
+    public let variPlainZoneOverlayImageURL: URL?
+    public let variTreeQuartileOverlayImageURL: URL?
     public let zones: [FertilizingZoneItem]
     public let trees: [TreeIdentificationItem]
     public let fertilizerNeeds: [FertilizerNeedItem]
+    public let farmNutrientComparisonStatus: [FarmNutrientComparisonStatusItem]
     public let schedulePeriods: [FertilizationSchedulePeriodItem]
 
     public var zoneCount: Int { zones.count }
@@ -238,16 +241,22 @@ public struct PlantationReviewResult: Sendable, Equatable {
     public init(
         completedAt: Date = Date(),
         orthomosaicImageURL: URL? = nil,
+        variPlainZoneOverlayImageURL: URL? = nil,
+        variTreeQuartileOverlayImageURL: URL? = nil,
         zones: [FertilizingZoneItem] = [],
         trees: [TreeIdentificationItem] = [],
         fertilizerNeeds: [FertilizerNeedItem] = [],
+        farmNutrientComparisonStatus: [FarmNutrientComparisonStatusItem] = [],
         schedulePeriods: [FertilizationSchedulePeriodItem] = []
     ) {
         self.completedAt = completedAt
         self.orthomosaicImageURL = orthomosaicImageURL
+        self.variPlainZoneOverlayImageURL = variPlainZoneOverlayImageURL
+        self.variTreeQuartileOverlayImageURL = variTreeQuartileOverlayImageURL
         self.zones = zones
         self.trees = trees
         self.fertilizerNeeds = fertilizerNeeds
+        self.farmNutrientComparisonStatus = farmNutrientComparisonStatus
         self.schedulePeriods = schedulePeriods
     }
 }

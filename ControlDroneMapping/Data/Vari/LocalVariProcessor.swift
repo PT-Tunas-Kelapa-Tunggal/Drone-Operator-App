@@ -609,6 +609,8 @@ public struct LocalVariProcessor: VariProcessing {
         let assets = VariAssetURLs(
             sourceImageURL: sourceImageURL,
             annotatedMapURL: assetIfPresent("oil_palm_zones_annotated.jpg"),
+            plainZoneOverlayWithSeparatorURL: assetIfPresent(
+                "oil_palm_zones_plain_with_separator.jpg"),
             whiteSeparatorsWithNumbersURL: assetIfPresent(
                 "oil_palm_zones_white_separators_with_zone_numbers.jpg"),
             quartilesMapURL: assetIfPresent("oil_palm_field_tree_vari_quartiles.jpg"),
@@ -633,6 +635,7 @@ public struct LocalVariProcessor: VariProcessing {
             products: products,
             userBlend: userBlendSummary,
             budget: budgetSummary,
+            nutrientComparison: nutrientComparisons,
             assets: assets
         )
     }

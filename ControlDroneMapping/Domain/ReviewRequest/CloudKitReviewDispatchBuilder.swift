@@ -5,6 +5,7 @@ import ImageIO
 public enum CloudKitDispatchBuildError: LocalizedError, Equatable, Sendable {
     case missingOrthomosaicJPEG(String)
     case unreadableOrthomosaicJPEG(String)
+    case missingVariImage(String)
     case pixelDimensionMismatch(imageW: Int, imageH: Int, variW: Int, variH: Int)
     case missingZones
     case missingZoneBoundingBox(zoneID: Int)
@@ -22,6 +23,8 @@ public enum CloudKitDispatchBuildError: LocalizedError, Equatable, Sendable {
             return "File orthomosaic.jpeg tidak ditemukan di: \(path)"
         case .unreadableOrthomosaicJPEG(let path):
             return "File orthomosaic.jpeg rusak atau bukan JPEG valid: \(path)"
+        case .missingVariImage(let filename):
+            return "Gambar hasil VARI tidak ditemukan: \(filename)"
         case .pixelDimensionMismatch(let imageW, let imageH, let variW, let variH):
             return
                 "Dimensi orthomosaic.jpeg (\(imageW)×\(imageH)) berbeda dengan hasil VARI (\(variW)×\(variH))."
@@ -67,6 +70,13 @@ public enum CloudKitReviewDispatchBuilder {
             at: orthomosaicJPEGURL,
             variResult: variResult
         )
+
+        guard let plainZoneImageURL = variResult.assets.plainZoneOverlayWithSeparatorURL else {
+            throw CloudKitDispatchBuildError.missingVariImage("oil_palm_zones_plain_with_separator.jpg")
+        }
+        guard let treeQuartileImageURL = variResult.assets.quartilesMapURL else {
+            throw CloudKitDispatchBuildError.missingVariImage("oil_palm_field_tree_vari_quartiles.jpg")
+        }
 
         // 2. Map fertilizingZone & treeIdentification in pixel coordinates matching orthomosaic.jpeg
         let sortedZones = variResult.zones.sorted { $0.zoneID < $1.zoneID }
@@ -164,6 +174,8 @@ public enum CloudKitReviewDispatchBuilder {
             progressionStatus: .finished,
             progressionStatusDetail: events,
             orthomosaicImageURL: orthomosaicJPEGURL,
+            variPlainZoneOverlayImageURL: plainZoneImageURL,
+            variTreeQuartileOverlayImageURL: treeQuartileImageURL,
             fertilizingZone: zoneItems,
             fertilizerNeedPerZone: fertilizerNeeds,
             farmNutrientComparisonStatus: nutrientComparisonStatus,
@@ -176,6 +188,8 @@ public enum CloudKitReviewDispatchBuilder {
         let summaryResult = PlantationReviewResult(
             completedAt: sentAt,
             orthomosaicImageURL: orthomosaicJPEGURL,
+            variPlainZoneOverlayImageURL: plainZoneImageURL,
+            variTreeQuartileOverlayImageURL: treeQuartileImageURL,
             zones: zoneItems,
             trees: treeItems,
             fertilizerNeeds: fertilizerNeeds,

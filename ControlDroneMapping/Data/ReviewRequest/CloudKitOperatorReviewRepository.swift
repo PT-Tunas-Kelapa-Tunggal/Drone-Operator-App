@@ -87,14 +87,32 @@ public final class CloudKitOperatorReviewRepository: OperatorReviewRepository, @
             existingRecord = try await database.record(for: recordID)
         }
 
-        let recordToSave = try payload.writer.buildRecord(existing: existingRecord)
+        guard let plainZoneURL = payload.writer.variPlainZoneOverlayImageURL else {
+            throw CloudKitDispatchBuildError.missingVariImage("oil_palm_zones_plain_with_separator.jpg")
+        }
+        guard let treeQuartileURL = payload.writer.variTreeQuartileOverlayImageURL else {
+            throw CloudKitDispatchBuildError.missingVariImage("oil_palm_field_tree_vari_quartiles.jpg")
+        }
+
+        let plainZoneAsset = try CloudKitVARIImageCompressor.prepareForUpload(at: plainZoneURL)
+        defer { plainZoneAsset.removeTemporaryFile() }
+        let treeQuartileAsset = try CloudKitVARIImageCompressor.prepareForUpload(at: treeQuartileURL)
+        defer { treeQuartileAsset.removeTemporaryFile() }
+
+        var writer = payload.writer
+        writer.variPlainZoneOverlayImageURL = plainZoneAsset.fileURL
+        writer.variTreeQuartileOverlayImageURL = treeQuartileAsset.fileURL
+        let recordToSave = try writer.buildRecord(existing: existingRecord)
         let savedRecord = try await MacOSScanRequestRecordWriter.save(record: recordToSave, to: database)
 
         cacheLock.withLock {
             cachedRecords[savedRecord.recordID.recordName] = savedRecord
         }
 
-        return domainMapper.toDomain(from: savedRecord)
+        var updatedRequest = domainMapper.toDomain(from: savedRecord)
+        // Keep the original local URLs in the UI after temporary upload files are removed.
+        updatedRequest.result = payload.summaryResult
+        return updatedRequest
     }
 
     public func observeIncomingRequests() -> AsyncStream<[PlantationReviewRequest]> {

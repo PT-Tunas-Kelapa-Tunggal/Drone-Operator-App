@@ -157,6 +157,16 @@ public struct PlantationDomainMapper: Sendable {
             result: reader.orthomosaicImage(),
             expectPresent: expectFinishedOutputs
         )
+        let plainZoneOverlayAsset = readOptionalMacOSField(
+            RecordKeys.MacOSOwned.variPlainZoneOverlayImage,
+            result: reader.variPlainZoneOverlayImage(),
+            expectPresent: false
+        )
+        let treeQuartileOverlayAsset = readOptionalMacOSField(
+            RecordKeys.MacOSOwned.variTreeQuartileOverlayImage,
+            result: reader.variTreeQuartileOverlayImage(),
+            expectPresent: false
+        )
         let zones =
             readOptionalMacOSField(
                 RecordKeys.MacOSOwned.fertilizingZone,
@@ -175,6 +185,12 @@ public struct PlantationDomainMapper: Sendable {
                 result: reader.fertilizerNeedPerZone(),
                 expectPresent: expectFinishedOutputs
             ) ?? []
+        let nutrientComparisonStatus =
+            readOptionalMacOSField(
+                RecordKeys.MacOSOwned.farmNutrientComparisonStatus,
+                result: reader.farmNutrientComparisonStatus(),
+                expectPresent: false
+            ) ?? []
         let schedulePeriods =
             readOptionalMacOSField(
                 RecordKeys.MacOSOwned.fertilizationScheduling,
@@ -185,9 +201,12 @@ public struct PlantationDomainMapper: Sendable {
         let hasAnyResultData =
             resultSentAt != nil
             || orthomosaicAsset != nil
+            || plainZoneOverlayAsset != nil
+            || treeQuartileOverlayAsset != nil
             || !zones.isEmpty
             || !trees.isEmpty
             || !fertilizerNeeds.isEmpty
+            || !nutrientComparisonStatus.isEmpty
             || !schedulePeriods.isEmpty
 
         let reviewResult: PlantationReviewResult? =
@@ -195,9 +214,12 @@ public struct PlantationDomainMapper: Sendable {
                 PlantationReviewResult(
                     completedAt: resultSentAt ?? reader.record.modificationDate ?? submittedAt,
                     orthomosaicImageURL: orthomosaicAsset?.fileURL,
+                    variPlainZoneOverlayImageURL: plainZoneOverlayAsset?.fileURL,
+                    variTreeQuartileOverlayImageURL: treeQuartileOverlayAsset?.fileURL,
                     zones: zones,
                     trees: trees,
                     fertilizerNeeds: fertilizerNeeds,
+                    farmNutrientComparisonStatus: nutrientComparisonStatus,
                     schedulePeriods: schedulePeriods
                 )
             } else {

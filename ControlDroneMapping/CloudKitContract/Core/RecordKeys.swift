@@ -63,6 +63,10 @@ nonisolated public enum RecordKeys {
         public static let progressionStatusDetail = "progressionStatusDetail"
         /// Aerial high-resolution orthomosaic scan result asset (CKAsset).
         public static let orthomosaicImage = "orthomosaicImage"
+        /// VARI plain fertilizing zones with white separators (CKAsset JPEG).
+        public static let variPlainZoneOverlayImage = "variPlainZoneOverlayImage"
+        /// VARI tree quartile overlay for the full field (CKAsset JPEG).
+        public static let variTreeQuartileOverlayImage = "variTreeQuartileOverlayImage"
         /// JSON envelope defining fertilization zones and tree counts (String).
         public static let fertilizingZone = "fertilizingZone"
         /// JSON envelope defining fertilizer requirements per zone or general (String).
@@ -82,6 +86,7 @@ nonisolated public enum RecordKeys {
         /// Set of all field keys owned by the macOS application.
         public static let allKeys: Set<String> = [
             progressionStatus, progressionStatusDetail, orthomosaicImage,
+            variPlainZoneOverlayImage, variTreeQuartileOverlayImage,
             fertilizingZone, fertilizerNeedPerZone, farmNutrientComparisonStatus,
             treeIdentification,
             plannedOperatorVisitDate, resultSentAt, fertilizationScheduling,

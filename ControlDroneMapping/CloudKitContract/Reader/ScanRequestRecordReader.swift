@@ -115,6 +115,14 @@ nonisolated public struct ScanRequestRecord: Sendable {
         read(RecordKeys.MacOSOwned.orthomosaicImage, as: CKAsset.self)
     }
 
+    public func variPlainZoneOverlayImage() -> Result<CKAsset, FieldError> {
+        read(RecordKeys.MacOSOwned.variPlainZoneOverlayImage, as: CKAsset.self)
+    }
+
+    public func variTreeQuartileOverlayImage() -> Result<CKAsset, FieldError> {
+        read(RecordKeys.MacOSOwned.variTreeQuartileOverlayImage, as: CKAsset.self)
+    }
+
     public func fertilizingZone() -> Result<[FertilizingZoneItem], FieldError> {
         decodeEnvelope(RecordKeys.MacOSOwned.fertilizingZone)
     }

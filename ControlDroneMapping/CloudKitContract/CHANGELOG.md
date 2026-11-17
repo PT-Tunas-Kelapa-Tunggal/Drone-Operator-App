@@ -2,6 +2,16 @@
 
 Every modification to the `CloudKitContract` folder must be documented here and accompanied by a bump to `ContractInfo.version`.
 
+## 1 — 2026-11-17
+- Integrated the iOS contract's detailed JSON decoding errors, preserving coding paths and missing-key context in diagnostics.
+- Documented that tree health decoding accepts both stored labels (`Normal`, `Terindikasi`, `Defisiensi`, `Tidak Wajar`) and VARI quartiles (`q1`–`q4`), preserving unknown values as `Unknown`. The decoding logic was already present in the macOS working tree.
+- No CloudKit field or payload shape changes.
+
+## 1 — 2026-11-16
+- Added macOS-owned `variPlainZoneOverlayImage` and `variTreeQuartileOverlayImage` CKAsset fields for `oil_palm_zones_plain_with_separator.jpg` and `oil_palm_field_tree_vari_quartiles.jpg`.
+- The macOS app uploads each original JPEG when it is at most 5 MiB, otherwise it uploads a temporary compressed JPEG of at most 5 MiB. The originals are kept locally.
+- Schema deploy: REQUIRED (add both fields as `ASSET` on `PlantationScanRequest`); copy this contract to the farmer iOS app before reading v2 records.
+
 ## 1 — 2026-11-16
 - Added the macOS-owned `farmNutrientComparisonStatus` JSON envelope with annual per-hectare (kg/ha/year) current and recommended values for Nitrogen, Fospor, Kalium, and Magnesium. These copy the ML baseline and recorded fertilizer supply; the iOS app chooses its own status label.
 - Added typed nutrient values, strict decoding, and reader/writer support. Schema deploy: REQUIRED (add `farmNutrientComparisonStatus` as a `STRING` field on `PlantationScanRequest`).
@@ -24,4 +34,3 @@ Every modification to the `CloudKitContract` folder must be documented here and 
 - Fault-tolerant readers returning `Result<T, FieldError>` with field-key-specific JSON decoding errors.
 - Writers (`ScanRequestRecordWriter`, `MacOSScanRequestRecordWriter`) enforcing `.changedKeys` save policy and field ownership.
 - Schema deploy: REQUIRED (ensure `fertilizationScheduling` `STRING` field is deployed on `PlantationScanRequest`).
-

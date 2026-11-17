@@ -355,6 +355,7 @@ public struct VariElementalNutrientComparison: Sendable, Equatable {
 public struct VariAssetURLs: Sendable, Equatable {
     public let sourceImageURL: URL?
     public let annotatedMapURL: URL?
+    public let plainZoneOverlayWithSeparatorURL: URL?
     public let whiteSeparatorsWithNumbersURL: URL?
     public let quartilesMapURL: URL?
     public let heatmapMontageURL: URL?
@@ -367,6 +368,7 @@ public struct VariAssetURLs: Sendable, Equatable {
     public init(
         sourceImageURL: URL? = nil,
         annotatedMapURL: URL? = nil,
+        plainZoneOverlayWithSeparatorURL: URL? = nil,
         whiteSeparatorsWithNumbersURL: URL? = nil,
         quartilesMapURL: URL? = nil,
         heatmapMontageURL: URL? = nil,
@@ -378,6 +380,7 @@ public struct VariAssetURLs: Sendable, Equatable {
     ) {
         self.sourceImageURL = sourceImageURL
         self.annotatedMapURL = annotatedMapURL
+        self.plainZoneOverlayWithSeparatorURL = plainZoneOverlayWithSeparatorURL
         self.whiteSeparatorsWithNumbersURL = whiteSeparatorsWithNumbersURL
         self.quartilesMapURL = quartilesMapURL
         self.heatmapMontageURL = heatmapMontageURL
