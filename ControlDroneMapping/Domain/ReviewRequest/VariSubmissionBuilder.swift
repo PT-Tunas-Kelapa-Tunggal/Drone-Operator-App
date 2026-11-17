@@ -10,7 +10,7 @@ public enum VariSubmissionBuildError: LocalizedError, Equatable, Sendable {
     public var errorDescription: String? {
         switch self {
         case .invalidSchemaVersion(let found, let expected):
-            return "Versi kontrak CloudKit tidak kompatibel (ditemukan v\(found), diharapkan v\(expected))."
+            return "Versi kontrak CloudKit tidak kompatibel (ditemukan v\(found), didukung v1–v\(expected))."
         case .contractFieldError(let field, let detail):
             return "Data CloudKit pada field '\(field)' bermasalah: \(detail)"
         case .invalidFarmArea(let area):
@@ -62,7 +62,7 @@ extension FertilizerUsage {
                 case "n", "nitrogen":
                     n = element.value
                     foundAny = true
-                case "p", "p2o5", "fosfor", "phosphorus":
+                case "p", "p2o5", "fosfor", "fospor", "phosphorus":
                     p = element.value
                     foundAny = true
                 case "k", "k2o", "kalium", "potassium":
@@ -112,7 +112,8 @@ public enum VariSubmissionBuilder {
         from request: PlantationReviewRequest,
         referenceDate: Date = Date()
     ) throws -> VariEngineSubmissionRequest {
-        if request.schemaVersion != ContractInfo.version {
+        // Existing farmer requests may still carry v1 while the v2 asset fields are deployed.
+        if request.schemaVersion < 1 || request.schemaVersion > ContractInfo.version {
             throw VariSubmissionBuildError.invalidSchemaVersion(
                 found: request.schemaVersion,
                 expected: ContractInfo.version

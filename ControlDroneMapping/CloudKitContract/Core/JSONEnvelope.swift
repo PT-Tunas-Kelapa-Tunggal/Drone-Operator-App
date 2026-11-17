@@ -52,7 +52,9 @@ nonisolated public struct JSONEnvelope<Payload: Codable & Sendable>: Codable, Se
             let envelope = try decoder.decode(JSONEnvelope<Payload>.self, from: data)
             return .success(envelope.payload)
         } catch {
-            return .failure(.decodingError(key: key, errorDescription: error.localizedDescription))
+            // Preserve the coding path and missing key in diagnostics. The localized
+            // description alone usually says only that the data could not be read.
+            return .failure(.decodingError(key: key, errorDescription: String(describing: error)))
         }
     }
 }
