@@ -7,6 +7,8 @@ struct OrthomosaicView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var engineExpanded = false
     @State private var engineLog: String?
+    @State private var showingReprocessConfirmation = false
+    @State private var reprocessingProjectID: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -56,12 +58,31 @@ struct OrthomosaicView: View {
                 if model.workingID == model.selectedID {
                     Button("Hentikan") { model.cancel() }
                 } else {
-                    Button("Buat orthomosaic") { model.start() }
+                    Button("Buat orthomosaic") {
+                        if model.hasValidOutput {
+                            reprocessingProjectID = model.selectedID
+                            showingReprocessConfirmation = true
+                        } else {
+                            model.start()
+                        }
+                    }
                         .kropsPrimaryAction().disabled(!model.canStart)
                 }
             }
         }.padding(24).frame(width: 780, height: 780)
             .onAppear { engineExpanded = !model.engineReady }
+            .alert("Buat ulang orthomosaic?", isPresented: $showingReprocessConfirmation) {
+                Button("Batal", role: .cancel) { reprocessingProjectID = nil }
+                Button("Buat Ulang") {
+                    guard reprocessingProjectID == model.selectedID else { return }
+                    reprocessingProjectID = nil
+                    model.start()
+                }
+            } message: {
+                Text(
+                    "Orthomosaic yang valid sudah tersedia. Hasil saat ini akan diganti setelah pengolahan baru berhasil. Analisis VARI & HARA dan jadwal pemupukan perlu dijalankan kembali untuk hasil baru."
+                )
+            }
     }
 
     private func inputSection(_ project: OrthomosaicProject) -> some View {
@@ -299,7 +320,7 @@ struct OrthomosaicView: View {
 
     private func outputSection(_ project: OrthomosaicProject) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Riwayat hasil misi ini").font(.headline)
+            Text("Hasil orthomosaic terbaru").font(.headline)
             ForEach(project.outputs, id: \.folder) { output in
                 GroupBox {
                     VStack(alignment: .leading, spacing: 8) {

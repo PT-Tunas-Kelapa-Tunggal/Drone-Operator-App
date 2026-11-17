@@ -6,6 +6,7 @@ struct AppSettingsView: View {
     @ObservedObject var model: ControlViewModel
     @ObservedObject private var qgcEngine = QGCEngineManager.shared
     @AppStorage("dashboardAppearance") private var appearance = "light"
+    @AppStorage(IPhoneConnectionSettings.enabledKey) private var iphoneConnectionEnabled = true
     @AppStorage(VariTimingWeatherSettings.noDailyKey) private var timingSkipDaily = false
     @AppStorage(VariTimingWeatherSettings.teamIDKey) private var weatherKitTeamID = ""
     @AppStorage(VariTimingWeatherSettings.keyIDKey) private var weatherKitKeyID = ""
@@ -41,6 +42,15 @@ struct AppSettingsView: View {
                     Text("Gelap").tag("dark")
                     Text("Ikuti sistem").tag("system")
                 }
+            }
+            Section("Koneksi iPhone") {
+                Toggle("Aktifkan koneksi iPhone", isOn: $iphoneConnectionEnabled)
+                Text("Izinkan Mac mencari dan terhubung kembali ke DroneCam secara otomatis.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(
+                    "Jika dimatikan, koneksi dan transfer dihentikan. Capture yang sudah berjalan di iPhone tetap berlanjut."
+                )
+                .font(.caption).foregroundStyle(.secondary)
             }
             Section("Penyimpanan Mac") {
                 Text(model.link.store.root.path).textSelection(.enabled).font(.caption)

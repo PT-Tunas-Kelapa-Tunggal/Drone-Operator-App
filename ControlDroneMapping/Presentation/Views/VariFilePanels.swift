@@ -8,7 +8,9 @@ enum VariFilePanels {
     }
 
     static func saveCSV(from sourceURL: URL, suggestedName: String? = nil) {
-        saveFile(from: sourceURL, suggestedName: suggestedName ?? "vari_summary.csv", contentTypes: [.commaSeparatedText])
+        saveFile(
+            from: sourceURL, suggestedName: suggestedName ?? "vari_summary.csv",
+            contentTypes: [.commaSeparatedText])
     }
 
     static func saveFile(

@@ -8,6 +8,7 @@ struct ContentView: View {
     @ObservedObject var farms: FarmAreaViewModel
     @ObservedObject var location: OperatorLocationViewModel
     @ObservedObject var planner: FlightPlannerViewModel
+    @ObservedObject var variAnalysis: VariAnalysisViewModel
     @StateObject private var orthomosaic: OrthomosaicViewModel
     @State private var showingPlanner = false
     @State private var plannerMissionID: UUID?
@@ -20,13 +21,15 @@ struct ContentView: View {
 
     init(
         model: ControlViewModel, link: LocalLink, farms: FarmAreaViewModel,
-        location: OperatorLocationViewModel, planner: FlightPlannerViewModel
+        location: OperatorLocationViewModel, planner: FlightPlannerViewModel,
+        variAnalysis: VariAnalysisViewModel
     ) {
         self.model = model
         self.link = link
         self.farms = farms
         self.location = location
         self.planner = planner
+        self.variAnalysis = variAnalysis
         _orthomosaic = StateObject(
             wrappedValue: ControlDependencies.orthomosaicViewModel(store: link.store, demo: model.isDemo))
     }
@@ -52,6 +55,10 @@ struct ContentView: View {
                     if selectedSection == .settings {
                         sectionNavigation
                     }
+                    VariGlobalActivityStrip(variAnalysis: variAnalysis)
+                        .onChange(of: variAnalysis.navigationRequest) { _, request in
+                            handleVariNavigation(request)
+                        }
                     if let error = model.errorMessage {
                         HStack {
                             Image(systemName: "exclamationmark.triangle.fill")
@@ -68,7 +75,8 @@ struct ContentView: View {
                     if selectedSection == .review {
                         ReviewWorkspaceView(
                             model: model, link: link, farms: farms, location: location,
-                            planner: planner, processing: orthomosaic, search: search,
+                            planner: planner, processing: orthomosaic, variAnalysis: variAnalysis,
+                            search: search,
                             openPlanner: { openPlanner(farm: model.selectedMission?.area) },
                             createMission: {
                                 missionName = ""
@@ -183,7 +191,27 @@ struct ContentView: View {
     }
     private var cleanupDeferred: Bool {
         orthomosaic.busy || orthomosaic.workingID != nil || orthomosaic.engineInstalling
-            || model.editingLocked
+            || variAnalysis.busy || model.editingLocked
+    }
+
+    private func handleVariNavigation(_ request: VariNavigationRequest?) {
+        guard let request else { return }
+        if let missionID = request.missionID {
+            if model.selectedMission?.id != missionID || selectedSection != .review {
+                model.openMission(missionID)
+            }
+        } else if let recordID = request.recordID {
+            if model.selectedDatasetID != recordID || model.step != .datasets || selectedSection != .review {
+                model.showDatasets(missionID: recordID)
+            }
+        } else {
+            if let projectID = request.projectID {
+                orthomosaic.select(projectID)
+            }
+            if selectedSection != .review {
+                model.navigate(.mission)
+            }
+        }
     }
 
     private var selectedSection: ControlPanelSection {
@@ -371,7 +399,8 @@ struct ContentView: View {
     let dependencies = ControlDependencies(demo: true)
     ContentView(
         model: dependencies.viewModel, link: dependencies.link, farms: dependencies.farms,
-        location: dependencies.location, planner: dependencies.planner
+        location: dependencies.location, planner: dependencies.planner,
+        variAnalysis: dependencies.variAnalysis
     )
     .frame(width: 1440, height: 900)
     .preferredColorScheme(.light)
@@ -409,7 +438,8 @@ private struct SidebarIconButton: View {
     let _ = dependencies.viewModel.showMissionList()
     ContentView(
         model: dependencies.viewModel, link: dependencies.link, farms: dependencies.farms,
-        location: dependencies.location, planner: dependencies.planner
+        location: dependencies.location, planner: dependencies.planner,
+        variAnalysis: dependencies.variAnalysis
     )
     .frame(width: 1280, height: 800)
     .preferredColorScheme(.light)

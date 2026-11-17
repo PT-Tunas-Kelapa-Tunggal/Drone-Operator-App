@@ -51,6 +51,8 @@ public struct LocalVariTimingProcessor: VariTimingProcessing {
         }
 
         var environment = ProcessInfo.processInfo.environment
+        environment["PYTHONUNBUFFERED"] = "1"
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
         if let wk = options.weatherKit, fm.isReadableFile(atPath: wk.keyFileURL.path) {
             environment["WK_TEAM_ID"] = wk.teamID
             environment["WK_KEY_ID"] = wk.keyID
@@ -95,14 +97,11 @@ public struct LocalVariTimingProcessor: VariTimingProcessing {
         }
 
         let requestURL = outputFolder.appendingPathComponent(Self.requestFileName)
-        let request: VariTimingRequest
-        if fm.fileExists(atPath: requestURL.path),
+        guard fm.fileExists(atPath: requestURL.path),
             let data = try? Data(contentsOf: requestURL),
-            let decoded = try? JSONDecoder().decode(VariTimingRequest.self, from: data)
-        {
-            request = decoded
-        } else {
-            request = VariTimingRequest.placeholderTemplate()
+            let request = try? JSONDecoder().decode(VariTimingRequest.self, from: data)
+        else {
+            return nil
         }
 
         let modifiedDate =

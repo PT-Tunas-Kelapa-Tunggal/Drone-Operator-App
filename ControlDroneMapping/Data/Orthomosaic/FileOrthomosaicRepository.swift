@@ -13,12 +13,20 @@ struct FileOrthomosaicRepository: OrthomosaicRepository {
                 var project = try JSONDecoder().decode(
                     OrthomosaicProject.self,
                     from: Data(contentsOf: folder.appendingPathComponent("project.json")))
+                var needsSave = false
+                // Output records are stored newest-first. Keep the latest TIFF visible
+                // while leaving older run folders on disk for their VARI/timing data.
+                if project.outputs.count > 1 {
+                    project.outputs = Array(project.outputs.prefix(1))
+                    needsSave = true
+                }
                 if project.state.isRunning {
                     project.state = .failed
                     project.message = "Pengolahan terinterupsi saat aplikasi ditutup. Jalankan ulang."
                     project.fraction = 0
-                    try save(project)
+                    needsSave = true
                 }
+                if needsSave { try save(project) }
                 return project
             }.sorted { $0.createdAt > $1.createdAt }
     }

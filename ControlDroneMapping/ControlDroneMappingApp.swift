@@ -9,11 +9,14 @@ import SwiftUI
 
 @main
 struct ControlDroneMappingApp: App {
+    @NSApplicationDelegateAdaptor(AppLifecycleDelegate.self) private var appDelegate
     @StateObject private var model: ControlViewModel
     @StateObject private var location: OperatorLocationViewModel
     @StateObject private var planner: FlightPlannerViewModel
     private let link: LocalLink
     @StateObject private var farms: FarmAreaViewModel
+    @StateObject private var variAnalysis: VariAnalysisViewModel
+    @AppStorage(IPhoneConnectionSettings.enabledKey) private var iphoneConnectionEnabled = true
 
     init() {
         // Exercise the actual signed app and inherited helper sandbox without opening a window.
@@ -61,20 +64,13 @@ struct ControlDroneMappingApp: App {
         link = dependencies.link
         _farms = StateObject(wrappedValue: dependencies.farms)
         _model = StateObject(wrappedValue: dependencies.viewModel)
+        _variAnalysis = StateObject(wrappedValue: dependencies.variAnalysis)
 
         // Auto-start QGC companion engine on normal launch
         QGCEngineManager.shared.startEngine()
 
-        // Clean teardown on app exit
-        NotificationCenter.default.addObserver(
-            forName: NSApplication.willTerminateNotification,
-            object: nil,
-            queue: .main
-        ) { _ in
-            MainActor.assumeIsolated {
-                QGCEngineManager.shared.stopEngine()
-            }
-        }
+        // Confirm quit while VARI & HARA is running and stop engines cleanly on exit.
+        appDelegate.configure(variAnalysis: dependencies.variAnalysis)
     }
     @AppStorage("dashboardAppearance") private var appearance = "light"
 
@@ -88,13 +84,19 @@ struct ControlDroneMappingApp: App {
 
     var body: some Scene {
         WindowGroup(windowTitle) {
-            ContentView(model: model, link: link, farms: farms, location: location, planner: planner)
-                .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
-                .tint(KropsStyle.accent)
-                // Every bordered and glass button is a capsule; icon-only buttons opt into a circle.
-                .buttonBorderShape(.capsule)
-                .font(.body)
-                .controlSize(.regular)
+            ContentView(
+                model: model, link: link, farms: farms, location: location, planner: planner,
+                variAnalysis: variAnalysis
+            )
+            .onChange(of: iphoneConnectionEnabled) { _, enabled in
+                link.setEnabled(enabled && !model.isDemo)
+            }
+            .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
+            .tint(KropsStyle.accent)
+            // Every bordered and glass button is a capsule; icon-only buttons opt into a circle.
+            .buttonBorderShape(.capsule)
+            .font(.body)
+            .controlSize(.regular)
         }.defaultSize(width: 1440, height: 900)
     }
 }

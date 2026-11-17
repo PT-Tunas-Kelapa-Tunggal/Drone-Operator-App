@@ -3,6 +3,7 @@ import Foundation
 import MultipeerConnectivity
 
 final class LocalLink: NSObject, ObservableObject, LocalTransport {
+    @Published private(set) var isEnabled = false
     @Published var peers: [MCPeerID] = []
     @Published var connected = false
     @Published var status = "Offline • misi lokal tetap berjalan"
@@ -26,14 +27,17 @@ final class LocalLink: NSObject, ObservableObject, LocalTransport {
     private var retryTimer: Timer?
     private var attemptingPeer: MCPeerID?
     private var attemptExpiresAt: Double = 0
-    private var lastDiscoveryRefresh: Double = 0
+    private var discoveryRunning = false
     private var activeExportID: UUID?
     private var exportProgress: Progress?
 
-    init(camera: Bool, enabled: Bool = true, store: any DatasetRepository = DatasetStore()) {
+    init(
+        camera: Bool, enabled: Bool = true, store: any DatasetRepository = DatasetStore(),
+        identityDefaults: UserDefaults = .standard
+    ) {
         self.store = store
         isCamera = camera
-        let identities = PeerIdentityStore(camera: camera)
+        let identities = PeerIdentityStore(camera: camera, defaults: identityDefaults)
         self.identities = identities
         let peer = identities.localPeer()
         session = MCSession(peer: peer, securityIdentity: nil, encryptionPreference: .required)
@@ -44,33 +48,66 @@ final class LocalLink: NSObject, ObservableObject, LocalTransport {
         session.delegate = self
         advertiser.delegate = self
         browser.delegate = self
-        guard enabled else { return }
-        if camera { advertiser.startAdvertisingPeer() } else { browser.startBrowsingForPeers() }
-        lastDiscoveryRefresh = ProcessInfo.processInfo.systemUptime
-        retryTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            self?.maintainConnection()
-        }
+        status = "Koneksi dinonaktifkan di Pengaturan"
+        setEnabled(enabled)
     }
     deinit { retryTimer?.invalidate() }
+
+    /// Call on the main queue, like the connection controls and transport callbacks.
+    func setEnabled(_ enabled: Bool) {
+        guard isEnabled != enabled else { return }
+        isEnabled = enabled
+        reconnectPolicy = ReconnectPolicy()
+        let pendingPeer = attemptingPeer
+        attemptingPeer = nil
+        attemptExpiresAt = 0
+        if enabled {
+            startDiscoveryIfNeeded()
+            retryTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+                self?.maintainConnection()
+            }
+        } else {
+            retryTimer?.invalidate()
+            retryTimer = nil
+            answerInvitation(false)
+            if discoveryRunning {
+                if isCamera { advertiser.stopAdvertisingPeer() } else { browser.stopBrowsingForPeers() }
+            }
+            discoveryRunning = false
+            activeExportID = nil
+            exportProgress?.cancel()
+            exportProgress = nil
+            if sending || receiving { transferStatus = "Transfer dihentikan • koneksi dinonaktifkan" }
+            sending = false
+            receiving = false
+            receivedMissionID = nil
+            if let pendingPeer { session.cancelConnectPeer(pendingPeer) }
+            session.disconnect()
+            connected = false
+            peers.removeAll()
+            status = "Koneksi dinonaktifkan di Pengaturan"
+        }
+    }
+
+    private func startDiscoveryIfNeeded() {
+        guard isEnabled, !discoveryRunning else { return }
+        discoveryRunning = true
+        status =
+            isCamera
+            ? "Menunggu Mac • buka Foto di DroneControl dan pilih Hubungkan"
+            : "Mencari iPhone • buka DroneCam dan setujui koneksi"
+        if isCamera { advertiser.startAdvertisingPeer() } else { browser.startBrowsingForPeers() }
+    }
+
     private func maintainConnection() {
-        guard !connected else { return }
+        guard isEnabled, discoveryRunning, !connected else { return }
         let now = ProcessInfo.processInfo.systemUptime
         if attemptingPeer != nil {
             guard now >= attemptExpiresAt else { return }
             attemptingPeer = nil
         }
-        // Keep discovery alive after radio loss without changing capture state.
-        if now - lastDiscoveryRefresh >= 20 {
-            lastDiscoveryRefresh = now
-            if isCamera {
-                advertiser.stopAdvertisingPeer()
-                advertiser.startAdvertisingPeer()
-            } else {
-                peers.removeAll()
-                browser.stopBrowsingForPeers()
-                browser.startBrowsingForPeers()
-            }
-        }
+        // A healthy browse continues reporting found/lost peers. Retry invitations
+        // without repeatedly cancelling the underlying CFNetwork browser.
         guard !isCamera, let approved = identities.approvedPeer else { return }
         status = "Mencari iPhone yang dipasangkan • reconnect otomatis"
         guard reconnectPolicy.canAttempt(now: now), let peer = peers.first(where: { $0 == approved }) else {
@@ -79,7 +116,7 @@ final class LocalLink: NSObject, ObservableObject, LocalTransport {
         invite(peer, automatic: true)
     }
     private func invite(_ peer: MCPeerID, automatic: Bool) {
-        guard !connected, attemptingPeer == nil else { return }
+        guard isEnabled, discoveryRunning, !connected, attemptingPeer == nil else { return }
         let now = ProcessInfo.processInfo.systemUptime
         attemptingPeer = peer
         attemptExpiresAt = now + reconnectPolicy.invitationTimeout
@@ -88,39 +125,33 @@ final class LocalLink: NSObject, ObservableObject, LocalTransport {
         browser.invitePeer(peer, to: session, withContext: nil, timeout: reconnectPolicy.invitationTimeout)
     }
     func refreshDiscovery() {
-        guard !connected else { return }
+        guard isEnabled, !connected else { return }
         answerInvitation(false)
         attemptingPeer = nil
         reconnectPolicy = ReconnectPolicy()
-        lastDiscoveryRefresh = ProcessInfo.processInfo.systemUptime
-        if isCamera {
-            advertiser.stopAdvertisingPeer()
-            advertiser.startAdvertisingPeer()
-            status = "Menunggu Mac • buka Foto di DroneControl dan pilih Hubungkan"
-        } else {
-            peers.removeAll()
-            browser.stopBrowsingForPeers()
-            browser.startBrowsingForPeers()
-            status = "Mencari iPhone • buka DroneCam dan setujui koneksi"
-        }
+        startDiscoveryIfNeeded()
+        maintainConnection()
     }
 
     func connect(_ peer: MCPeerID) {
         invite(peer, automatic: identities.approvedPeer == peer)
     }
     func answerInvitation(_ accept: Bool) {
-        invitation?(accept, accept ? session : nil)
+        let accepted = accept && isEnabled
+        invitation?(accepted, accepted ? session : nil)
         invitation = nil
         invitationName = nil
     }
     func send(_ packet: Packet) throws {
-        guard !session.connectedPeers.isEmpty else { throw MappingError.invalid("Perangkat tidak terhubung") }
+        guard isEnabled, !session.connectedPeers.isEmpty else {
+            throw MappingError.invalid("Perangkat tidak terhubung")
+        }
         let data = try JSONEncoder().encode(packet)
         guard data.count < 1_048_576 else { throw MappingError.invalid("Pesan terlalu besar") }
         try session.send(data, toPeers: session.connectedPeers, with: .reliable)
     }
     func export(_ id: UUID) throws {
-        guard !sending, let peer = session.connectedPeers.first else {
+        guard isEnabled, !sending, let peer = session.connectedPeers.first else {
             throw MappingError.invalid("Transfer sibuk atau koneksi terputus")
         }
         let transferID = UUID()
@@ -205,6 +236,7 @@ final class LocalLink: NSObject, ObservableObject, LocalTransport {
     }
 
     private func reportReceiveFailure(_ message: String) {
+        guard isEnabled, connected else { return }
         receiving = false
         transferStatus = message
         try? send(Packet(transferError: message))
@@ -217,7 +249,7 @@ extension LocalLink: MCNearbyServiceAdvertiserDelegate, MCNearbyServiceBrowserDe
         withContext context: Data?, invitationHandler: @escaping (Bool, MCSession?) -> Void
     ) {
         DispatchQueue.main.async {
-            guard self.session.connectedPeers.isEmpty else {
+            guard self.isEnabled, self.session.connectedPeers.isEmpty else {
                 invitationHandler(false, nil)
                 return
             }
@@ -236,10 +268,18 @@ extension LocalLink: MCNearbyServiceAdvertiserDelegate, MCNearbyServiceBrowserDe
         }
     }
     func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: Error) {
-        DispatchQueue.main.async { self.status = error.localizedDescription }
+        DispatchQueue.main.async {
+            guard self.isEnabled else { return }
+            self.discoveryRunning = false
+            self.status = error.localizedDescription
+        }
     }
     func browser(_ browser: MCNearbyServiceBrowser, didNotStartBrowsingForPeers error: Error) {
-        DispatchQueue.main.async { self.status = error.localizedDescription }
+        DispatchQueue.main.async {
+            guard self.isEnabled else { return }
+            self.discoveryRunning = false
+            self.status = error.localizedDescription
+        }
     }
     func browser(
         _ browser: MCNearbyServiceBrowser, foundPeer peerID: MCPeerID,
@@ -247,6 +287,7 @@ extension LocalLink: MCNearbyServiceAdvertiserDelegate, MCNearbyServiceBrowserDe
     ) {
         guard info?["role"] == "camera" else { return }
         DispatchQueue.main.async {
+            guard self.isEnabled else { return }
             if !self.peers.contains(peerID) { self.peers.append(peerID) }
             self.maintainConnection()
         }
@@ -256,9 +297,14 @@ extension LocalLink: MCNearbyServiceAdvertiserDelegate, MCNearbyServiceBrowserDe
     }
     func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
         DispatchQueue.main.async {
+            guard self.isEnabled else {
+                if state != .notConnected { session.disconnect() }
+                return
+            }
             self.connected = !session.connectedPeers.isEmpty
             switch state {
             case .connected:
+                guard self.connected else { return }
                 self.identities.approve(peerID)
                 self.attemptingPeer = nil
                 self.reconnectPolicy.didConnect()
@@ -294,6 +340,7 @@ extension LocalLink: MCNearbyServiceAdvertiserDelegate, MCNearbyServiceBrowserDe
             packet.version == 1
         else { return }
         DispatchQueue.main.async {
+            guard self.isEnabled, self.connected else { return }
             if let message = packet.transferError {
                 self.activeExportID = nil
                 self.exportProgress?.cancel()
@@ -315,6 +362,7 @@ extension LocalLink: MCNearbyServiceAdvertiserDelegate, MCNearbyServiceBrowserDe
     ) {
         guard !isCamera else { return }
         DispatchQueue.main.async {
+            guard self.isEnabled, self.connected else { return }
             self.receivedMissionID = nil
             self.receiving = true
             self.transferStatus = "Menerima dataset…"
@@ -350,12 +398,14 @@ extension LocalLink: MCNearbyServiceAdvertiserDelegate, MCNearbyServiceBrowserDe
                     {
                         try self.store.verify(id)
                         DispatchQueue.main.async {
+                            guard self.isEnabled, self.connected else { return }
                             self.receiving = false
                             self.receivedMissionID = id
                             self.transferStatus = "Transfer selesai • dataset terverifikasi"
                         }
                     } else {
                         DispatchQueue.main.async {
+                            guard self.isEnabled, self.connected else { return }
                             self.transferStatus = "Menerima • \(destination.lastPathComponent) terverifikasi"
                         }
                     }

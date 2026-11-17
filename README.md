@@ -46,7 +46,9 @@ Exposure tidak berubah otomatis selama terbang. Gray card pra/pasca terbang meny
 
 Setelah update kedua aplikasi, hubungkan dan setujui pairing sekali sebelum terbang. Identitas lokal dan peer yang disetujui disimpan untuk koneksi berikutnya. Mac hanya mencoba reconnect otomatis ke peer tersebut; undangan dari Mac yang sudah dipasangkan diterima iPhone tanpa konfirmasi ulang.
 
-Saat radio terputus, timer dan penyimpanan iPhone tetap berjalan. Mac memeriksa koneksi setiap dua detik, mengundang kembali jika peer sudah ditemukan, dan memakai timeout 10 detik dengan jeda bertahap 2–15 detik antar percobaan. Discovery disegarkan setiap 20 detik saat offline dan tidak sedang mencoba koneksi. Waktu koneksi aktual bergantung discovery, radio dan OS.
+Saat radio terputus, timer dan penyimpanan iPhone tetap berjalan. Mac memeriksa koneksi setiap dua detik, mengundang kembali jika peer sudah ditemukan, dan memakai timeout 10 detik dengan jeda bertahap 2–15 detik antar percobaan. Discovery yang berjalan tetap aktif tanpa siklus stop/start berkala. Waktu koneksi aktual bergantung discovery, radio dan OS.
+
+Di **Pengaturan → Koneksi iPhone**, **Aktifkan koneksi iPhone** menyala secara default dan pilihannya disimpan untuk peluncuran berikutnya. Mematikannya menghentikan pencarian, reconnect, koneksi aktif, dan transfer di Mac; tombol koneksi manual juga dinonaktifkan. Capture yang sudah berjalan di iPhone tetap berjalan lokal. Aktifkan kembali untuk mencari dan menghubungkan DroneCam tanpa menghapus identitas pairing.
 
 Saat drone kembali dalam jangkauan, koneksi dipulihkan otomatis dan iPhone mengirim status serta daftar dataset terbaru. Perintah Mulai tidak diputar ulang. ACK yang hilang dapat diminta dari cache tanpa menjalankan ulang perintah. Jika cache hilang akibat restart aplikasi, hasil perintah tetap dianggap belum pasti dan perlu diperiksa operator. Download yang terputus belum otomatis dilanjutkan.
 
