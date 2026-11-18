@@ -8,6 +8,7 @@
 #   dmg                        Build (if APP_PATH unset), verify, and package ControlDroneMapping.dmg
 #   version [TAG]              Derive marketing_version, build_number, prerelease, app_environment, dmg_name
 #   select-xcode [VER]         Select Xcode version on CI runner and export DEVELOPER_DIR
+#   check-config               Run offline config, CloudKit contract, and version-routing checks
 #   build-check                Run static config/schema audit, unsigned macOS + iOS builds, and engine smoke checks
 #   export-cloudkit-schema     Export live CloudKit container schema to Config/CloudKit/schema.ckdb
 #   sync-cloudkit-schema       Import Config/CloudKit/schema.ckdb to Development & verify Production schema
@@ -28,7 +29,7 @@ cd "$repo_root"
 STATE_FILE="$repo_root/.build/.ci-signing-state"
 
 usage() {
-    sed -n '3,21p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 read_xcconfig_var() {
@@ -267,10 +268,10 @@ PY
     echo "=== All 3 Cached Engine Smoke Checks Passed ==="
 }
 
-cmd_build_check() {
-    echo "=== [1/4] Auditing Entitlements, Version Routing & CloudKit Schema ==="
+cmd_check_config() {
+    python3 "$repo_root/Scripts/check_cloudkit_schema.py"
     python3 - "$repo_root" <<'PY'
-import pathlib, plistlib, re, subprocess, sys
+import pathlib, plistlib, subprocess, sys
 
 repo = pathlib.Path(sys.argv[1])
 
@@ -291,36 +292,7 @@ if info_plist.get("AppEnvironment") != "$(APP_ENVIRONMENT)":
 if info_plist.get("ICloudContainerIdentifier") != "$(ICLOUD_CONTAINER_NAME)":
     sys.exit("error: Config/App-Info.plist must map ICloudContainerIdentifier to $(ICLOUD_CONTAINER_NAME)")
 
-# 4. Verify CloudKit schema file Config/CloudKit/schema.ckdb
-schema_path = repo / "Config/CloudKit/schema.ckdb"
-if not schema_path.is_file():
-    sys.exit("error: Config/CloudKit/schema.ckdb is missing")
-schema_text = schema_path.read_text()
-for required_token in (
-    'CREATE ROLE "Drone Operator"',
-    "RECORD TYPE PlantationScanRequest",
-    "RECORD TYPE Users",
-    '"___createTime"',
-    '"___recordID"',
-    "agronomicJSON",
-    "areaHectares",
-    "boundaryJSON",
-    "completedAt",
-    "farmerAddress",
-    "farmerName",
-    "farmerPhone",
-    "gardenID",
-    "gardenName",
-    "locationName",
-    "orthomosaicAsset",
-    "resultJSON",
-    "statusCode",
-    "submittedAt",
-):
-    if required_token not in schema_text:
-        sys.exit(f"error: Config/CloudKit/schema.ckdb is missing required definition: {required_token}")
-
-# 5. Self-test version & environment routing in release.sh
+# 4. Self-test version & environment routing in release.sh
 cases = [
     ("v1.0.0", "1.0.0", "false", "production"),
     ("v0.2.15", "0.2.15", "false", "production"),
@@ -338,8 +310,13 @@ for tag, exp_ver, exp_pre, exp_env in cases:
             f"expected marketing_version={exp_ver}, prerelease={exp_pre}, app_environment={exp_env}"
         )
 
-print("Static entitlements, CloudKit schema.ckdb, and SemVer environment routing checks passed.")
+print("Static entitlements and SemVer environment routing checks passed.")
 PY
+}
+
+cmd_build_check() {
+    echo "=== [1/4] Auditing Entitlements, Version Routing & CloudKit Schema ==="
+    cmd_check_config
 
     if [[ ! -f "$repo_root/Config/Developer.xcconfig" ]]; then
         if [[ -n "${CI:-}" && -f "$repo_root/Config/Developer.xcconfig.example" ]]; then
@@ -1218,6 +1195,7 @@ case "$subcmd" in
     dmg)                    cmd_dmg "$@" ;;
     version)                cmd_version "$@" ;;
     select-xcode)           cmd_select_xcode "$@" ;;
+    check-config)           cmd_check_config "$@" ;;
     build-check)            cmd_build_check "$@" ;;
     export-cloudkit-schema) cmd_export_cloudkit_schema "$@" ;;
     sync-cloudkit-schema)   cmd_sync_cloudkit_schema "$@" ;;

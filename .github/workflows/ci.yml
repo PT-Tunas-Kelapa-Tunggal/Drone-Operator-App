@@ -40,6 +40,9 @@ jobs:
       - name: Select Xcode
         run: Scripts/release.sh select-xcode "${{ vars.XCODE_VERSION || '27.1' }}"
 
+      - name: Test CloudKit schema checks
+        run: python3 -m unittest discover -s Scripts/Tests -p 'test_cloudkit_schema.py' -v
+
       - name: Seed developer config template
         run: cp Config/Developer.xcconfig.example Config/Developer.xcconfig
 
