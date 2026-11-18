@@ -28,6 +28,7 @@ DEFINE SCHEMA
         fertilizingZone              STRING QUERYABLE SEARCHABLE SORTABLE,
         harvestFrequencyPerMonth     INT64 QUERYABLE SORTABLE,
         orthomosaicImage             ASSET,
+        plannedOperatorVisitDate     TIMESTAMP,
         plantingMonthAndYear         TIMESTAMP QUERYABLE SORTABLE,
         progressionStatus            STRING QUERYABLE SEARCHABLE SORTABLE,
         progressionStatusDetail      STRING QUERYABLE SEARCHABLE SORTABLE,
