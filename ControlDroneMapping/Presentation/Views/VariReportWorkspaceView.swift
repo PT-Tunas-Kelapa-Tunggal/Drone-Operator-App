@@ -34,6 +34,7 @@ private enum VariVisualLayer: String, CaseIterable, Identifiable {
 /// Adheres to Apple Human Interface Guidelines and macOS design principles.
 public struct VariReportWorkspaceView: View {
     public let result: VariScanResult
+    public let fertilizationBudgetPerHa: Int64?
     public let initialSection: VariReportInitialSection
     public let selectedNPKForTiming: ContractFertilizerType?
     public let onSelectNPKForTiming: ((ContractFertilizerType) -> Void)?
@@ -44,12 +45,14 @@ public struct VariReportWorkspaceView: View {
 
     public init(
         result: VariScanResult,
+        fertilizationBudgetPerHa: Int64?,
         initialSection: VariReportInitialSection = .vari,
         selectedNPKForTiming: ContractFertilizerType? = nil,
         onSelectNPKForTiming: ((ContractFertilizerType) -> Void)? = nil,
         onRerun: (() -> Void)? = nil
     ) {
         self.result = result
+        self.fertilizationBudgetPerHa = fertilizationBudgetPerHa
         self.initialSection = initialSection
         self.selectedNPKForTiming = selectedNPKForTiming
         self.onSelectNPKForTiming = onSelectNPKForTiming
@@ -171,8 +174,8 @@ public struct VariReportWorkspaceView: View {
                 color: .indigo
             )
             metricCard(
-                title: "Batas Anggaran Petani",
-                value: result.budget?.targetBudgetRp.map { formatRupiah($0) } ?? "Rp 0",
+                title: "Anggaran Pupuk Petani per Ha",
+                value: fertilizationBudgetPerHa.map { formatRupiah(Double($0)) } ?? "N/A",
                 unit: "anggaran modal",
                 systemImage: "banknote",
                 color: .purple

@@ -95,6 +95,7 @@ public struct VariEngineSubmissionRequest: Codable, Sendable, Equatable {
     public var month: Int?
     public var fertilizerHistory: FertilizerHistoryInput?
     public var harvest: HarvestYieldInput?
+    /// Fertilization budget per hectare in IDR, as expected by the VARI engine.
     public var fertilizerBudgetRp: Double?
 
     public init(
