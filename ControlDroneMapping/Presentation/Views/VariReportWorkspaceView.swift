@@ -35,6 +35,7 @@ private enum VariVisualLayer: String, CaseIterable, Identifiable {
 public struct VariReportWorkspaceView: View {
     public let result: VariScanResult
     public let fertilizationBudgetPerHa: Int64?
+    public let plantationAreaHa: Double?
     public let initialSection: VariReportInitialSection
     public let selectedNPKForTiming: ContractFertilizerType?
     public let onSelectNPKForTiming: ((ContractFertilizerType) -> Void)?
@@ -46,6 +47,7 @@ public struct VariReportWorkspaceView: View {
     public init(
         result: VariScanResult,
         fertilizationBudgetPerHa: Int64?,
+        plantationAreaHa: Double?,
         initialSection: VariReportInitialSection = .vari,
         selectedNPKForTiming: ContractFertilizerType? = nil,
         onSelectNPKForTiming: ((ContractFertilizerType) -> Void)? = nil,
@@ -53,6 +55,7 @@ public struct VariReportWorkspaceView: View {
     ) {
         self.result = result
         self.fertilizationBudgetPerHa = fertilizationBudgetPerHa
+        self.plantationAreaHa = plantationAreaHa
         self.initialSection = initialSection
         self.selectedNPKForTiming = selectedNPKForTiming
         self.onSelectNPKForTiming = onSelectNPKForTiming
@@ -137,7 +140,14 @@ public struct VariReportWorkspaceView: View {
     // MARK: - 2. Metric Cards Grid
 
     private var metricCardsGrid: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: 14)], spacing: 14) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 14, alignment: .top)], spacing: 14) {
+            metricCard(
+                title: "Luas Kebun",
+                value: plantationAreaHa.map { $0.formatted(.number.precision(.fractionLength(0...2))) } ?? "N/A",
+                unit: "hektare (ha)",
+                systemImage: "map.fill",
+                color: .brown
+            )
             metricCard(
                 title: "Pohon Terdeteksi",
                 value: "\(result.treeCount)",
