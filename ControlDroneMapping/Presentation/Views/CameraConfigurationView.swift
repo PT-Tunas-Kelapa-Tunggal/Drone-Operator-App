@@ -26,9 +26,8 @@ struct CameraConfigurationView: View {
                     )
                     .help("Menghitung ulang pengaturan; referensi dan foto uji perlu diulang.")
                 } else {
-                    Button("1. Siapkan kamera otomatis") { model.prepareGuided() }.kropsPrimaryAction().tint(
-                        KropsStyle.accent
-                    ).disabled(!model.canOperate)
+                    Button("1. Siapkan kamera otomatis") { model.prepareGuided() }.kropsPrimaryAction()
+                        .disabled(!model.canOperate)
                 }
                 Text(
                     String(
@@ -44,7 +43,7 @@ struct CameraConfigurationView: View {
                 ).font(.caption).foregroundStyle(.secondary)
             } else {
                 cameraControls
-                Button("Terapkan kamera") { model.send(.apply) }.kropsPrimaryAction().tint(KropsStyle.accent)
+                Button("Terapkan kamera") { model.send(.apply) }.kropsPrimaryAction()
                     .disabled(!model.canOperate)
             }
         }.disabled(model.editingLocked)

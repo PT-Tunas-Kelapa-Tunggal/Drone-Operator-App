@@ -5,7 +5,7 @@ Dua aplikasi Swift/SwiftUI native untuk akuisisi foto udara dan ground station l
 - Target Xcode `DroneMapping` → DroneCam (iOS 17+).
 - Target Xcode `ControlDroneMapping` → DroneControl (macOS 14+).
 - Proyek dibuat dengan Xcode 27; format project mengikuti workspace yang sudah ada.
-- Tidak ada backend, akun, internet, atau dependency pihak ketiga untuk runtime aplikasi.
+- Capture, kontrol, dan transfer tidak memerlukan backend, akun, atau internet. Pengolahan orthomosaic lokal memakai engine OpenSfM yang disertakan dalam aplikasi Mac.
 
 ## Yang tersedia
 
@@ -13,7 +13,9 @@ Kontrol ISO, shutter, WB temperature/tint atau gain gray card, fokus manual, int
 
 ## Menjalankan
 
-1. Buka `DroneMapping.xcodeproj` di Xcode. Pertahankan/ganti development team sesuai signing milik Anda.
+Untuk clone baru atau komputer teman, ikuti **[Setup developer dan kolaborasi GitHub](docs/DEVELOPMENT_SETUP.md)** terlebih dahulu: konfigurasi akun lokal → pasang engine dengan versi terkunci → kemas dengan identitas Apple sendiri → build. Runtime besar tidak disimpan di Git; script mengambil dependensi yang diperlukan.
+
+1. Buka `DroneMapping.xcodeproj` di Xcode. Isi Team ID dan prefix bundle pribadi melalui `Config/Developer.local.xcconfig` sesuai panduan setup; file ini tidak ikut Git.
 2. Pilih scheme `DroneMapping`, pilih iPhone fisik, Build & Run. Izinkan Kamera, Local Network, dan Location (opsional untuk geotag perkiraan).
 3. Jalankan scheme `ControlDroneMapping` pada Mac. Aktifkan Wi-Fi kedua perangkat; jaringan lokal tidak membutuhkan internet. Peer-to-peer harus diuji pada perangkat aktual.
 4. Pada iPhone kamera disiapkan otomatis saat aplikasi dibuka; berikan izin jika diminta. Pada Mac buka panel **Perangkat**, pilih peer DroneCam, lalu setujui undangan pada iPhone. Setup dan koneksi drone dibuka melalui **QGroundControl** di panel Perangkat.
@@ -22,7 +24,7 @@ Kontrol ISO, shutter, WB temperature/tint atau gain gray card, fokus manual, int
 7. Di **Misi**, isi tinggi AGL, kecepatan, target GSD dan overlap, lalu periksa rencana terbang. Di **Perangkat**, lakukan persiapan kamera otomatis atau isi rekomendasi dari survei, sesuaikan ISO/fokus/format, lalu **Terapkan kamera**. Kamera, white balance, kalibrasi, foto uji, dan pemeriksaan hasil berada di panel Perangkat.
 8. Di **Perangkat**, bila gray card dipilih: **Kunci WB → Simpan referensi → keluarkan kartu → Ambil foto uji**. Checklist terbuka setelah foto uji tersimpan. Unduh asli untuk inspeksi ketajaman; lakukan uji cadence dan lengkapi pemeriksaan lapangan.
 9. Kembali ke **Misi**. Tombol **Mulai capture • 3–2–1** tersedia di bawah layar dan aktif ketika indikator iPhone siap capture. Satu alasan penghalang tampil; daftar lengkap dapat dibuka bila perlu. Selama misi, layar yang sama menampilkan progres, baterai, suhu, disk serta Jeda/Lanjut/Selesai. iPhone harus tetap di foreground; capture tidak bergantung koneksi Mac.
-10. Setelah selesai, layar **Hasil** menampilkan daftar misi, **Transfer ke Mac**, dan **Siapkan WebODM**. Transfer menyertakan gray card beserta foto asli; tidak perlu mengunduh referensi satu per satu. Pilih ekspor original atau koreksi acuan kartu dengan ROI yang dikonfirmasi operator. Upload hanya isi Images dari hasil ekspor; referensi/foto uji terpisah. Koreksi overlap bersifat eksperimental dan melaporkan pasangan yang tidak cocok. [Workflow lengkap](docs/WEBODM_COLOR_WORKFLOW.md).
+10. Setelah selesai, layar **Hasil** menyediakan **Transfer ke Mac**, **Olah foto** per misi, dan **Impor dari Finder** untuk foto/folder lokal. Transfer menyertakan gray card beserta foto asli. Pada pengolah misi, gray card bersifat opsional. Tanpa gray card, langsung pilih **Buat orthomosaic** tanpa normalisasi; jika gray card diunggah, tandai area kartu dan konfirmasi untuk menerapkan normalisasi. Engine lokal merekonstruksi kamera/permukaan, dan menulis TIFF atau GeoTIFF sesuai referensi koordinat yang tersedia. Riwayat hasil, progres, Hentikan, dan Simpan TIFF tersedia per misi. [Pemasangan engine dan batas pengolahan](ControlDroneMapping/Resources/ORTHOMOSAIC_ENGINE.md). Ekspor WebODM tetap tersedia di **Lainnya**; [workflow ekspor](docs/WEBODM_COLOR_WORKFLOW.md).
 
 ## Pembagian kontrol dan tampilan
 
@@ -44,7 +46,9 @@ Exposure tidak berubah otomatis selama terbang. Gray card pra/pasca terbang meny
 
 Setelah update kedua aplikasi, hubungkan dan setujui pairing sekali sebelum terbang. Identitas lokal dan peer yang disetujui disimpan untuk koneksi berikutnya. Mac hanya mencoba reconnect otomatis ke peer tersebut; undangan dari Mac yang sudah dipasangkan diterima iPhone tanpa konfirmasi ulang.
 
-Saat radio terputus, timer dan penyimpanan iPhone tetap berjalan. Mac memeriksa koneksi setiap dua detik, mengundang kembali jika peer sudah ditemukan, dan memakai timeout 10 detik dengan jeda bertahap 2–15 detik antar percobaan. Discovery disegarkan setiap 20 detik saat offline dan tidak sedang mencoba koneksi. Waktu koneksi aktual bergantung discovery, radio dan OS.
+Saat radio terputus, timer dan penyimpanan iPhone tetap berjalan. Mac memeriksa koneksi setiap dua detik, mengundang kembali jika peer sudah ditemukan, dan memakai timeout 10 detik dengan jeda bertahap 2–15 detik antar percobaan. Discovery yang berjalan tetap aktif tanpa siklus stop/start berkala. Waktu koneksi aktual bergantung discovery, radio dan OS.
+
+Di **Pengaturan → Koneksi iPhone**, **Aktifkan koneksi iPhone** menyala secara default dan pilihannya disimpan untuk peluncuran berikutnya. Mematikannya menghentikan pencarian, reconnect, koneksi aktif, dan transfer di Mac; tombol koneksi manual juga dinonaktifkan. Capture yang sudah berjalan di iPhone tetap berjalan lokal. Aktifkan kembali untuk mencari dan menghubungkan DroneCam tanpa menghapus identitas pairing.
 
 Saat drone kembali dalam jangkauan, koneksi dipulihkan otomatis dan iPhone mengirim status serta daftar dataset terbaru. Perintah Mulai tidak diputar ulang. ACK yang hilang dapat diminta dari cache tanpa menjalankan ulang perintah. Jika cache hilang akibat restart aplikasi, hasil perintah tetap dianggap belum pasti dan perlu diperiksa operator. Download yang terputus belum otomatis dilanjutkan.
 
@@ -82,7 +86,7 @@ Build generik tanpa signing memvalidasi kompilasi, bukan kamera/transport nyata.
 
 - Belum ada kontrol navigasi/autopilot drone, telemetry flight controller, atau terrain following.
 - Mac menampilkan preview foto uji/referensi setelah tersimpan (hingga 1200 pixel), bukan live video. Belum ada histogram/zebra, blur detector, atau clipping detector otomatis.
-- Belum ada pemrosesan orthomosaic internal, ColorChecker profiling, reflectance calibration otomatis, atau pengukuran akurasi survei.
+- Panel Hasil mengintegrasikan pengolahan orthomosaic lokal melalui OpenSfM komunitas 1.x. Engine dan helper Python bertanda tangan disertakan dalam aplikasi Mac; pemeriksaan engine/GPU berhasil melalui aplikasi Apple Development dengan App Sandbox aktif. Aset engine perlu disiapkan sebelum build Mac (lihat panduan engine). Sampel 12 foto Caliterra telah menghasilkan GeoTIFF melalui runtime pengembangan native; [pengukuran dan optimasi M5](docs/ORTHOMOSAIC_PERFORMANCE.md) mencakup preparasi JPEG, thread fitur, dan pembersihan data kerja setelah berhasil. Seluruh misi pribadi pengguna, distribusi Developer ID/notarisasi pada Mac lain, serta akurasi survei belum divalidasi. Belum ada ColorChecker profiling, reflectance calibration otomatis, atau VARI.
 - Pilihan format sensor/resolusi alternatif, ProRAW/HEIF, aperture variabel dan parameter hardware tambahan perlu capability discovery serta eksperimen lanjutan. Maksimum format aktif bukan janji 48/64/108 MP.
 - Retry command ID dideduplikasi selama proses hidup (cache 256); bukan exactly-once lintas restart. Status ACK yang hilang harus diperiksa pada telemetry sebelum perintah baru.
 - Transfer ulang berkas tersedia; belum byte-range resume, whole-dataset transactional import, atau autentikasi pasangan berbasis sertifikat.

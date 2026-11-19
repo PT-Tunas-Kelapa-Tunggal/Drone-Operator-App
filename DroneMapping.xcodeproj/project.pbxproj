@@ -3,12 +3,13 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 110;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXFileReference section */
 		2F62F980307A216600B1968B /* DroneMapping.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DroneMapping.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2F62F992307A21EF00B1968B /* ControlDroneMapping.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ControlDroneMapping.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		ABC000000000000000000015 /* Config/Developer.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Developer.xcconfig; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -46,6 +47,7 @@
 		2F62F977307A216600B1968B = {
 			isa = PBXGroup;
 			children = (
+				ABC000000000000000000015 /* Config/Developer.xcconfig */,
 				ABC000000000000000000001 /* Shared */,
 				2F62F982307A216600B1968B /* DroneMapping */,
 				2F62F993307A21EF00B1968B /* ControlDroneMapping */,
@@ -91,6 +93,7 @@
 				2F62F98E307A21EF00B1968B /* Sources */,
 				2F62F98F307A21EF00B1968B /* Frameworks */,
 				2F62F990307A21EF00B1968B /* Resources */,
+				ABC000000000000000000020 /* Ensure All Deps Valid (Embed, Sign & Verify Engines) */,
 			);
 			buildRules = (
 			);
@@ -154,6 +157,19 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		ABC000000000000000000020 /* Ensure All Deps Valid (Embed, Sign & Verify Engines) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			name = "Ensure All Deps Valid (Embed, Sign & Verify Engines)";
+			shellPath = /bin/bash;
+			shellScript = (
+				"bash \"$SRCROOT/Scripts/ensure-all-deps-valid.sh\"",
+				"",
+			);
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		2F62F97C307A216600B1968B /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -170,6 +186,7 @@
 /* Begin XCBuildConfiguration section */
 		2F62F989307A216700B1968B /* Debug configuration for PBXProject "DroneMapping" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = ABC000000000000000000015 /* Config/Developer.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -203,7 +220,6 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = 4Z34RN4542;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -234,6 +250,7 @@
 		};
 		2F62F98A307A216700B1968B /* Release configuration for PBXProject "DroneMapping" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = ABC000000000000000000015 /* Config/Developer.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -267,7 +284,6 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = 4Z34RN4542;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -291,12 +307,13 @@
 		};
 		2F62F98C307A216700B1968B /* Debug configuration for PBXNativeTarget "DroneMapping" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = ABC000000000000000000015 /* Config/Developer.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 4Z34RN4542;
+				DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "$(SRCROOT)/Config/Info.plist";
@@ -317,7 +334,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hata.DroneMapping;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_PREFIX).DroneMapping";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -331,12 +348,13 @@
 		};
 		2F62F98D307A216700B1968B /* Release configuration for PBXNativeTarget "DroneMapping" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = ABC000000000000000000015 /* Config/Developer.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 4Z34RN4542;
+				DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "$(SRCROOT)/Config/Info.plist";
@@ -357,7 +375,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hata.DroneMapping;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_PREFIX).DroneMapping";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -371,23 +389,27 @@
 		};
 		2F62F99B307A21F000B1968B /* Debug configuration for PBXNativeTarget "ControlDroneMapping" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = ABC000000000000000000015 /* Config/Developer.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Config/DroneControl.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Config/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 4Z34RN4542;
+				DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "$(SRCROOT)/Config/DroneControl-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = DroneControl;
+				INFOPLIST_FILE = "$(SRCROOT)/Config/App-Info.plist";
+				INFOPLIST_KEY_AppEnvironment = "$(APP_ENVIRONMENT)";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_NAME)";
+				INFOPLIST_KEY_ICloudContainerIdentifier = "$(ICLOUD_CONTAINER_NAME)";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Hubungkan DroneCam dan DroneControl tanpa internet.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Tampilkan lokasi perkiraan operator dan kebun tersimpan di sekitar Mac. Lokasi ini bukan home atau posisi drone.";
@@ -398,7 +420,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hata.ControlDroneMapping;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_PREFIX).ControlDroneMapping";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = macosx;
@@ -413,23 +435,27 @@
 		};
 		2F62F99C307A21F000B1968B /* Release configuration for PBXNativeTarget "ControlDroneMapping" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = ABC000000000000000000015 /* Config/Developer.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Config/DroneControl.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Config/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 4Z34RN4542;
+				DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "$(SRCROOT)/Config/DroneControl-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = DroneControl;
+				INFOPLIST_FILE = "$(SRCROOT)/Config/App-Info.plist";
+				INFOPLIST_KEY_AppEnvironment = "$(APP_ENVIRONMENT)";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_NAME)";
+				INFOPLIST_KEY_ICloudContainerIdentifier = "$(ICLOUD_CONTAINER_NAME)";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Hubungkan DroneCam dan DroneControl tanpa internet.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Tampilkan lokasi perkiraan operator dan kebun tersimpan di sekitar Mac. Lokasi ini bukan home atau posisi drone.";
@@ -440,7 +466,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hata.ControlDroneMapping;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_PREFIX).ControlDroneMapping";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = macosx;

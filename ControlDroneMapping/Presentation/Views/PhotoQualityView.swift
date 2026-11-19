@@ -110,7 +110,7 @@ struct PhotoQualityView: View {
             HStack {
                 Button(model.guidedMode ? "3. Cari fokus & ambil foto uji" : "Ambil foto uji") {
                     model.send(.testCapture)
-                }.kropsPrimaryAction().tint(KropsStyle.accent)
+                }.kropsPrimaryAction()
                     .disabled(
                         !model.canOperate || !model.settingsApplied || model.editingLocked
                             || (model.geometry.useGrayCard && !model.referenceSaved)

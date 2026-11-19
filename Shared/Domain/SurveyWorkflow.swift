@@ -1,11 +1,11 @@
 import Foundation
 
 struct SurveyGeometry: Codable, Equatable {
-    var heightAGL = 80.0
+    var heightAGL = 30.0
     var speed = 5.0
     var targetGSDcm = 3.0
-    var forwardOverlap = 0.8
-    var sideOverlap = 0.75
+    var forwardOverlap = 0.75
+    var sideOverlap = 0.70
     var calibratedFocalPixels = 0.0
     var reviewed = false
     var useGrayCard = true
@@ -14,7 +14,7 @@ struct SurveyGeometry: Codable, Equatable {
         guard let c = capabilities, c.width > 0, c.height > 0,
             [heightAGL, speed, targetGSDcm].allSatisfy({ $0.isFinite && $0 > 0 }),
             calibratedFocalPixels.isFinite, calibratedFocalPixels >= 0,
-            (0.6...0.95).contains(forwardOverlap), (0.6...0.95).contains(sideOverlap)
+            (0.3...0.95).contains(forwardOverlap), (0.3...0.95).contains(sideOverlap)
         else { return nil }
         let focal: Double
         if calibratedFocalPixels > 0 {

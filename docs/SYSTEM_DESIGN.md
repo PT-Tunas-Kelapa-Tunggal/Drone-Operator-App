@@ -4,7 +4,7 @@ Dokumen ini menjelaskan struktur yang diterapkan pada source code setelah refact
 
 ## Tujuan dan batas sistem
 
-DroneCam mengendalikan kamera iPhone dan menyimpan foto beserta metadata. Krops pada Mac menyiapkan misi, memantau kamera, menerima dataset, dan menyiapkan input WebODM. QGroundControl dibuka sebagai aplikasi terpisah; sistem ini tidak mengirim instruksi navigasi drone atau mengubah source QGroundControl. Rekonstruksi orthomosaic tetap dilakukan di WebODM atau perangkat lunak photogrammetry lainnya.
+DroneCam mengendalikan kamera iPhone dan menyimpan foto beserta metadata. Krops pada Mac menyiapkan misi, memantau kamera, menerima dataset, dan mengolah orthomosaic lokal per misi di panel Hasil, selain menyediakan ekspor WebODM. QGroundControl dibuka sebagai aplikasi terpisah; sistem ini tidak mengirim instruksi navigasi drone atau mengubah source QGroundControl. Pengolah lokal memanggil instalasi OpenSfM komunitas melalui adapter Python yang disertakan; runtime Python/OpenSfM dipasang otomatis ke penyimpanan aplikasi, atau dipilih manual melalui security-scoped folder bookmark.
 
 Prinsip yang dipertahankan:
 
@@ -221,6 +221,7 @@ Packet tetap version 1; layout capture tetap version 2. Refactor tidak mengubah 
 | `Scripts/test-dashboard.sh` | Import GeoJSON dan persistensi batas kebun |
 | `Scripts/test-webodm-export.sh` | JPEG nyata sintetis, koreksi/overlap, manifest/metadata dan output ekspor |
 | `Scripts/test-architecture.sh` | Injected dependencies, dedup dan lookup reply tanpa replay, foreground/UUID guard, draft failure, export reentrancy/error |
+| `Scripts/test-orthomosaic.sh` | Impor transaksional per misi, checksum, normalisasi RGB nyata, kontrak proses, penolakan hasil parsial, cancellation, state/riwayat lintas editor; tidak membuktikan akurasi SfM |
 
 Build Mac memvalidasi target `ControlDroneMapping`; build iOS generik tanpa signing memvalidasi target `DroneMapping`. Tes otomatis tidak membuktikan thermal, throughput RAW, GNSS, reconnect radio pada drone, atau hasil rekonstruksi WebODM pada flight block nyata. Prosedur fisik ada pada `DEVICE_TEST_PLAN.md`.
 
@@ -233,6 +234,16 @@ Panduan perubahan:
 5. Format source memakai konfigurasi `.swift-format`; jalankan `Scripts/format-swift.sh`. Perubahan schema/protokol wajib menyebut kompatibilitas kedua aplikasi dan migrasi dataset.
 
 SDK 27 memberikan deprecation warning untuk MultipeerConnectivity. Refactor ini mempertahankan transport yang telah dipakai; `LocalTransport` menyediakan batas untuk migrasi Network framework terpisah setelah pengujian radio/keamanan. Pemisahan lapisan tidak berarti seluruh implementasi platform sudah diganti atau seluruh pengujian perangkat fisik selesai.
+
+## Pengolah orthomosaic per misi
+
+`OrthomosaicViewModel` memiliki state pekerjaan dan daftar proyek yang tetap hidup ketika sheet ditutup. `OrthomosaicView` menangani editor referensi/ROI dan file panels. Kontrak `OrthomosaicRepository`/`OrthomosaicProcessing` berada di Domain; implementasi `FileOrthomosaicRepository`, `LocalOrthomosaicProcessor`, dan bookmark runtime berada di `Data/Orthomosaic`. Composition root membuat dependencies. Proyek impor tidak dimasukkan ke manifest capture iPhone atau protokol transport.
+
+Kontrak `OrthomosaicEngineInstalling` memisahkan pemasangan dari UI. Build sandbox memasang paket runtime siap pakai melalui `BundledOrthomosaicEngine`, bukan menjalankan compiler: `xcrun` menolak App Sandbox. Paket diperiksa SHA-256 dan identitas penandatangan yang sama dengan aplikasi. Python memakai hardened runtime dan hanya entitlement app-sandbox + inherit; native library ditandatangani, jalurnya relatif, dan editable hook developer dihapus saat packaging. `Scripts/package-orthomosaic-engine.py` dijalankan di mesin build, lalu ZIP + manifest disertakan sebagai Resources (aset diabaikan Git). Paket dipasang dalam Caches privat aplikasi; checksum/signature diperiksa sebelum publikasi, marker engine diterbitkan terakhir, dan readiness tetap membutuhkan check modul/GPU nyata. Jalur source-build micromamba lama hanya tersedia di luar sandbox untuk pengembangan. `EngineInstallProcess` memakai argumen langsung tanpa shell, kelompok proses untuk cancellation, dan lock pemasangan untuk mencegah penulisan bersamaan. Foto serta hasil tetap berada di Application Support. Hosting engine terpisah belum disiapkan; build sekarang membawa paket engine.
+
+Impor menyalin foto secara transaksional ke Originals per proyek. Foto hasil transfer memakai sumber DatasetRepository yang telah diverifikasi. Gray card terpisah, checksum referensi/foto diperiksa sebelum pengolahan, dan satu set gain diterapkan di ruang linear melalui Core Image ke PNG sRGB 8-bit. Engine dijalankan dengan argumen Process terstruktur, tanpa shell. Adapter memeriksa versi/kapabilitas dan GPU OpenCL, menjalankan tahap SfM/dense, menolak blok terputus atau foto yang tidak terdaftar, memvalidasi raster, lalu mempublikasikan TIFF atomik sebagai Run baru. Koordinat lokal tidak diberi CRS bumi. Foto asli, riwayat, laporan, dan log dipertahankan; proses gagal/dihentikan dipisahkan ke Unfinished.
+
+Satu pekerjaan aktif diizinkan pada satu waktu. Progress dan completion dikorelasikan dengan UUID proyek asal, termasuk ketika operator membuka misi lain. Cancellation memutus worker dan process group anak. State aktif yang tersimpan ditandai gagal ketika aplikasi dibuka ulang. Tidak ada resume otomatis atau analisis VARI. [Panduan engine, parameter, dan status validasi](../ControlDroneMapping/Resources/ORTHOMOSAIC_ENGINE.md).
 
 ## Waypoint manual dan lokasi operator Mac
 

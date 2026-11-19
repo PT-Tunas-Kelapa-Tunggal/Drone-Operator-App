@@ -1,73 +1,165 @@
+import AppKit
 import SwiftUI
 
-private enum MissionMapTool: String, CaseIterable, Identifiable {
-    case inspect, boundary, home, waypoint, move
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .inspect: return "Pilih"
-        case .boundary: return "Batas area"
-        case .home: return "Home"
-        case .waypoint: return "+ Waypoint"
-        case .move: return "Pindah WP"
-        }
-    }
-    var flightMode: FlightMapEditMode {
-        switch self {
-        case .home: return .home
-        case .waypoint, .move: return .waypoint
-        case .inspect, .boundary: return .inspect
-        }
-    }
-}
-
+/// Map-first planning canvas: the map fills the tab, tools float above it and a
+/// contextual inspector follows the active layer (boundary area or flight path).
 struct MissionWorkspaceView: View {
     @ObservedObject var model: ControlViewModel
     @ObservedObject var link: LocalLink
     @ObservedObject var farms: FarmAreaViewModel
     @ObservedObject var location: OperatorLocationViewModel
     @ObservedObject var planner: FlightPlannerViewModel
-    var openPlanner: () -> Void
-    @State private var tool = MissionMapTool.home
+    @ObservedObject private var engineManager = QGCEngineManager.shared
+    var onStartFlight: (() -> Void)? = nil
     @State private var focusOperator = false
-    @State private var manualLatitude: Double?
-    @State private var manualLongitude: Double?
-    private var area: FarmArea? { model.selectedMission?.area }
+    @State private var requestedLocation = false
+    @State private var inspectorVisible = true
+    @State private var summaryVisible = true
+    @State private var inspectorContentHeight: CGFloat = 400
+    @State private var keyMonitor: Any?
+    @State private var replanPending = false
+    @State private var replanDebounceTask: Task<Void, Never>? = nil
+    @State private var showingHomeOptions = false
+    @State private var isUploadingMission = false
+    @State private var uploadErrorMessage: String? = nil
+    @State private var showingUploadErrorAlert = false
+    @State private var showingCommsLostNeverArmedAlert = false
+    @State private var showingCommsLostWasArmedSheet = false
+    @State private var commsLostVehicleID: Int = 1
+    @State private var commsLostCountdownRemaining: Int = 10
+    @State private var commsLostCountdownTask: Task<Void, Never>? = nil
+
     private var routeMatchesMission: Bool {
         model.selectedMissionID != nil && planner.draft.missionID == model.selectedMissionID
     }
-    private var locked: Bool {
-        model.editingLocked || model.selectedMission?.preparationRequested == true
+    private var currentPlanLockState: PlanLockState {
+        planner.planLockState(in: engineManager.vehicles)
     }
-    private var canEditRoute: Bool { !locked && routeMatchesMission }
-    private var routes: [FlightRoute] {
-        planner.routes.filter { $0.missionID == model.selectedMissionID }
-    }
-    var body: some View {
-        HStack(alignment: .top, spacing: 18) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Button("Semua misi", systemImage: "chevron.left") { model.showMissionList() }
-                        .buttonStyle(.plain).foregroundStyle(KropsStyle.accent)
-                    MissionView(model: model, link: link)
-                    waypointPanel
-                    MissionAreaView(
-                        model: model, farms: farms, drawing: tool == .boundary,
-                        drawBoundary: { tool = tool == .boundary ? .inspect : .boundary },
-                        fitArea: fitMap)
-                }.padding(.bottom, 8)
-            }.frame(width: 350).scrollIndicators(.hidden)
-            planningMap
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(KropsStyle.border))
+    private var isAssignedOrActiveDroneArmed: Bool {
+        if let uploadedID = planner.draft.uploadedVehicleID,
+            let v = engineManager.vehicles.first(where: { $0.id == uploadedID }),
+            v.isReachable && (v.armed || v.flying)
+        {
+            return true
         }
+        if let active = engineManager.activeVehicle, active.isReachable && (active.armed || active.flying) {
+            return true
+        }
+        return false
+    }
+    private var canEditRoute: Bool {
+        routeMatchesMission
+            && !planner.draft.isPlanLocked
+            && !isAssignedOrActiveDroneArmed
+            && !model.editingLocked
+            && model.selectedMission?.preparationRequested != true
+            && model.selectedMission?.phase != .completed
+    }
+    private var mapMode: FlightMapEditMode {
+        canEditRoute ? planner.mode : .inspect
+    }
+    private var boundaryReady: Bool { planner.draft.waypoints.count >= 3 }
+    private var canProceedToFlight: Bool { boundaryReady && planner.isAreaConfirmed }
+    private var pathReady: Bool { !planner.draft.visualTransects.isEmpty }
+
+    var body: some View {
+        WaypointMap(
+            route: routeMatchesMission ? planner.draft : FlightRoute(),
+            farm: model.selectedMission?.area, operatorLocation: location.sample, mode: mapMode,
+            fitRequest: planner.fitRequest, selectedWaypoint: $planner.selectedWaypointID,
+            onClick: addPoint,
+            onMove: { id, coordinate in
+                editRoute { planner.moveWaypoint(id, to: coordinate) }
+            },
+            editingEnabled: canEditRoute,
+            dragWhileAdding: true,
+            focusOperator: focusOperator,
+            planningStep: planner.planningStep,
+            onHomeMove: { coordinate in
+                editRoute {
+                    planner.draft.home = coordinate
+                    replanDebounced()
+                }
+                syncHomeToQGC(coordinate: coordinate)
+            },
+            onEntryMove: { coordinate in
+                editRoute {
+                    planner.moveEntry(to: coordinate)
+                    replanDebounced()
+                }
+            },
+            onInsertBoundary: { index, coordinate in
+                editRoute { planner.addWaypoint(coordinate, at: index) }
+            }
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .top) {
+            HStack(alignment: .top, spacing: 12) {
+                if inspectorVisible {
+                    inspector.transition(.move(edge: .leading).combined(with: .opacity))
+                } else {
+                    // Same spot as the toggle inside the panel header.
+                    panelToggle(.leading).padding(5).kropsFloatingControl(in: Capsule())
+                        .padding(.leading, 11).padding(.top, 9)
+                }
+                ViewThatFits(in: .horizontal) {
+                    centerIslands(compact: false)
+                    centerIslands(compact: true)
+                }
+                .frame(maxWidth: .infinity)
+                if summaryVisible {
+                    summaryPanel.transition(.move(edge: .trailing).combined(with: .opacity))
+                } else {
+                    panelToggle(.trailing).padding(5).kropsFloatingControl(in: Capsule())
+                        .padding(.trailing, 11).padding(.top, 11)
+                }
+            }
+            .padding(14)
+            .padding(.bottom, 56)  // Keeps the inspector clear of the hint pill.
+        }
+        .overlay(alignment: .bottom) { hint.padding(.bottom, 18) }
+        .animation(.snappy(duration: 0.22), value: inspectorVisible)
+        .animation(.snappy(duration: 0.22), value: summaryVisible)
         .onAppear {
             guard let mission = model.selectedMission else { return }
             planner.open(
-                farm: area, name: "Rute " + mission.plan.name,
+                farm: mission.area, name: "Rute " + mission.plan.name,
                 altitude: model.geometry.heightAGL, speed: model.geometry.speed, missionID: mission.id)
-            tool = planner.draft.home == nil ? .home : .inspect
+            if planner.reviewed && !model.geometry.reviewed {
+                model.geometry.reviewed = true
+            } else if model.geometry.reviewed && planner.isSOPChecklistComplete && !planner.reviewed {
+                planner.reviewed = true
+            }
+            // Default to inspect (Pilih) mode so operator can pan and select without accidental point additions.
+            planner.mode = .inspect
+            installKeyMonitor()
+        }
+        .onDisappear {
+            if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+            keyMonitor = nil
+            commsLostCountdownTask?.cancel()
+            commsLostCountdownTask = nil
+        }
+        .alert(
+            "Komunikasi Drone #\(commsLostVehicleID) Terputus",
+            isPresented: $showingCommsLostNeverArmedAlert
+        ) {
+            Button("Tetap Buka Kunci & Edit Rencana") {
+                planner.unlockPlan()
+            }
+            Button("Batal", role: .cancel) {}
+        } message: {
+            Text(
+                "Drone #\(commsLostVehicleID) saat ini kehilangan koneksi telemetri (tidak terjangkau). Karena drone belum pernah di-Arm sejak rute diunggah, sebaiknya pulihkan koneksi drone terlebih dahulu, atau pilih 'Tetap Buka Kunci & Edit Rencana' untuk kembali merencanakan rute."
+            )
+        }
+        .sheet(isPresented: $showingCommsLostWasArmedSheet) {
+            commsLostWasArmedSafetySheet
+        }
+        .onChange(of: planner.selectedWaypointID) { _, id in
+            if id != nil && planner.planningStep == .boundary {
+                planner.planningStep = .boundary
+            }
         }
         .onChange(of: model.geometry.heightAGL) { _, altitude in
             if canEditRoute { planner.draft.defaultAltitude = altitude }
@@ -76,231 +168,1578 @@ struct MissionWorkspaceView: View {
             if canEditRoute { planner.draft.speed = speed }
         }
         .onChange(of: location.focusRequest) { _, _ in
+            guard requestedLocation else { return }
             focusOperator = true
             planner.fitRoute()
         }
     }
-    private var planningMap: some View {
-        WaypointMap(
-            route: routeMatchesMission ? planner.draft : FlightRoute(), farm: area,
-            operatorLocation: location.sample, mode: locked ? .inspect : tool.flightMode,
-            fitRequest: planner.fitRequest, selectedWaypoint: $planner.selectedWaypointID,
-            onClick: mapClick,
-            onMove: { id, coordinate in
-                editRoute { planner.moveWaypoint(id, to: coordinate) }
-            },
-            drawingBoundary: tool == .boundary && !locked,
-            editingEnabled: !locked && (routeMatchesMission || tool == .boundary),
-            focusOperator: focusOperator,
-            onBoundaryClick: addBoundaryPoint,
-            onBoundaryMove: moveBoundaryPoint,
-            onHomeMove: { coordinate in
-                editRoute { planner.draft.home = coordinate }
-            }
-        )
-        .overlay(alignment: .topLeading) {
-            Picker("Mode peta misi", selection: $tool) {
-                ForEach(MissionMapTool.allCases) { tool in Text(tool.title).tag(tool) }
-            }.pickerStyle(.segmented).labelsHidden().controlSize(.small).frame(width: 400, height: 28)
-                .disabled(locked)
-                .padding(10).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                .padding(14)
-        }
-        .overlay(alignment: .topTrailing) {
-            HStack(spacing: 8) {
-                Button {
-                    location.request()
-                } label: {
-                    Image(systemName: "location")
-                }
-                .help("Lokasi saya")
-                Button(action: fitMap) { Image(systemName: "arrow.up.left.and.arrow.down.right") }
-                    .help("Tampilkan seluruh area dan rute")
-            }.padding(10).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)).padding(14)
-        }
-        .overlay(alignment: .bottomLeading) {
-            VStack(alignment: .leading, spacing: 8) {
-                Label(mapAdvice, systemImage: "cursorarrow.click").font(.callout)
-                HStack(spacing: 16) {
-                    Label(
-                        "\(routeMatchesMission ? planner.draft.waypoints.count : 0) waypoint",
-                        systemImage: "mappin.and.ellipse")
-                    if routeMatchesMission {
-                        Text(String(format: "%.0f m rute", planner.draft.distance))
+
+    // MARK: - Floating toolbar
+
+    /// Tools, history and view controls sit together between the panels; tool labels
+    /// drop away when the map is too narrow for them.
+    /// When the plan is locked, all editing/view toolbars disappear completely and only the unlock control remains.
+    @ViewBuilder
+    private func centerIslands(compact: Bool) -> some View {
+        if planner.draft.isPlanLocked {
+            lockedPlanToolbarIsland(compact: compact)
+                .fixedSize()
+        } else {
+            HStack(alignment: .top, spacing: 10) {
+                toolPalette(compact: compact)
+                historyIsland
+                HStack(spacing: 2) {
+                    PlanIconButton(systemImage: "location", help: "Ke lokasi saya") {
+                        requestedLocation = true
+                        location.request()
                     }
-                    if let area { Text("\(area.points.count) titik batas") }
-                }.font(.caption).foregroundStyle(.secondary)
-            }.padding(12).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                .padding(14).padding(.bottom, 25).padding(.trailing, 70)
+                    PlanIconButton(
+                        systemImage: "arrow.up.left.and.arrow.down.right", help: "Tampilkan seluruh rute"
+                    ) {
+                        focusOperator = false
+                        planner.fitRoute()
+                    }
+                }
+                .padding(5)
+                .kropsFloatingControl(in: Capsule())
+            }
+            .fixedSize()
         }
     }
-    private var mapAdvice: String {
-        if locked { return "Rencana tersimpan · pengeditan dikunci selama operasi misi." }
-        switch tool {
-        case .inspect: return "Klik waypoint untuk memilih. Geser penanda untuk mengubah posisi."
-        case .boundary: return "Klik peta untuk menambah titik batas area."
-        case .home: return "Klik lokasi lepas landas untuk menentukan Home."
-        case .waypoint: return "Klik peta untuk menambah waypoint berurutan."
-        case .move: return "Pilih waypoint, lalu klik lokasi barunya pada peta."
+
+    @ViewBuilder
+    private func lockedPlanToolbarIsland(compact: Bool) -> some View {
+        switch currentPlanLockState {
+        case .hardLockedActiveFlight(let vehicleID):
+            HStack(spacing: 8) {
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.orange)
+                Text(
+                    compact
+                        ? "Misi Aktif · Terkunci"
+                        : "Misi Aktif (Drone #\(vehicleID)) · Terkunci Permanen"
+                )
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.primary)
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 36)
+            .padding(4)
+            .kropsFloatingControl(in: Capsule())
+            .help(
+                "Rencana tidak dapat diubah selama drone sedang Armed atau menjalankan misi di udara. Daratkan dan Disarm drone terlebih dahulu."
+            )
+
+        case .softLocked, .commsLostNeverArmed, .commsLostWasArmed, .unlocked:
+            PlanHoldToUnlockCapsule(
+                compact: compact,
+                holdDuration: 1.5
+            ) {
+                handleUnlockHoldCompleted()
+            }
         }
     }
-    private var waypointPanel: some View {
-        ControlPanel("Rute waypoint", state: nil) {
-            if let error = planner.storageError ?? planner.error {
-                Text(error).font(.caption).foregroundStyle(.orange)
-                if planner.storageError != nil {
-                    Button("Coba simpan rute lagi") { planner.retrySaving() }
+
+    private func handleUnlockHoldCompleted() {
+        switch currentPlanLockState {
+        case .unlocked, .hardLockedActiveFlight:
+            break
+        case .softLocked:
+            planner.unlockPlan()
+        case .commsLostNeverArmed(let vehicleID):
+            commsLostVehicleID = vehicleID
+            showingCommsLostNeverArmedAlert = true
+        case .commsLostWasArmed(let vehicleID):
+            commsLostVehicleID = vehicleID
+            startCommsLostCountdown()
+            showingCommsLostWasArmedSheet = true
+        }
+    }
+
+    private func startCommsLostCountdown() {
+        commsLostCountdownTask?.cancel()
+        commsLostCountdownRemaining = 10
+        commsLostCountdownTask = Task { @MainActor in
+            while !Task.isCancelled && commsLostCountdownRemaining > 0 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { break }
+                if commsLostCountdownRemaining > 0 {
+                    commsLostCountdownRemaining -= 1
                 }
             }
-            if routes.count > 1 {
-                Picker(
-                    "Rute",
-                    selection: Binding(
-                        get: { planner.draft.id },
-                        set: {
-                            let id = $0
-                            editRoute { planner.select(id) }
-                            tool = planner.draft.home == nil ? .home : .inspect
-                        })
-                ) {
-                    ForEach(routes) { route in Text(route.name).tag(route.id) }
-                }.disabled(locked)
+        }
+    }
+
+    private var isTargetDroneReconnectedAndUnarmed: Bool {
+        if case .softLocked = currentPlanLockState {
+            return true
+        }
+        return false
+    }
+
+    private var commsLostWasArmedSafetySheet: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color.red.opacity(0.14))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "exclamationmark.shield.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(.red)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Peringatan Keamanan: Drone Pernah Arm & Komms Terputus")
+                        .font(.headline)
+                    Text(
+                        "Drone #\(commsLostVehicleID) kehilangan koneksi setelah sebelumnya berstatus Armed."
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Label(
+                    "Pastikan wahana sudah mendarat dan dalam kondisi Disarmed secara fisik.",
+                    systemImage: "1.circle.fill"
+                )
+                Label(
+                    "Pulihkan koneksi telemetri antara Drone #\(commsLostVehicleID) dan QGC Engine.",
+                    systemImage: "2.circle.fill"
+                )
+                Label(
+                    "Demi keselamatan penerbangan, perubahan rencana hanya diizinkan saat drone tidak Armed.",
+                    systemImage: "3.circle.fill"
+                )
+            }
+            .font(.callout)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.25), lineWidth: 1))
+
+            if isTargetDroneReconnectedAndUnarmed {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Koneksi Drone #\(commsLostVehicleID) pulih & terkonfirmasi Disarmed.")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.green)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+            }
+
+            HStack {
+                Button("Batal") {
+                    commsLostCountdownTask?.cancel()
+                    showingCommsLostWasArmedSheet = false
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                let canUnlockNow = isTargetDroneReconnectedAndUnarmed || commsLostCountdownRemaining == 0
+                Button {
+                    commsLostCountdownTask?.cancel()
+                    showingCommsLostWasArmedSheet = false
+                    planner.unlockPlan()
+                } label: {
+                    Text(
+                        canUnlockNow
+                            ? "Disarm Terkonfirmasi · Buka Kunci Rencana"
+                            : "Tunggu \(commsLostCountdownRemaining) dtk untuk Buka Kunci..."
+                    )
+                    .fontWeight(.semibold)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(canUnlockNow ? .orange : .secondary)
+                .disabled(!canUnlockNow)
+            }
+        }
+        .padding(24)
+        .frame(width: 480)
+    }
+
+    private func panelToggle(_ edge: HorizontalEdge) -> some View {
+        let left = edge == .leading
+        let visible = left ? inspectorVisible : summaryVisible
+        return PlanIconButton(
+            systemImage: left ? "sidebar.left" : "sidebar.right",
+            help: (visible ? "Sembunyikan " : "Tampilkan ") + (left ? "panel pengaturan" : "ringkasan"),
+            selected: visible
+        ) {
+            if left { inspectorVisible.toggle() } else { summaryVisible.toggle() }
+        }
+    }
+
+    private var historyIsland: some View {
+        HStack(spacing: 2) {
+            PlanIconButton(systemImage: "arrow.uturn.backward", help: "Urungkan (⌘Z)") {
+                editRoute { planner.undo() }
+            }
+            .keyboardShortcut("z", modifiers: .command)
+            .disabled(!canEditRoute || !planner.canUndo)
+            PlanIconButton(systemImage: "arrow.uturn.forward", help: "Ulangi (⇧⌘Z)") {
+                editRoute { planner.redo() }
+            }
+            .keyboardShortcut("z", modifiers: [.command, .shift])
+            .disabled(!canEditRoute || !planner.canRedo)
+        }
+        .padding(5)
+        .kropsFloatingControl(in: Capsule())
+    }
+
+    private func toolPalette(compact: Bool) -> some View {
+        HStack(spacing: 2) {
+            Group {
+                if planner.planningStep == .boundary {
+                    PlanToolButton(
+                        title: "Pilih", compact: compact, systemImage: "cursorarrow", shortcut: "V",
+                        selected: planner.mode == .inspect,
+                        help: "Pilih & geser pin"
+                    ) { selectTool(.inspect) }
+                    PlanToolButton(
+                        title: "Titik", compact: compact, systemImage: "pencil.and.outline", shortcut: "P",
+                        selected: planner.mode == .waypoint,
+                        help: "Tambah titik batas (klik dekat garis untuk menyisipkan)",
+                        tint: .orange
+                    ) { selectTool(.waypoint) }
+                } else {
+                    PlanToolButton(
+                        title: "Home", compact: compact, systemImage: "house", shortcut: "H",
+                        selected: planner.mode == .home || showingHomeOptions,
+                        help: "Pengaturan titik lepas landas & mendarat", tint: .green
+                    ) {
+                        showingHomeOptions.toggle()
+                    }
+                    .popover(isPresented: $showingHomeOptions, arrowEdge: .bottom) {
+                        homeOptionsPopover
+                    }
+                }
+            }
+            .disabled(!canEditRoute)
+        }
+        .padding(5)
+        .kropsFloatingControl(in: Capsule())
+    }
+
+    // MARK: - Inspector
+
+    private var inspector: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            inspectorHeader
+                .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    if planner.planningStep == .boundary {
+                        boundaryInspector
+                    } else {
+                        flightInspector
+                    }
+                    if let error = planner.error {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .font(.callout).foregroundStyle(.orange)
+                    }
+                    if let error = planner.storageError {
+                        Label(error, systemImage: "externaldrive.badge.exclamationmark")
+                            .font(.callout).foregroundStyle(.orange)
+                    }
+                }
+                .padding(16)
+                .disabled(!canEditRoute)
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: InspectorHeightKey.self, value: proxy.size.height)
+                    })
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(maxHeight: inspectorContentHeight)
+        }
+        .frame(width: 320)
+        .onPreferenceChange(InspectorHeightKey.self) { inspectorContentHeight = $0 }
+        .kropsFloatingPanel()
+    }
+
+    private var inspectorHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                panelToggle(.leading)
+                Picker("Lapisan", selection: Binding(get: { planner.planningStep }, set: { setLayer($0) })) {
+                    Text("Area").tag(FlightPlanningStep.boundary)
+                    Text("Jalur").tag(FlightPlanningStep.flight)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.extraLarge)
+                .frame(maxWidth: .infinity)
+                .help(
+                    canProceedToFlight
+                        ? "Pindah antara batas area dan jalur terbang"
+                        : "Konfirmasi batas area terlebih dahulu untuk membuka langkah Jalur"
+                )
             }
             HStack {
-                Label(
-                    routeMatchesMission && planner.draft.home != nil ? "Home tersimpan" : "Home belum diatur",
-                    systemImage: "house"
-                )
-                .font(.caption).foregroundStyle(.secondary)
+                Text(planner.planningStep == .boundary ? "Batas area" : "Jalur terbang")
+                    .font(KropsTypography.sectionTitle)
                 Spacer()
-                Button("Tentukan home") { tool = .home }.disabled(!canEditRoute)
+                if !canEditRoute {
+                    Label("Hanya baca", systemImage: "lock.fill").font(.caption).foregroundStyle(.secondary)
+                } else if planner.planningStep == .flight && model.geometry.reviewed {
+                    Label("Diperiksa", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(
+                        .green)
+                }
             }
-            Button("Tambah waypoint di peta") { tool = .waypoint }
-                .kropsPrimaryAction().disabled(!canEditRoute)
             Text(
-                String(
-                    format: "Titik baru memakai tinggi %.0f m relatif home.", planner.draft.defaultAltitude)
+                planner.planningStep == .boundary
+                    ? "Sesuaikan titik sudut agar sama dengan batas kebun di lapangan."
+                    : "Atur parameter lalu hitung jalur. Taruh Home (H) di peta."
             )
             .font(.caption).foregroundStyle(.secondary)
-            if routeMatchesMission && !planner.draft.waypoints.isEmpty {
-                VStack(spacing: 4) {
-                    ForEach(Array(planner.draft.waypoints.enumerated()), id: \.element.id) { index, point in
-                        HStack {
-                            Button {
-                                planner.selectedWaypointID = point.id
-                                tool = .inspect
-                            } label: {
-                                HStack {
-                                    Text("WP \(index + 1)").font(.callout.weight(.medium))
-                                    Spacer()
-                                    Text(String(format: "%.0f m", point.altitude)).font(.caption)
-                                }.padding(8).foregroundStyle(
-                                    planner.selectedWaypointID == point.id
-                                        ? KropsStyle.accent : Color.primary
-                                )
-                                .background(
-                                    planner.selectedWaypointID == point.id
-                                        ? KropsStyle.accent.opacity(0.1) : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: 8))
-                            }.buttonStyle(.plain)
-                            Button {
-                                editRoute { planner.removeWaypoint(point.id) }
-                            } label: {
-                                Image(systemName: "trash")
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var boundaryInspector: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                PlanSectionTitle("Titik sudut")
+                Spacer()
+                if planner.canResetToFarm {
+                    Button("Reset", systemImage: "arrow.counterclockwise") {
+                        editRoute { planner.resetToFarm() }
+                    }
+                    .buttonStyle(.borderless).controlSize(.small)
+                    .help("Kembalikan ke batas kebun dari data petani")
+                }
+            }
+            Text(cornerSummary)
+                .font(.callout).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if !boundaryReady {
+                Label("Minimal 3 titik untuk membentuk area survei.", systemImage: "exclamationmark.circle")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+        }
+
+        if boundaryReady {
+            Toggle(isOn: $planner.isAreaConfirmed) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Konfirmasi batas area kebun").font(.body.weight(.medium))
+                    Text("Batas perkebunan sudah sesuai dengan kondisi lapangan.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .toggleStyle(.checkbox)
+            .disabled(!canEditRoute)
+        }
+
+        Button {
+            setLayer(.flight)
+        } label: {
+            Label("Lanjut ke jalur terbang", systemImage: "arrow.right")
+                .frame(maxWidth: .infinity)
+        }
+        .kropsPrimaryAction(size: .large)
+        .disabled(!canProceedToFlight)
+    }
+
+    /// Points are edited on the map; the panel only says how.
+    private var cornerSummary: String {
+        if planner.draft.waypoints.isEmpty { return "Tekan P, lalu klik peta untuk mulai menggambar batas." }
+        if let id = planner.selectedWaypointID,
+            let index = planner.draft.waypoints.firstIndex(where: { $0.id == id })
+        {
+            return "Titik \(index + 1) terpilih · geser di peta · Delete untuk menghapus"
+        }
+        return "Klik pin di peta untuk memilih · P untuk menambah titik"
+    }
+
+    @ViewBuilder
+    private var flightInspector: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            PlanSectionTitle("Kamera & Parameter")
+
+            // Camera Header & Resolution (iPhone 17)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Label("Kamera", systemImage: "camera")
+                        .font(KropsTypography.supporting)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("iPhone 17")
+                        .font(.callout.weight(.medium))
+                }
+                Picker(
+                    "Resolusi",
+                    selection: Binding(
+                        get: { planner.draft.cameraResolution },
+                        set: { res in
+                            guard canEditRoute else { return }
+                            planner.draft.cameraResolution = res
+                            model.geometry.reviewed = false
+                            replanLive()
+                        }
+                    )
+                ) {
+                    ForEach(CameraOpticalSpec.Resolution.allCases) { res in
+                        Text(res.rawValue).tag(res)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
+            HStack(spacing: 10) {
+                ControlField("Tinggi") {
+                    NumberField(
+                        Binding(
+                            get: { model.geometry.heightAGL },
+                            set: { val in
+                                model.geometry.heightAGL = val
+                                planner.draft.defaultAltitude = val
+                                if planner.draft.geofence.ceilingMeters <= val {
+                                    planner.draft.geofence.ceilingMeters = min(120.0, val + 20.0)
+                                }
+                                planner.resetChecklist()
+                                model.geometry.reviewed = false
+                                replanDebounced()
                             }
-                            .buttonStyle(.plain).help("Hapus WP \(index + 1)").disabled(!canEditRoute)
+                        ),
+                        unit: "m"
+                    )
+                }
+                .help("Tinggi kamera di atas tanah (AGL), bukan altitude GPS.")
+
+                ControlField("Kecepatan") {
+                    NumberField(
+                        Binding(
+                            get: { model.geometry.speed },
+                            set: { val in
+                                model.geometry.speed = val
+                                planner.draft.speed = val
+                                planner.resetChecklist()
+                                model.geometry.reviewed = false
+                                replanDebounced()
+                            }
+                        ),
+                        unit: "m/s"
+                    )
+                }
+                .help("Kecepatan terbang horizontal sepanjang lintasan survei.")
+            }
+
+            HStack(spacing: 10) {
+                ControlField("Kecepatan Naik") {
+                    NumberField(
+                        Binding(
+                            get: { planner.draft.ascentSpeed },
+                            set: { val in
+                                guard canEditRoute else { return }
+                                planner.draft.ascentSpeed = max(0.5, val)
+                                planner.resetChecklist()
+                                model.geometry.reviewed = false
+                                replanDebounced()
+                            }
+                        ),
+                        unit: "m/s"
+                    )
+                }
+                .help("Kecepatan vertikal saat lepas landas dan naik ke ketinggian misi (default 2.5 m/s).")
+
+                ControlField("Kecepatan Turun") {
+                    NumberField(
+                        Binding(
+                            get: { planner.draft.descentSpeed },
+                            set: { val in
+                                guard canEditRoute else { return }
+                                planner.draft.descentSpeed = max(0.5, val)
+                                planner.resetChecklist()
+                                model.geometry.reviewed = false
+                                replanDebounced()
+                            }
+                        ),
+                        unit: "m/s"
+                    )
+                }
+                .help("Kecepatan vertikal saat turun dan mendarat (default 1.5 m/s).")
+            }
+
+            // Overlap Sliders
+            VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Side Overlap").font(KropsTypography.supporting).foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(Int(planner.draft.sideOverlap.rounded()))%")
+                            .font(.callout.weight(.semibold).monospacedDigit())
+                    }
+                    Slider(
+                        value: Binding(
+                            get: { planner.draft.sideOverlap },
+                            set: { val in
+                                guard canEditRoute else { return }
+                                planner.draft.sideOverlap = val.rounded()
+                                model.geometry.reviewed = false
+                                replanDebounced()
+                            }
+                        ),
+                        in: 30...85,
+                        step: 1
+                    )
+                    .help(
+                        "Persentase tumpang tindih antar jalur foto sejajar (rekomendasi kebun sawit: 70%).")
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Frontal Overlap").font(KropsTypography.supporting).foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(Int(planner.draft.frontalOverlap.rounded()))%")
+                            .font(.callout.weight(.semibold).monospacedDigit())
+                    }
+                    Slider(
+                        value: Binding(
+                            get: { planner.draft.frontalOverlap },
+                            set: { val in
+                                guard canEditRoute else { return }
+                                planner.draft.frontalOverlap = val.rounded()
+                                model.geometry.reviewed = false
+                                replanDebounced()
+                            }
+                        ),
+                        in: 30...85,
+                        step: 1
+                    )
+                    .help(
+                        "Persentase tumpang tindih antar foto berturutan di sepanjang lintasan (rekomendasi kebun sawit: 75%)."
+                    )
+                }
+            }
+
+            calculatedMetricsBox
+
+            angleSlider
+            Toggle(
+                "Kembali ke Home setelah selesai (RTL)",
+                isOn: Binding(
+                    get: { planner.draft.returnToHome },
+                    set: { val in
+                        guard canEditRoute else { return }
+                        planner.draft.returnToHome = val
+                        planner.resetChecklist()
+                        model.geometry.reviewed = false
+                        replanDebounced()
+                    }
+                )
+            )
+            .font(.callout)
+
+            GeofenceInspectorSection(
+                geofence: $planner.draft.geofence,
+                safetyResult: planner.draft.safetyResult,
+                canEdit: canEditRoute,
+                onParameterChanged: {
+                    planner.resetChecklist()
+                    model.geometry.reviewed = false
+                    replanDebounced()
+                }
+            )
+
+            DisclosureGroup("Lanjutan") {
+                HStack(spacing: 10) {
+                    ControlField("Jarak putar") {
+                        NumberField(
+                            Binding(
+                                get: { planner.draft.turnaroundDistance },
+                                set: { val in
+                                    guard canEditRoute else { return }
+                                    let clamped = max(0, val)
+                                    planner.draft.turnaroundDistance = clamped
+                                    if planner.draft.geofence.bufferMeters < clamped + 10 {
+                                        planner.draft.geofence.bufferMeters = clamped + 10
+                                    }
+                                    planner.resetChecklist()
+                                    model.geometry.reviewed = false
+                                    replanDebounced()
+                                }
+                            ),
+                            unit: "m"
+                        )
+                    }
+                    .help("Jarak manuver putar balik di luar batas kebun.")
+
+                    ControlField("Jeda titik") {
+                        NumberField(
+                            Binding(
+                                get: { planner.draft.holdSeconds },
+                                set: { val in
+                                    guard canEditRoute else { return }
+                                    planner.draft.holdSeconds = min(60, max(0, val))
+                                    planner.resetChecklist()
+                                    model.geometry.reviewed = false
+                                    replanDebounced()
+                                }
+                            ),
+                            unit: "dtk"
+                        )
+                    }
+                    .help("Durasi berhenti (hold) umum pada setiap titik waypoint survei (0–60 detik).")
+                }
+                .padding(.top, 8)
+            }
+            .font(.callout)
+        }
+        .disabled(model.editingLocked)
+
+        Button {
+            Task { await generateSurvey() }
+        } label: {
+            HStack {
+                if planner.isGeneratingWaypoints {
+                    ProgressView().controlSize(.small)
+                    Text("Menghitung di QGC…")
+                } else {
+                    Label(
+                        pathReady ? "Hitung ulang jalur" : "Hitung jalur survei",
+                        systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .kropsPrimaryAction(size: .large)
+        .disabled(planner.isGeneratingWaypoints || !boundaryReady)
+    }
+
+    private var calculatedMetricsBox: some View {
+        let stats = planner.draft.surveyStatistics
+        let spacingText = stats.map { String(format: "%.1f m", $0.calculatedLineSpacing) } ?? "—"
+        let triggerText = stats.map { String(format: "%.1f m", $0.calculatedTriggerDistance) } ?? "—"
+        let gsdText = stats.map { String(format: "%.2f cm/px", $0.groundResolutionCmPerPx) } ?? "—"
+
+        return HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Jarak Jalur").font(.caption2).foregroundStyle(.secondary)
+                Text(spacingText).font(.caption.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Divider()
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Jarak Foto").font(.caption2).foregroundStyle(.secondary)
+                Text(triggerText).font(.caption.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Divider()
+            VStack(alignment: .leading, spacing: 2) {
+                Text("GSD Tanah").font(.caption2).foregroundStyle(.secondary)
+                Text(gsdText).font(.caption.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(8)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    /// Dragging re-plans the survey live; the whole drag is one undo step.
+    private var angleSlider: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Sudut jalur").font(KropsTypography.supporting).foregroundStyle(.secondary)
+                Spacer()
+                Image(systemName: "arrow.up")
+                    .rotationEffect(.degrees(planner.draft.gridAngle))
+                    .foregroundStyle(.secondary)
+                Text("\(Int(planner.draft.gridAngle.rounded()))°")
+                    .font(.callout.weight(.semibold).monospacedDigit())
+                    .frame(minWidth: 36, alignment: .trailing)
+            }
+            Slider(
+                value: Binding(
+                    get: { planner.draft.gridAngle },
+                    set: { angle in
+                        guard canEditRoute else { return }
+                        planner.draft.gridAngle = angle.rounded()
+                        model.geometry.reviewed = false
+                        replanLive()
+                    }),
+                in: 0...359
+            ) { editing in
+                if editing {
+                    planner.beginContinuousEdit()
+                } else {
+                    planner.endContinuousEdit()
+                    replanLive()
+                }
+            }
+            .help("Arah lintasan terhadap utara. Jalur dihitung ulang saat digeser.")
+        }
+    }
+
+    /// Debounced trigger for smooth live planning when editing sliders or typing fields.
+    private func replanDebounced() {
+        guard canEditRoute, boundaryReady else { return }
+        replanDebounceTask?.cancel()
+        replanDebounceTask = Task {
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            guard !Task.isCancelled else { return }
+            replanLive()
+        }
+    }
+
+    /// Runs one survey at a time; changes made while QGC is busy trigger one more run.
+    private func replanLive() {
+        guard canEditRoute, boundaryReady else { return }
+        if planner.isGeneratingWaypoints {
+            replanPending = true
+            return
+        }
+        Task {
+            await generateSurvey(fitsRoute: false)
+            if replanPending {
+                replanPending = false
+                replanLive()
+            }
+        }
+    }
+
+    private func generateSurvey(fitsRoute: Bool = true) async {
+        await planner.generateSurveyWaypoints(
+            altitude: model.geometry.heightAGL,
+            speed: model.geometry.speed,
+            gridAngle: planner.draft.gridAngle,
+            sideOverlap: planner.draft.sideOverlap,
+            frontalOverlap: planner.draft.frontalOverlap,
+            cameraResolution: planner.draft.cameraResolution,
+            lineSpacing: planner.draft.lineSpacing,
+            triggerDistance: planner.draft.triggerDistance,
+            turnaroundDistance: planner.draft.turnaroundDistance,
+            entryLocation: planner.draft.entryLocation,
+            fitsRoute: fitsRoute
+        )
+    }
+
+    // MARK: - Summary
+
+    /// Read-only overview of the plan; the SOP checklist must be completed before the final review checkbox unlocks.
+    private var summaryPanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Ringkasan rencana").font(KropsTypography.sectionTitle)
+                Spacer()
+                if model.geometry.reviewed && planner.isSOPChecklistComplete {
+                    Label("Diperiksa", systemImage: "checkmark.circle.fill")
+                        .font(.caption).foregroundStyle(.green)
+                }
+                panelToggle(.trailing)
+            }
+            .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        PlanSectionTitle("Area")
+                        PlanSummaryRow("Luas", String(format: "%.2f ha", planner.boundaryAreaHectares))
+                        PlanSummaryRow("Keliling", String(format: "%.0f m", planner.boundaryPerimeterMeters))
+                        PlanSummaryRow("Titik batas", "\(planner.draft.waypoints.count)")
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        PlanSectionTitle("Lepas landas & kembali")
+                        PlanStatusRow(
+                            "Home", glyph: "H", color: .green, placed: planner.draft.home != nil,
+                            status: planner.draft.home == nil ? "Belum · tekan H" : "Sudah ditaruh")
+                        PlanSummaryRow("Kembali ke Home", planner.draft.returnToHome ? "Ya" : "Tidak")
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        PlanSectionTitle("Jalur")
+                        if let stats = planner.draft.surveyStatistics, stats.totalDistanceMeters > 0 {
+                            PlanSummaryRow("Foto", "\(stats.photoCount)")
+                            PlanSummaryRow(
+                                "Jarak terbang", String(format: "%.0f m", stats.totalDistanceMeters))
+                            PlanSummaryRow("Durasi", Self.formattedDuration(stats.flightTimeSeconds))
+                            PlanSummaryRow("Lintasan", "\(stats.transectCount)")
+                            PlanSummaryRow(
+                                "Kecepatan (H/↑/↓)",
+                                String(
+                                    format: "%.1f / %.1f / %.1f m/s", planner.draft.speed,
+                                    planner.draft.ascentSpeed, planner.draft.descentSpeed)
+                            )
+                            PlanSummaryRow(
+                                "Jeda titik", String(format: "%.0f dtk", planner.draft.holdSeconds))
+                        } else {
+                            Text("Belum dihitung").font(.callout).foregroundStyle(.secondary)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        PlanSectionTitle("Geofence & keamanan")
+                        if let safety = planner.draft.safetyResult, safety.enabled {
+                            PlanSummaryRow("Tipe", safety.type.title)
+                            if safety.type == .polygon {
+                                PlanSummaryRow("Buffer", String(format: "%.0f m", safety.bufferMeters))
+                            } else {
+                                PlanSummaryRow("Radius", String(format: "%.0f m", safety.circleRadiusMeters))
+                            }
+                            PlanSummaryRow("Ceiling", String(format: "%.0f m", safety.ceilingMeters))
+                            PlanSummaryRow("Aksi", safety.breachAction.title)
+                            PlanSummaryRow(
+                                "Cakupan QGC",
+                                safety.coversMission && safety.ceilingOk ? "Aman" : "Perlu dicek")
+                        } else {
+                            Text(planner.draft.geofence.enabled ? "Menunggu QGC" : "Nonaktif")
+                                .font(.callout).foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if pathReady {
+                        Divider()
+                        PreflightChecklistView(
+                            planner: planner,
+                            canEdit: canEditRoute && !model.editingLocked,
+                            onChecklistChanged: {
+                                if !planner.isSOPChecklistComplete {
+                                    model.geometry.reviewed = false
+                                    planner.reviewed = false
+                                }
+                            }
+                        )
+
+                        Divider()
+                        Toggle(
+                            isOn: Binding(
+                                get: {
+                                    planner.draft.isPlanLocked
+                                        || ((model.geometry.reviewed || planner.reviewed)
+                                            && planner.isSOPChecklistComplete)
+                                },
+                                set: { val in
+                                    guard planner.isSOPChecklistComplete else {
+                                        model.geometry.reviewed = false
+                                        planner.reviewed = false
+                                        return
+                                    }
+                                    model.geometry.reviewed = val
+                                    planner.reviewed = val
+                                }
+                            )
+                        ) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Rencana sudah diperiksa").font(.body.weight(.medium))
+                                Text(
+                                    planner.draft.isPlanLocked
+                                        ? "Rencana telah dikunci dan siap diterbangkan."
+                                        : (planner.isSOPChecklistComplete
+                                            ? "Seluruh checklist SOP telah diverifikasi."
+                                            : "Selesaikan seluruh 11 item checklist SOP di atas untuk mengaktifkan.")
+                                )
+                                .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .toggleStyle(.checkbox)
+                        .disabled(model.editingLocked || !canEditRoute || !planner.isSOPChecklistComplete)
+
+                        if planner.draft.isPlanLocked
+                            || ((model.geometry.reviewed || planner.reviewed)
+                                && planner.isSOPChecklistComplete)
+                        {
+                            VStack(spacing: 8) {
+                                if planner.draft.isUploadedToDrone || planner.draft.isPlanLocked {
+                                    HStack(spacing: 6) {
+                                        Image(
+                                            systemName: planner.draft.isPlanLocked
+                                                ? "lock.fill" : "checkmark.circle.fill"
+                                        )
+                                        .foregroundStyle(.green)
+                                        Text(
+                                            planner.draft.isPlanLocked
+                                                ? "Rencana Terkunci & Tersinkronisasi"
+                                                : "Misi Tersinkronisasi ke Drone"
+                                        )
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.green)
+                                        Spacer()
+                                        if !planner.draft.isPlanLocked {
+                                            Button("Unggah Ulang") {
+                                                uploadMissionToDrone()
+                                            }
+                                            .font(.caption2)
+                                            .buttonStyle(.plain)
+                                            .foregroundStyle(.secondary)
+                                            .disabled(isUploadingMission || isAssignedOrActiveDroneArmed)
+                                        }
+                                    }
+                                    .padding(8)
+                                    .background(
+                                        Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                                } else {
+                                    Button {
+                                        uploadMissionToDrone()
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            if isUploadingMission {
+                                                ProgressView()
+                                                    .controlSize(.small)
+                                                Text("Mengunggah Misi...")
+                                                    .fontWeight(.semibold)
+                                            } else {
+                                                Image(systemName: "arrow.up.circle.fill")
+                                                Text("Unggah Misi ke Drone")
+                                                    .fontWeight(.semibold)
+                                            }
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 32)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(.blue)
+                                    .disabled(
+                                        isUploadingMission
+                                            || engineManager.activeVehicle == nil
+                                            || isAssignedOrActiveDroneArmed
+                                    )
+
+                                    if engineManager.activeVehicle == nil {
+                                        Text("Hubungkan drone ke QGC Engine untuk mengunggah misi.")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    } else if isAssignedOrActiveDroneArmed {
+                                        Text(
+                                            "Daratkan dan Disarm drone terlebih dahulu sebelum mengunggah misi."
+                                        )
+                                        .font(.caption2)
+                                        .foregroundStyle(.orange)
+                                    }
+                                }
+
+                                Button {
+                                    onStartFlight?()
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "airplane.departure")
+                                        Text("Lanjut ke Penerbangan")
+                                            .fontWeight(.semibold)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                }
+                                .kropsPrimaryAction(size: .large)
+                                .padding(.top, 2)
+                            }
+                            .padding(.top, 4)
                         }
                     }
                 }
-            } else {
-                Text("Belum ada waypoint. Pilih + Waypoint, lalu klik peta di kanan.")
-                    .font(.caption).foregroundStyle(.secondary)
+                .padding(16)
             }
-            if routeMatchesMission, let selected = planner.selectedWaypoint {
-                selectedWaypointFields(selected)
-            }
-            HStack {
-                Button("Urungkan") { editRoute { planner.undo() } }.disabled(
-                    !canEditRoute || planner.undoStack.isEmpty)
-                Spacer()
-                Button("Detail & ekspor .plan", action: openPlanner).disabled(!canEditRoute)
-            }
-            DisclosureGroup("Koordinat waypoint manual") {
-                VStack(alignment: .leading, spacing: 8) {
-                    TextField(
-                        "Latitude", value: $manualLatitude,
-                        format: .number.locale(Locale(identifier: "en_US_POSIX")).grouping(.never).precision(
-                            .fractionLength(0...7)))
-                    TextField(
-                        "Longitude", value: $manualLongitude,
-                        format: .number.locale(Locale(identifier: "en_US_POSIX")).grouping(.never).precision(
-                            .fractionLength(0...7)))
-                    Button(planner.draft.home == nil ? "Tentukan home" : "Tambah waypoint") {
-                        guard let manualLatitude, let manualLongitude else { return }
-                        tool = planner.draft.home == nil ? .home : .waypoint
-                        mapClick(MapCoordinate(latitude: manualLatitude, longitude: manualLongitude))
-                        fitMap()
-                    }.disabled(!canEditRoute || manualLatitude == nil || manualLongitude == nil)
-                }.textFieldStyle(.roundedBorder).padding(.top, 8)
-            }.font(.caption)
+            .scrollBounceBehavior(.basedOnSize)
+        }
+        .frame(width: 290)
+        .kropsFloatingPanel()
+        .alert("Gagal Mengunggah Misi", isPresented: $showingUploadErrorAlert) {
+            Button("Tutup", role: .cancel) {}
+        } message: {
+            Text(uploadErrorMessage ?? "Terjadi kesalahan saat mengunggah rute ke drone.")
         }
     }
-    private func selectedWaypointFields(_ point: FlightWaypoint) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Divider()
-            Text("Waypoint dipilih").font(.caption.bold())
-            Text(String(format: "%.6f, %.6f", point.coordinate.latitude, point.coordinate.longitude))
-                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-            ControlField("Tinggi relatif home") {
-                NumberField(
-                    Binding(
-                        get: { planner.selectedWaypoint?.altitude ?? point.altitude },
-                        set: { altitude in editRoute { planner.updateAltitude(point.id, to: altitude) } }),
-                    unit: "m")
+
+    // MARK: - Hint
+
+    private var hint: some View {
+        let (icon, text) = mapAdvice
+        return Label(text, systemImage: icon)
+            .font(.callout)
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .kropsFloatingControl(in: Capsule())
+            .animation(nil, value: text)
+    }
+
+    private var mapAdvice: (String, String) {
+        if requestedLocation && location.sample == nil { return ("location", location.status) }
+        if !canEditRoute {
+            return ("lock.fill", "Rute hanya baca selama operasi misi atau setelah misi selesai.")
+        }
+        switch planner.mode {
+        case .waypoint:
+            return (
+                "pencil.and.outline",
+                "Klik peta untuk menambah titik · klik dekat garis untuk menyisipkan · Esc selesai"
+            )
+        case .home:
+            return ("house", "Klik peta untuk menaruh Home · Esc batal")
+        case .entry:
+            return ("arrow.right.to.line", "Klik dekat garis batas untuk menaruh Entry · Esc batal")
+        case .inspect:
+            if planner.planningStep == .boundary {
+                if let selected = planner.selectedWaypoint,
+                    let index = planner.draft.waypoints.firstIndex(where: { $0.id == selected.id })
+                {
+                    return (
+                        "cursorarrow",
+                        "Titik \(index + 1) terpilih · geser untuk memindah · Delete hapus · Esc batal pilih"
+                    )
+                }
+                if !boundaryReady {
+                    return ("pencil.and.outline", "Tekan P lalu klik peta untuk menggambar batas kebun")
+                }
+                return (
+                    "cursorarrow",
+                    "Geser pin untuk memindah · klik pin untuk memilih · seret peta untuk menggeser"
+                )
+            } else {
+                return ("cursorarrow", "Taruh Home (H) · geser peta untuk navigasi")
             }
-            Button("Pindahkan di peta") { tool = .move }
-            HStack {
-                Button("Naik urutan") { editRoute { planner.reorder(point.id, offset: -1) } }
-                Button("Turun urutan") { editRoute { planner.reorder(point.id, offset: 1) } }
-            }.controlSize(.small)
-        }.disabled(!canEditRoute)
+        }
     }
-    private func fitMap() {
-        focusOperator = false
-        planner.fitRoute()
+
+    // MARK: - Actions
+
+    private func setLayer(_ step: FlightPlanningStep) {
+        guard planner.planningStep != step else { return }
+        if step == .flight {
+            guard canProceedToFlight else { return }
+            planner.planningStep = .flight
+            planner.selectedWaypointID = nil
+            if planner.mode == .waypoint { planner.mode = .inspect }
+        } else {
+            planner.planningStep = .boundary
+            if planner.mode == .home || planner.mode == .entry { planner.mode = .inspect }
+        }
     }
-    private func mapClick(_ coordinate: MapCoordinate) {
+
+    /// Tools behave like a design app: Titik stays active for repeated clicks,
+    /// Home places once and returns to Pilih.
+    private func selectTool(_ mode: FlightMapEditMode) {
+        guard canEditRoute || mode == .inspect else { return }
+        if planner.planningStep == .boundary {
+            guard mode == .inspect || mode == .waypoint else { return }
+        } else {
+            guard mode == .inspect || mode == .home else { return }
+        }
+        planner.mode = mode
+    }
+
+    private func addPoint(_ coordinate: MapCoordinate) {
         guard canEditRoute, coordinate.isValid else { return }
-        if tool == .move {
-            guard let id = planner.selectedWaypointID else {
-                model.errorMessage = "Pilih waypoint yang ingin dipindahkan terlebih dahulu."
-                return
+        switch planner.mode {
+        case .waypoint:
+            editRoute { planner.addWaypoint(coordinate) }
+        case .home, .entry:
+            let wasHome = planner.mode == .home
+            editRoute {
+                planner.mapClick(coordinate)
+                planner.mode = .inspect
+                replanDebounced()
             }
-            editRoute { planner.moveWaypoint(id, to: coordinate) }
-            tool = .inspect
+            if wasHome {
+                syncHomeToQGC(coordinate: coordinate)
+            }
+        case .inspect:
+            break
+        }
+    }
+
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            handleKey(event) ? nil : event
+        }
+    }
+
+    /// Single-key tool shortcuts. Ignored while a text field is being edited.
+    private func handleKey(_ event: NSEvent) -> Bool {
+        guard event.window?.isKeyWindow == true, event.window?.attachedSheet == nil,
+            !(event.window?.firstResponder is NSText),
+            event.modifierFlags.intersection([.command, .control, .option]).isEmpty
+        else { return false }
+        switch event.keyCode {
+        case 53:  // Escape
+            if planner.mode != .inspect {
+                planner.mode = .inspect
+            } else if planner.selectedWaypointID != nil {
+                planner.selectedWaypointID = nil
+            } else {
+                return false
+            }
+            return true
+        case 51, 117:  // Delete, Forward delete
+            guard let id = planner.selectedWaypointID, canEditRoute, planner.draft.waypoints.count > 3
+            else { return false }
+            editRoute { planner.removeWaypoint(id) }
+            return true
+        default:
+            break
+        }
+        switch event.charactersIgnoringModifiers?.lowercased() {
+        case "v":
+            selectTool(.inspect)
+        case "p", "b":
+            if planner.planningStep == .boundary { selectTool(.waypoint) }
+        case "h":
+            if planner.planningStep == .flight { showingHomeOptions.toggle() }
+        default:
+            return false
+        }
+        return true
+    }
+
+    private func uploadMissionToDrone() {
+        guard let rawPlan = planner.draft.rawPlanJSON, !rawPlan.isEmpty else {
+            uploadErrorMessage = "Data rute (.plan) belum dihitung atau masih kosong."
+            showingUploadErrorAlert = true
             return
         }
-        planner.mode = tool.flightMode
-        editRoute { planner.mapClick(coordinate) }
-        if tool == .home { tool = .waypoint }
+        guard let drone = engineManager.activeVehicle else {
+            uploadErrorMessage = "Tidak ada drone yang terhubung ke QGC Engine."
+            showingUploadErrorAlert = true
+            return
+        }
+        guard drone.isReachable && !drone.armed && !drone.flying else {
+            uploadErrorMessage =
+                "Demi keamanan, tidak dapat mengunggah atau memperbarui misi saat drone sedang Armed atau terbang. Daratkan dan Disarm drone terlebih dahulu."
+            showingUploadErrorAlert = true
+            return
+        }
+
+        let targetVehicleID = drone.id
+        isUploadingMission = true
+        uploadErrorMessage = nil
+
+        Task {
+            do {
+                try await engineManager.uploadMissionPlan(rawPlan, vehicleID: targetVehicleID)
+                await MainActor.run {
+                    self.isUploadingMission = false
+                    self.model.geometry.reviewed = true
+                    self.planner.reviewed = true
+                    self.planner.markUploadedAndLock(vehicleID: targetVehicleID)
+                    self.model.saveCurrentMissionPlan()
+                }
+            } catch {
+                await MainActor.run {
+                    self.isUploadingMission = false
+                    self.uploadErrorMessage = error.localizedDescription
+                    self.showingUploadErrorAlert = true
+                }
+            }
+        }
     }
+
+    private func applyCurrentDroneAsHome(_ drone: ConnectedDrone) {
+        let coord = MapCoordinate(latitude: drone.telemetry.latitude, longitude: drone.telemetry.longitude)
+        editRoute {
+            planner.draft.home = coord
+            planner.mode = .inspect
+            replanDebounced()
+        }
+        syncHomeToQGC(coordinate: coord, altitudeAMSL: drone.telemetry.altitudeAMSL, vehicleID: drone.id)
+    }
+
+    private func syncHomeToQGC(coordinate: MapCoordinate, altitudeAMSL: Double? = nil, vehicleID: Int? = nil)
+    {
+        guard engineManager.status.isHealthy else { return }
+        let targetID = vehicleID ?? engineManager.activeVehicle?.id
+        let alt = altitudeAMSL ?? engineManager.activeVehicle?.telemetry.altitudeAMSL ?? 0.0
+        Task {
+            try? await engineManager.sendCommand(
+                .setHome,
+                param: [
+                    "latitude": coordinate.latitude,
+                    "longitude": coordinate.longitude,
+                    "altitude": alt,
+                ],
+                vehicleID: targetID
+            )
+        }
+    }
+
+    private var homeOptionsPopover: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: "house.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.green)
+                Text("Titik Home (Lepas Landas & RTL)")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Spacer()
+            }
+
+            Text("Pilih metode penentuan titik awal dan kepulangan (RTL) drone:")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            let connectedDrone = engineManager.activeVehicle
+            let hasDronePosition =
+                (connectedDrone?.telemetry.latitude != nil)
+                && (connectedDrone!.telemetry.latitude != 0)
+                && (connectedDrone!.telemetry.longitude != 0)
+
+            // Opsi 1: Posisi Drone Saat Ini
+            Button {
+                guard let drone = connectedDrone, hasDronePosition else { return }
+                applyCurrentDroneAsHome(drone)
+                showingHomeOptions = false
+            } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(hasDronePosition ? Color.green.opacity(0.18) : Color.primary.opacity(0.06))
+                            .frame(width: 32, height: 32)
+                        Image(systemName: "location.north.circle.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(hasDronePosition ? Color.green : Color.secondary.opacity(0.6))
+                    }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text("Posisi Drone Saat Ini")
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(hasDronePosition ? .primary : .secondary)
+
+                            if hasDronePosition {
+                                Text("Online")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(.green)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.green.opacity(0.15), in: Capsule())
+                            }
+                        }
+
+                        if let drone = connectedDrone, hasDronePosition {
+                            Text(
+                                "Drone #\(drone.id) (\(String(format: "%.5f", drone.telemetry.latitude)), \(String(format: "%.5f", drone.telemetry.longitude))) · \(drone.gps.satellites) Sats"
+                            )
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        } else if connectedDrone != nil {
+                            Text("Drone terhubung, menunggu koordinat GPS...")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Tidak ada drone yang terhubung ke QGC Engine")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(nsColor: .controlBackgroundColor).opacity(hasDronePosition ? 0.75 : 0.35))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(
+                            hasDronePosition ? Color.green.opacity(0.3) : Color.primary.opacity(0.06),
+                            lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(!hasDronePosition)
+
+            // Opsi 2: Tentukan Manual di Peta
+            Button {
+                selectTool(.home)
+                showingHomeOptions = false
+            } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.blue.opacity(0.14))
+                            .frame(width: 32, height: 32)
+                        Image(systemName: "mappin.and.ellipse")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.blue)
+                    }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Tentukan Manual di Peta")
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(.primary)
+
+                        Text("Klik pada peta untuk menaruh pin Home secara bebas")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(nsColor: .controlBackgroundColor).opacity(0.75))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+
+            if let home = planner.draft.home, home.isValid {
+                Divider()
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.caption)
+                    Text("Home saat ini: \(String(format: "%.5f, %.5f", home.latitude, home.longitude))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(14)
+        .frame(width: 320)
+    }
+
     private func editRoute(_ change: () -> Void) {
         guard canEditRoute else { return }
         let previous = planner.draft
         change()
-        if planner.draft != previous { model.geometry.reviewed = false }
-    }
-    private func addBoundaryPoint(_ coordinate: MapCoordinate) {
-        guard !locked, coordinate.isValid else { return }
-        var updated = area ?? FarmArea(name: "Area " + model.plan.name, points: [])
-        updated.points.append(FarmArea.Point(latitude: coordinate.latitude, longitude: coordinate.longitude))
-        model.setMissionArea(updated)
-    }
-    private func moveBoundaryPoint(_ index: Int, _ coordinate: MapCoordinate) {
-        guard !locked, coordinate.isValid, var updated = area, updated.points.indices.contains(index) else {
-            return
+        if planner.draft != previous {
+            planner.resetChecklist()
+            model.geometry.reviewed = false
         }
-        updated.points[index] = FarmArea.Point(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        model.setMissionArea(updated)
+    }
+
+    static func formattedDuration(_ seconds: Double) -> String {
+        let total = Int(seconds.rounded())
+        if total >= 3600 {
+            let hours = total / 3600
+            let minutes = (total % 3600) / 60
+            let secs = total % 60
+            return "\(hours) jam \(minutes) mnt \(secs) dtk"
+        } else if total >= 60 {
+            let minutes = total / 60
+            let secs = total % 60
+            return "\(minutes) mnt \(secs) dtk"
+        } else {
+            return "\(total) dtk"
+        }
+    }
+}
+
+// MARK: - Canvas controls
+
+private struct InspectorHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+private struct PlanHoldToUnlockCapsule: View {
+    var compact = false
+    var holdDuration: TimeInterval = 1.5
+    let onUnlock: () -> Void
+
+    @State private var isHolding = false
+    @State private var progress: Double = 0.0
+    @State private var holdTask: Task<Void, Never>? = nil
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ZStack {
+                if isHolding {
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(KropsStyle.accent, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(KropsStyle.accent)
+                }
+            }
+            .frame(width: 18, height: 18)
+
+            Text(
+                isHolding
+                    ? "Membuka kunci... \(Int(progress * 100))%"
+                    : (compact ? "Terkunci · Tahan Buka" : "Rencana Terkunci · Tahan untuk Buka Kunci")
+            )
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(.primary)
+            .monospacedDigit()
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 36)
+        .background(alignment: .leading) {
+            GeometryReader { geo in
+                if isHolding {
+                    Capsule()
+                        .fill(KropsStyle.accent.opacity(0.24))
+                        .frame(width: max(0, min(geo.size.width * progress, geo.size.width)))
+                        .animation(.linear(duration: 0.05), value: progress)
+                }
+            }
+        }
+        .padding(4)
+        .kropsFloatingControl(in: Capsule())
+        .contentShape(Capsule())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    if !isHolding {
+                        startHold()
+                    }
+                }
+                .onEnded { _ in
+                    cancelHold()
+                }
+        )
+        .help("Tahan tombol ini selama 1,5 detik untuk membuka kunci rencana dan mengubah parameter.")
+    }
+
+    private func startHold() {
+        isHolding = true
+        progress = 0.0
+        holdTask?.cancel()
+
+        let stepInterval: TimeInterval = 0.03
+        let totalSteps = max(1, Int(holdDuration / stepInterval))
+
+        holdTask = Task { @MainActor in
+            for step in 1...totalSteps {
+                try? await Task.sleep(nanoseconds: UInt64(stepInterval * 1_000_000_000))
+                guard !Task.isCancelled, isHolding else { return }
+                progress = Double(step) / Double(totalSteps)
+            }
+            guard !Task.isCancelled, isHolding else { return }
+            isHolding = false
+            progress = 0.0
+            NSSound.beep()
+            onUnlock()
+        }
+    }
+
+    private func cancelHold() {
+        holdTask?.cancel()
+        holdTask = nil
+        withAnimation(.easeOut(duration: 0.15)) {
+            isHolding = false
+            progress = 0.0
+        }
+    }
+}
+
+private struct PlanIconButton: View {
+    let systemImage: String
+    let help: String
+    var selected = false
+    let action: () -> Void
+    @Environment(\.isEnabled) private var enabled
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .medium))
+                .frame(width: 30, height: 30)
+                .foregroundStyle(selected ? KropsStyle.accent : Color.primary)
+                .opacity(enabled ? 1 : 0.35)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
+private struct PlanToolButton: View {
+    let title: String
+    var compact = false
+    let systemImage: String
+    let shortcut: String
+    let selected: Bool
+    let help: String
+    var tint: Color = KropsStyle.selection
+    let action: () -> Void
+    @Environment(\.isEnabled) private var enabled
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                if !compact { Text(title) }
+                Text(shortcut)
+                    .font(.caption2.weight(.semibold).monospaced())
+                    .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary)
+                    .padding(.horizontal, 4).padding(.vertical, 1)
+                    .background(
+                        (selected ? Color.white : Color.primary).opacity(0.14),
+                        in: RoundedRectangle(cornerRadius: 4))
+            }
+            .font(.callout.weight(selected ? .semibold : .regular))
+            .padding(.horizontal, 10).frame(height: 30)
+            .foregroundStyle(selected ? Color.white : Color.primary)
+            .background(selected ? tint : Color.clear, in: Capsule())
+            .opacity(enabled ? 1 : 0.35)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("\(help) (\(shortcut))")
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+private struct PlanSectionTitle: View {
+    let title: String
+    init(_ title: String) { self.title = title }
+    var body: some View {
+        Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
+    }
+}
+
+private struct PlanSummaryRow: View {
+    let title: String
+    let value: String
+    init(_ title: String, _ value: String) {
+        self.title = title
+        self.value = value
+    }
+    var body: some View {
+        HStack {
+            Text(title).foregroundStyle(.secondary)
+            Spacer()
+            Text(value).fontWeight(.semibold).monospacedDigit()
+        }
+        .font(.callout)
+    }
+}
+
+private struct PlanStatusRow: View {
+    let title: String
+    let glyph: String
+    let color: Color
+    let placed: Bool
+    let status: String
+    init(_ title: String, glyph: String, color: Color, placed: Bool, status: String) {
+        self.title = title
+        self.glyph = glyph
+        self.color = color
+        self.placed = placed
+        self.status = status
+    }
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(glyph)
+                .font(.caption2.bold()).foregroundStyle(.white)
+                .frame(width: 18, height: 18)
+                .background(placed ? color : Color.secondary.opacity(0.4), in: Circle())
+            Text(title).foregroundStyle(.secondary)
+            Spacer()
+            Text(status).fontWeight(.semibold).foregroundStyle(placed ? Color.primary : Color.secondary)
+        }
+        .font(.callout)
     }
 }

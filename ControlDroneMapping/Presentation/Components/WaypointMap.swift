@@ -13,13 +13,20 @@ struct WaypointMap: NSViewRepresentable {
     var onMove: (UUID, MapCoordinate) -> Void
     var drawingBoundary = false
     var editingEnabled = true
+    var dragWhileAdding = false
     var focusOperator = false
+    var planningStep: FlightPlanningStep = .flight
     var onBoundaryClick: ((MapCoordinate) -> Void)? = nil
     var onBoundaryMove: ((Int, MapCoordinate) -> Void)? = nil
     var onHomeMove: ((MapCoordinate) -> Void)? = nil
+    var onEntryMove: ((MapCoordinate) -> Void)? = nil
+    /// Design-tool behaviour: every layer is visible and editable with the Pilih tool,
+    /// blank clicks clear the selection and the Titik tool inserts on nearby edges.
+    var canvas = false
+    var onInsertBoundary: ((Int, MapCoordinate) -> Void)? = nil
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeNSView(context: Context) -> MKMapView {
-        let map = MKMapView()
+        let map = PlanningMapView()
         map.mapType = .satellite
         map.showsZoomControls = true
         map.showsCompass = true
@@ -35,47 +42,121 @@ struct WaypointMap: NSViewRepresentable {
     func updateNSView(_ map: MKMapView, context: Context) {
         let coordinator = context.coordinator
         coordinator.parent = self
+        (map as? PlanningMapView)?.toolCursor =
+            editingEnabled && [.waypoint, .home, .entry].contains(mode) ? .crosshair : .arrow
         // A one-second dashboard heartbeat must not interrupt an annotation drag.
         let key = MapState(
             route: route, farm: farm, sample: operatorLocation, mode: mode,
-            drawingBoundary: drawingBoundary, editingEnabled: editingEnabled)
+            drawingBoundary: drawingBoundary, editingEnabled: editingEnabled,
+            planningStep: planningStep)
         if coordinator.lastState != key {
             coordinator.lastState = key
             map.removeAnnotations(map.annotations)
             map.removeOverlays(map.overlays)
-            if let farm {
-                if farm.points.count >= 3 {
-                    map.addOverlay(MKPolygon(coordinates: farm.coordinates, count: farm.coordinates.count))
-                } else if farm.points.count == 2 {
-                    map.addOverlay(MKPolyline(coordinates: farm.coordinates, count: farm.coordinates.count))
+            let boundaryCoords: [CLLocationCoordinate2D] = {
+                if route.waypoints.count >= 3 {
+                    return route.waypoints.filter { $0.coordinate.isValid }.map { $0.coordinate.clCoordinate }
+                } else if let farm = farm, farm.points.count >= 3 {
+                    return farm.coordinates
                 }
-                if drawingBoundary {
-                    for (index, coordinate) in farm.coordinates.enumerated() {
-                        let marker = RouteMarker()
-                        marker.kind = .boundary
-                        marker.number = index + 1
-                        marker.title = "Batas \(index + 1)"
-                        marker.coordinate = coordinate
-                        map.addAnnotation(marker)
+                return []
+            }()
+            if boundaryCoords.count >= 3 {
+                map.addOverlay(MKPolygon(coordinates: boundaryCoords, count: boundaryCoords.count))
+            } else if boundaryCoords.count == 2 {
+                map.addOverlay(MKPolyline(coordinates: boundaryCoords, count: boundaryCoords.count))
+            }
+            if let farm, drawingBoundary {
+                for (index, coordinate) in farm.coordinates.enumerated() {
+                    let marker = RouteMarker()
+                    marker.kind = .boundary
+                    marker.number = index + 1
+                    marker.title = "Batas \(index + 1)"
+                    marker.coordinate = coordinate
+                    map.addAnnotation(marker)
+                }
+            }
+
+            if planningStep == .boundary {
+                // In Step 1: Batas Area
+                // Only boundary vertex pins are shown and editable. Home, Entry, Exit, and transect lines are strictly hidden.
+                for (index, point) in route.waypoints.enumerated() where point.coordinate.isValid {
+                    let marker = RouteMarker()
+                    marker.id = point.id
+                    marker.kind = .waypoint
+                    marker.title = "Titik Batas \(index + 1)"
+                    marker.number = index + 1
+                    marker.coordinate = point.coordinate.clCoordinate
+                    map.addAnnotation(marker)
+                }
+            }
+            if planningStep == .flight {
+                // In Step 2: Parameter & Jalur Terbang
+                // Boundary vertex markers are hidden so operator cannot alter or drag the boundary.
+                // Home (H) and Entry (E) pins, Exit marker, and QGC survey transect lines are shown.
+                if let home = route.home, home.isValid {
+                    let marker = RouteMarker()
+                    marker.kind = .home
+                    marker.title = "Home (Lepas Landas & Mendarat)"
+                    marker.coordinate = home.clCoordinate
+                    map.addAnnotation(marker)
+                }
+                if !route.visualTransects.isEmpty {
+                    if let first = route.visualTransects.first, first.isValid {
+                        let entryMarker = RouteMarker()
+                        entryMarker.kind = .surveyEntry
+                        entryMarker.title = "Titik Masuk Survei (Entry)"
+                        entryMarker.coordinate = first.clCoordinate
+                        map.addAnnotation(entryMarker)
+                    }
+                    if let last = route.visualTransects.last, last.isValid, route.visualTransects.count > 1 {
+                        let exitMarker = RouteMarker()
+                        exitMarker.kind = .surveyExit
+                        exitMarker.title = "Titik Selesai Survei (Exit)"
+                        exitMarker.coordinate = last.clCoordinate
+                        map.addAnnotation(exitMarker)
+                    }
+                    let transectCoords = route.visualTransects.map(\.clCoordinate)
+                    let transectLine = SurveyTransectPolyline(
+                        coordinates: transectCoords, count: transectCoords.count)
+                    map.addOverlay(transectLine)
+
+                    if let home = route.home, home.isValid {
+                        if let first = route.visualTransects.first, first.isValid {
+                            let ingressCoords = [home.clCoordinate, first.clCoordinate]
+                            map.addOverlay(SurveyTransitPolyline(coordinates: ingressCoords, count: 2))
+                        }
+                        if let last = route.visualTransects.last, last.isValid, route.returnToHome {
+                            let egressCoords = [last.clCoordinate, home.clCoordinate]
+                            map.addOverlay(SurveyTransitPolyline(coordinates: egressCoords, count: 2))
+                        }
+                    }
+                }
+
+                if let safety = route.safetyResult, safety.enabled {
+                    let isFenceSafe = safety.coversMission && safety.ceilingOk
+                    switch safety.type {
+                    case .polygon:
+                        let fenceCoords = safety.polygonCoordinates.filter(\.isValid).map(\.clCoordinate)
+                        if fenceCoords.count >= 3 {
+                            let fenceOverlay = GeofencePolygonOverlay(
+                                coordinates: fenceCoords, count: fenceCoords.count)
+                            fenceOverlay.isSafe = isFenceSafe
+                            map.addOverlay(fenceOverlay)
+                        }
+                    case .circle:
+                        if let center = safety.circleCenter, center.isValid, safety.circleRadiusMeters > 0 {
+                            let circleOverlay = GeofenceCircleOverlay(
+                                center: center.clCoordinate,
+                                radius: safety.circleRadiusMeters
+                            )
+                            circleOverlay.isSafe = isFenceSafe
+                            map.addOverlay(circleOverlay)
+                        }
                     }
                 }
             }
-            if let home = route.home, home.isValid {
-                let marker = RouteMarker()
-                marker.kind = .home
-                marker.title = "Home"
-                marker.coordinate = home.clCoordinate
-                map.addAnnotation(marker)
-            }
-            for (index, point) in route.waypoints.enumerated() where point.coordinate.isValid {
-                let marker = RouteMarker()
-                marker.id = point.id
-                marker.kind = .waypoint
-                marker.title = "WP \(index + 1)"
-                marker.number = index + 1
-                marker.coordinate = point.coordinate.clCoordinate
-                map.addAnnotation(marker)
-            }
+
             if let operatorLocation {
                 let marker = RouteMarker()
                 marker.kind = .operatorLocation
@@ -83,13 +164,13 @@ struct WaypointMap: NSViewRepresentable {
                 marker.coordinate = operatorLocation.coordinate.clCoordinate
                 map.addAnnotation(marker)
             }
-            var points =
-                (route.home.flatMap { $0.isValid ? [$0.clCoordinate] : nil } ?? [])
-                + route.waypoints.filter { $0.coordinate.isValid }.map { $0.coordinate.clCoordinate }
-            if route.returnToHome, let home = route.home, home.isValid, !route.waypoints.isEmpty {
-                points.append(home.clCoordinate)
+        }
+        if dragWhileAdding {
+            for case let marker as RouteMarker in map.annotations where marker.kind == .waypoint {
+                if let view = map.view(for: marker) as? MKMarkerAnnotationView {
+                    view.markerTintColor = marker.id == selectedWaypoint ? .systemBlue : .systemOrange
+                }
             }
-            if points.count >= 2 { map.addOverlay(MKPolyline(coordinates: points, count: points.count)) }
         }
         if coordinator.lastFit != fitRequest {
             coordinator.lastFit = fitRequest
@@ -97,6 +178,8 @@ struct WaypointMap: NSViewRepresentable {
                 (route.home.flatMap { $0.isValid ? [$0.clCoordinate] : nil } ?? [])
                 + route.waypoints.filter { $0.coordinate.isValid }.map { $0.coordinate.clCoordinate }
                 + (farm?.coordinates ?? [])
+                + route.visualTransects.map(\.clCoordinate)
+                + (route.safetyResult?.polygonCoordinates.filter(\.isValid).map(\.clCoordinate) ?? [])
             if focusOperator, let operatorLocation {
                 map.setRegion(
                     MKCoordinateRegion(
@@ -132,9 +215,19 @@ struct WaypointMap: NSViewRepresentable {
         var mode: FlightMapEditMode
         var drawingBoundary: Bool
         var editingEnabled: Bool
+        var planningStep: FlightPlanningStep
     }
+    final class SurveyTransectPolyline: MKPolyline {}
+    final class SurveyTransitPolyline: MKPolyline {}
+    final class GeofencePolygonOverlay: MKPolygon {
+        var isSafe: Bool = true
+    }
+    final class GeofenceCircleOverlay: MKCircle {
+        var isSafe: Bool = true
+    }
+
     final class RouteMarker: NSObject, MKAnnotation {
-        enum Kind { case home, waypoint, boundary, operatorLocation }
+        enum Kind { case home, waypoint, boundary, operatorLocation, surveyEntry, surveyExit }
         var kind = Kind.waypoint
         var id = UUID()
         var number = 0
@@ -164,7 +257,16 @@ struct WaypointMap: NSViewRepresentable {
                 map.selectAnnotation(marker, animated: false)
                 return
             }
-            guard parent.editingEnabled, parent.mode != .inspect || parent.drawingBoundary else { return }
+            if parent.mode == .inspect || !parent.editingEnabled {
+                parent.selectedWaypoint = nil
+                return
+            }
+            guard parent.editingEnabled else { return }
+            if parent.planningStep == .boundary {
+                guard parent.mode == .waypoint || parent.drawingBoundary else { return }
+            } else {
+                guard parent.mode == .home || parent.mode == .entry else { return }
+            }
             var hit = map.hitTest(map.convert(position, to: map.superview))
             while let view = hit, view !== map {
                 if view is NSControl || view is MKAnnotationView { return }
@@ -172,13 +274,72 @@ struct WaypointMap: NSViewRepresentable {
             }
             let coordinate = map.convert(position, toCoordinateFrom: map)
             let point = MapCoordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
-            if parent.drawingBoundary { parent.onBoundaryClick?(point) } else { parent.onClick(point) }
+            if parent.drawingBoundary {
+                parent.onBoundaryClick?(point)
+            } else if parent.planningStep == .boundary, parent.mode == .waypoint,
+                let index = edgeIndex(near: position, in: map)
+            {
+                parent.onInsertBoundary?(index, point)
+            } else {
+                parent.onClick(point)
+            }
+        }
+        /// Index to insert at when a click lands within a few points of a boundary edge.
+        private func edgeIndex(near position: CGPoint, in map: MKMapView) -> Int? {
+            let points = parent.route.waypoints.map {
+                map.convert($0.coordinate.clCoordinate, toPointTo: map)
+            }
+            guard points.count >= 2 else { return nil }
+            var best: (index: Int, distance: CGFloat)?
+            for i in points.indices {
+                let a = points[i]
+                let b = points[(i + 1) % points.count]
+                let dx = b.x - a.x
+                let dy = b.y - a.y
+                let length = dx * dx + dy * dy
+                guard length > 0 else { continue }
+                let t = max(0, min(1, ((position.x - a.x) * dx + (position.y - a.y) * dy) / length))
+                let distance = hypot(position.x - (a.x + t * dx), position.y - (a.y + t * dy))
+                if distance < 10, distance < (best?.distance ?? .infinity) { best = (i + 1, distance) }
+            }
+            return best?.index
         }
         func mapView(_ map: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if overlay is SurveyTransectPolyline {
+                let renderer = MKPolylineRenderer(overlay: overlay)
+                renderer.strokeColor = .systemCyan
+                renderer.lineWidth = 3
+                return renderer
+            }
+            if overlay is SurveyTransitPolyline {
+                let renderer = MKPolylineRenderer(overlay: overlay)
+                renderer.strokeColor = .systemCyan
+                renderer.lineWidth = 2
+                renderer.lineDashPattern = [6, 4]
+                return renderer
+            }
+            if let fencePolygon = overlay as? GeofencePolygonOverlay {
+                let renderer = MKPolygonRenderer(polygon: fencePolygon)
+                let color: NSColor = fencePolygon.isSafe ? .systemOrange : .systemRed
+                renderer.strokeColor = color
+                renderer.fillColor = color.withAlphaComponent(0.08)
+                renderer.lineWidth = 2
+                renderer.lineDashPattern = [8, 5]
+                return renderer
+            }
+            if let fenceCircle = overlay as? GeofenceCircleOverlay {
+                let renderer = MKCircleRenderer(circle: fenceCircle)
+                let color: NSColor = fenceCircle.isSafe ? .systemOrange : .systemRed
+                renderer.strokeColor = color
+                renderer.fillColor = color.withAlphaComponent(0.08)
+                renderer.lineWidth = 2
+                renderer.lineDashPattern = [8, 5]
+                return renderer
+            }
             if let polygon = overlay as? MKPolygon {
                 let renderer = MKPolygonRenderer(polygon: polygon)
                 renderer.strokeColor = .systemGreen
-                renderer.fillColor = NSColor.systemGreen.withAlphaComponent(0.1)
+                renderer.fillColor = NSColor.systemGreen.withAlphaComponent(0.2)
                 renderer.lineWidth = 2
                 return renderer
             }
@@ -193,21 +354,34 @@ struct WaypointMap: NSViewRepresentable {
         func mapView(_ map: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
             guard let marker = annotation as? RouteMarker else { return nil }
             let view = MKMarkerAnnotationView(annotation: marker, reuseIdentifier: nil)
-            view.canShowCallout = true
+            view.canShowCallout = !parent.dragWhileAdding
+            if parent.dragWhileAdding { view.titleVisibility = .hidden }
             switch marker.kind {
             case .home:
                 view.markerTintColor = .systemGreen
                 view.glyphText = "H"
                 view.isDraggable =
-                    parent.editingEnabled && parent.mode == .inspect
+                    parent.editingEnabled && parent.planningStep == .flight
+                    && (parent.mode == .inspect || parent.dragWhileAdding)
                     && !parent.drawingBoundary && parent.onHomeMove != nil
+            case .surveyEntry:
+                view.markerTintColor = .systemCyan
+                view.glyphText = "E"
+                view.isDraggable = false
+            case .surveyExit:
+                view.markerTintColor = .systemCyan
+                view.glyphText = "X"
+                view.isDraggable = false
             case .waypoint:
                 view.markerTintColor = .systemOrange
                 view.glyphText = "\(marker.number)"
-                view.isDraggable = parent.editingEnabled && parent.mode == .inspect && !parent.drawingBoundary
+                view.isDraggable =
+                    parent.editingEnabled && parent.planningStep == .boundary
+                    && (parent.mode == .inspect || parent.dragWhileAdding)
+                    && !parent.drawingBoundary
             case .boundary:
                 view.markerTintColor = .systemGreen
-                view.glyphText = "B\(marker.number)"
+                view.glyphText = "\(marker.number)"
                 view.isDraggable = parent.editingEnabled && parent.drawingBoundary
             case .operatorLocation:
                 view.markerTintColor = .systemBlue
@@ -224,19 +398,97 @@ struct WaypointMap: NSViewRepresentable {
             _ map: MKMapView, annotationView view: MKAnnotationView,
             didChange newState: MKAnnotationView.DragState, fromOldState oldState: MKAnnotationView.DragState
         ) {
-            guard newState == .ending, parent.editingEnabled,
-                let marker = view.annotation as? RouteMarker
-            else { return }
-            let coordinate = MapCoordinate(
-                latitude: marker.coordinate.latitude, longitude: marker.coordinate.longitude)
-            switch marker.kind {
-            case .waypoint: parent.onMove(marker.id, coordinate)
-            case .boundary: parent.onBoundaryMove?(marker.number - 1, coordinate)
-            case .home: parent.onHomeMove?(coordinate)
-            case .operatorLocation: break
+            switch newState {
+            case .starting:
+                view.dragState = .dragging
+            case .ending:
+                view.dragState = .none
+                guard parent.editingEnabled,
+                    let marker = view.annotation as? RouteMarker
+                else { return }
+                let coordinate = MapCoordinate(
+                    latitude: marker.coordinate.latitude, longitude: marker.coordinate.longitude)
+                switch marker.kind {
+                case .waypoint: parent.onMove(marker.id, coordinate)
+                case .boundary: parent.onBoundaryMove?(marker.number - 1, coordinate)
+                case .home: parent.onHomeMove?(coordinate)
+                case .surveyEntry: parent.onEntryMove?(coordinate)
+                case .surveyExit, .operatorLocation: break
+                }
+            case .canceling:
+                view.dragState = .none
+            default:
+                break
             }
-            view.dragState = .none
         }
+    }
+}
+
+/// Shows the active tool's cursor, and an open hand over pins that can be dragged.
+final class PlanningMapView: MKMapView {
+    var toolCursor: NSCursor = .arrow {
+        didSet {
+            guard oldValue != toolCursor, let point = window?.mouseLocationOutsideOfEventStream,
+                isTopmost(at: point)
+            else { return }
+            applyCursor(at: point)
+        }
+    }
+    private var cursorArea: NSTrackingArea?
+    /// True while this view has set the cursor, so leaving the map hands it back once.
+    private var ownsCursor = false
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let cursorArea { removeTrackingArea(cursorArea) }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [
+                .mouseMoved, .cursorUpdate, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect,
+            ],
+            owner: self, userInfo: nil)
+        addTrackingArea(area)
+        cursorArea = area
+    }
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        updateCursor(at: event.locationInWindow)
+    }
+    override func cursorUpdate(with event: NSEvent) {
+        if isTopmost(at: event.locationInWindow) {
+            applyCursor(at: event.locationInWindow)
+        } else {
+            super.cursorUpdate(with: event)
+        }
+    }
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        releaseCursor()
+    }
+    private func updateCursor(at windowPoint: CGPoint) {
+        if isTopmost(at: windowPoint) { applyCursor(at: windowPoint) } else { releaseCursor() }
+    }
+    private func applyCursor(at windowPoint: CGPoint) {
+        cursor(at: convert(windowPoint, from: nil)).set()
+        ownsCursor = true
+    }
+    /// Floating panels and toolbars drawn over the map keep their own cursors.
+    private func releaseCursor() {
+        guard ownsCursor else { return }
+        ownsCursor = false
+        NSCursor.arrow.set()
+    }
+    private func isTopmost(at windowPoint: CGPoint) -> Bool {
+        // hitTest takes the content view's superview coordinates, which match the window's.
+        guard let hit = window?.contentView?.hitTest(windowPoint) else { return false }
+        return hit === self || hit.isDescendant(of: self)
+    }
+    private func cursor(at point: CGPoint) -> NSCursor {
+        for annotation in annotations {
+            guard let view = view(for: annotation), view.convert(view.bounds, to: self).contains(point)
+            else { continue }
+            return view.isDraggable ? .openHand : .pointingHand
+        }
+        return toolCursor
     }
 }
 

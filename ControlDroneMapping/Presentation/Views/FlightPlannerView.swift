@@ -37,13 +37,17 @@ struct FlightPlannerView: View {
                 WaypointMap(
                     route: model.draft, farm: farm, operatorLocation: location.sample, mode: model.mode,
                     fitRequest: model.fitRequest, selectedWaypoint: $model.selectedWaypointID,
-                    onClick: { model.mapClick($0) }, onMove: { model.moveWaypoint($0, to: $1) }
+                    onClick: { model.mapClick($0) },
+                    onMove: { model.moveWaypoint($0, to: $1) },
+                    planningStep: model.planningStep,
+                    onHomeMove: { model.draft.home = $0 },
+                    onEntryMove: { model.moveEntry(to: $0) }
                 )
                 .overlay(alignment: .topLeading) {
                     HStack(spacing: 10) {
                         Picker("Mode peta", selection: $model.mode) {
                             ForEach(FlightMapEditMode.allCases) { mode in Text(mode.title).tag(mode) }
-                        }.pickerStyle(.segmented).frame(width: 270)
+                        }.pickerStyle(.segmented).frame(width: 330)
                         Button {
                             model.undo()
                         } label: {
@@ -108,10 +112,6 @@ struct FlightPlannerView: View {
                             "Tinggi waypoint relatif terhadap home, bukan AGL. Elevasi medan, hambatan, kemampuan drone, dan pengaturan RTL tetap diperiksa di QGC."
                         ).font(.caption).foregroundStyle(.secondary)
                         if let error = model.error { Text(error).font(.callout).foregroundStyle(.orange) }
-                        if let error = model.storageError {
-                            Text(error).font(.callout).foregroundStyle(.orange)
-                            Button("Coba simpan draft") { model.retrySaving() }
-                        }
                     }.padding(20)
                 }.frame(width: 340)
             }
@@ -138,7 +138,7 @@ struct FlightPlannerView: View {
                     Text("Buka QGroundControl melalui panel Perangkat untuk setup drone.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Button("Ekspor .plan") { model.chooseExportDestination() }.kropsPrimaryAction(size: .large)
+                Button("Ekspor .plan") { model.chooseExportDestination() }.kropsPrimaryAction()
                     .disabled(model.exportBlocker != nil)
             }.padding(18).background(KropsStyle.surface)
         }.frame(width: 1180, height: 790).background(KropsStyle.canvas)
