@@ -4,7 +4,7 @@ DEFINE SCHEMA
 
     RECORD TYPE PlantationScanRequest (
         "___createTime"              TIMESTAMP SORTABLE,
-        "___createdBy"               REFERENCE,
+        "___createdBy"               REFERENCE QUERYABLE,
         "___etag"                    STRING,
         "___modTime"                 TIMESTAMP,
         "___modifiedBy"              REFERENCE,
@@ -50,7 +50,7 @@ DEFINE SCHEMA
         "___etag"       STRING,
         "___modTime"    TIMESTAMP,
         "___modifiedBy" REFERENCE,
-        "___recordID"   REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
         roles           LIST<INT64>,
         GRANT WRITE TO "_creator"
     );
