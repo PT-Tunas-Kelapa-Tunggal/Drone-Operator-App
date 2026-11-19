@@ -957,6 +957,8 @@ struct ReviewWorkspaceView: View {
 
                 VariReportWorkspaceView(
                     result: result,
+                    fertilizationBudgetPerHa: activeReviewRequest?.agronomy.fertilizationBudgetPerHa,
+                    plantationAreaHa: activeReviewRequest?.garden.areaHectares,
                     initialSection: .vari,
                     selectedNPKForTiming: selectedTimingNPK,
                     onSelectNPKForTiming: { chosenNPK in

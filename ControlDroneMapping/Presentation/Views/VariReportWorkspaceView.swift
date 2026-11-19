@@ -34,6 +34,8 @@ private enum VariVisualLayer: String, CaseIterable, Identifiable {
 /// Adheres to Apple Human Interface Guidelines and macOS design principles.
 public struct VariReportWorkspaceView: View {
     public let result: VariScanResult
+    public let fertilizationBudgetPerHa: Int64?
+    public let plantationAreaHa: Double?
     public let initialSection: VariReportInitialSection
     public let selectedNPKForTiming: ContractFertilizerType?
     public let onSelectNPKForTiming: ((ContractFertilizerType) -> Void)?
@@ -44,12 +46,16 @@ public struct VariReportWorkspaceView: View {
 
     public init(
         result: VariScanResult,
+        fertilizationBudgetPerHa: Int64?,
+        plantationAreaHa: Double?,
         initialSection: VariReportInitialSection = .vari,
         selectedNPKForTiming: ContractFertilizerType? = nil,
         onSelectNPKForTiming: ((ContractFertilizerType) -> Void)? = nil,
         onRerun: (() -> Void)? = nil
     ) {
         self.result = result
+        self.fertilizationBudgetPerHa = fertilizationBudgetPerHa
+        self.plantationAreaHa = plantationAreaHa
         self.initialSection = initialSection
         self.selectedNPKForTiming = selectedNPKForTiming
         self.onSelectNPKForTiming = onSelectNPKForTiming
@@ -72,7 +78,13 @@ public struct VariReportWorkspaceView: View {
                         budgetMatchingSection(budget: budget)
                             .id("budget_section")
                     }
-                    distributionAndMontageSection
+                    DisclosureGroup {
+                        distributionAndMontageSection
+                            .padding(.top, 14)
+                    } label: {
+                        Label("5. Distribusi VARI & Montase Heatmap", systemImage: "chart.bar.xaxis")
+                            .font(.headline)
+                    }
                     Divider().padding(.vertical, 8)
                     actionsSection
                 }
@@ -134,7 +146,14 @@ public struct VariReportWorkspaceView: View {
     // MARK: - 2. Metric Cards Grid
 
     private var metricCardsGrid: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: 14)], spacing: 14) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 14, alignment: .top)], spacing: 14) {
+            metricCard(
+                title: "Luas Kebun",
+                value: plantationAreaHa.map { $0.formatted(.number.precision(.fractionLength(0...2))) } ?? "N/A",
+                unit: "hektare (ha)",
+                systemImage: "map.fill",
+                color: .brown
+            )
             metricCard(
                 title: "Pohon Terdeteksi",
                 value: "\(result.treeCount)",
@@ -171,8 +190,8 @@ public struct VariReportWorkspaceView: View {
                 color: .indigo
             )
             metricCard(
-                title: "Batas Anggaran Petani",
-                value: result.budget?.targetBudgetRp.map { formatRupiah($0) } ?? "Rp 0",
+                title: "Anggaran Pupuk Petani per Ha",
+                value: fertilizationBudgetPerHa.map { formatRupiah(Double($0)) } ?? "N/A",
                 unit: "anggaran modal",
                 systemImage: "banknote",
                 color: .purple
@@ -194,10 +213,11 @@ public struct VariReportWorkspaceView: View {
         -> some View
     {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
+            HStack(alignment: .top) {
                 Label(title, systemImage: systemImage)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Circle()
                     .fill(color.opacity(0.18))
@@ -210,12 +230,13 @@ public struct VariReportWorkspaceView: View {
             }
             Text(value)
                 .font(.title3.weight(.bold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
             Text(unit)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(KropsStyle.surface)
         .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -273,38 +294,7 @@ public struct VariReportWorkspaceView: View {
     // MARK: - 4. Zone VARI Table Section
 
     private var zoneVariSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("2. Statistik Indeks Vegetasi VARI per Zona")
-                        .font(.headline)
-                    Text(
-                        "Pengelompokan tajuk sawit per zona untuk mendeteksi variabilitas spasial dan zona acuan (reference zone)."
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if let refMean = result.summary?.referenceZoneMeanVari {
-                    HStack(spacing: 6) {
-                        Text("Zona Acuan:")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                        Text(
-                            result.summary?.referenceZoneIDs.map { "Z\($0)" }.joined(separator: ", ")
-                                ?? "Semua"
-                        )
-                        .font(.caption.weight(.bold))
-                        Text("(Rerata VARI: \(String(format: "%.3f", refMean)))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.green.opacity(0.12), in: Capsule())
-                }
-            }
-
+        DisclosureGroup {
             // Interactive Table
             VStack(spacing: 0) {
                 // Table Header
@@ -412,38 +402,45 @@ public struct VariReportWorkspaceView: View {
             .background(KropsStyle.surface)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(KropsStyle.border))
+            .padding(.top, 14)
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("2. Statistik Indeks Vegetasi VARI per Zona")
+                        .font(.headline)
+                    Text(
+                        "Pengelompokan tajuk sawit per zona untuk mendeteksi variabilitas spasial dan zona acuan (reference zone)."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if let refMean = result.summary?.referenceZoneMeanVari {
+                    HStack(spacing: 6) {
+                        Text("Zona Acuan:")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        Text(
+                            result.summary?.referenceZoneIDs.map { "Z\($0)" }.joined(separator: ", ")
+                                ?? "Semua"
+                        )
+                        .font(.caption.weight(.bold))
+                        Text("(Rerata VARI: \(String(format: "%.3f", refMean)))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.green.opacity(0.12), in: Capsule())
+                }
+            }
         }
     }
 
     // MARK: - 5. Fertilizer Allocation / HARA Section
 
     private var fertilizerAllocationSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "drop.triangle.fill")
-                            .foregroundStyle(Color.green)
-                        Text("3. Rekomendasi Alokasi Pupuk & Dosis HARA")
-                            .font(.headline)
-                    }
-                    Text(
-                        "Perhitungan suplemen unsur hara Mg dan N berbasis variasi defisit VARI, dikonversi ke massa pupuk Dolomite & Urea."
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if let csvURL = result.assets.fertilizerMassCSVURL {
-                    Button {
-                        VariFilePanels.saveCSV(from: csvURL, suggestedName: "alokasi_pupuk_sawit.csv")
-                    } label: {
-                        Label("Ekspor CSV Pupuk", systemImage: "arrow.down.doc")
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-
+        DisclosureGroup {
             // Products Table
             VStack(spacing: 0) {
                 // Table Header
@@ -518,56 +515,39 @@ public struct VariReportWorkspaceView: View {
             .background(KropsStyle.surface)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(KropsStyle.border))
+            .padding(.top, 14)
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "drop.triangle.fill")
+                            .foregroundStyle(Color.green)
+                        Text("3. Rekomendasi Alokasi Pupuk & Dosis HARA")
+                            .font(.headline)
+                    }
+                    Text(
+                        "Perhitungan suplemen unsur hara Mg dan N berbasis variasi defisit VARI, dikonversi ke massa pupuk Dolomite & Urea."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if let csvURL = result.assets.fertilizerMassCSVURL {
+                    Button {
+                        VariFilePanels.saveCSV(from: csvURL, suggestedName: "alokasi_pupuk_sawit.csv")
+                    } label: {
+                        Label("Ekspor CSV Pupuk", systemImage: "arrow.down.doc")
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
         }
     }
 
     // MARK: - 6. Budget Matching & Commercial NPK Section
 
     private func budgetMatchingSection(budget: VariBudgetSummary) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "chart.line.uptrend.xyaxis")
-                            .foregroundStyle(Color.indigo)
-                        Text("4. Pencocokan Anggaran & Formulasi NPK Komersial")
-                            .font(.headline)
-                    }
-                    Text(
-                        "Perbandingan opsi formula pupuk NPK/NPKMg komersial seluruh kebun dipadukan dengan total Mg (Dolomite) & Urea per zona."
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    if let userBlend = result.userBlend {
-                        let ratioText =
-                            userBlend.ratio.map {
-                                "(\(Int($0.n.rounded()))-\(Int($0.p2o5.rounded()))-\(Int($0.k2o.rounded()))-\(Int($0.mgo.rounded())))"
-                            } ?? ""
-                        let kgText = String(format: "%.1f kg/thn", userBlend.npkProductKgFarmPerYear)
-                        let doseText =
-                            userBlend.dosePerTreeKgPerApplication.map {
-                                String(format: " · %.2f kg/pohon", $0)
-                            } ?? ""
-                        Text("Baseline pupuk petani: NPK \(ratioText) · \(kgText)\(doseText)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-                if let target = budget.targetBudgetRp {
-                    HStack(spacing: 6) {
-                        Text("Target Anggaran:")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                        Text(formatRupiah(target))
-                            .font(.caption.weight(.bold))
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.purple.opacity(0.12), in: Capsule())
-                }
-            }
-
+        DisclosureGroup {
             ScrollView(.horizontal, showsIndicators: false) {
                 VStack(spacing: 0) {
                     // Table Header
@@ -689,6 +669,50 @@ public struct VariReportWorkspaceView: View {
             .background(KropsStyle.surface)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(KropsStyle.border))
+            .padding(.top, 14)
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .foregroundStyle(Color.indigo)
+                        Text("4. Pencocokan Anggaran & Formulasi NPK Komersial")
+                            .font(.headline)
+                    }
+                    Text(
+                        "Perbandingan opsi formula pupuk NPK/NPKMg komersial seluruh kebun dipadukan dengan total Mg (Dolomite) & Urea per zona."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    if let userBlend = result.userBlend {
+                        let ratioText =
+                            userBlend.ratio.map {
+                                "(\(Int($0.n.rounded()))-\(Int($0.p2o5.rounded()))-\(Int($0.k2o.rounded()))-\(Int($0.mgo.rounded())))"
+                            } ?? ""
+                        let kgText = String(format: "%.1f kg/thn", userBlend.npkProductKgFarmPerYear)
+                        let doseText =
+                            userBlend.dosePerTreeKgPerApplication.map {
+                                String(format: " · %.2f kg/pohon", $0)
+                            } ?? ""
+                        Text("Baseline pupuk petani: NPK \(ratioText) · \(kgText)\(doseText)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if let target = budget.targetBudgetRp {
+                    HStack(spacing: 6) {
+                        Text("Target Anggaran:")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        Text(formatRupiah(target))
+                            .font(.caption.weight(.bold))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.purple.opacity(0.12), in: Capsule())
+                }
+            }
         }
     }
 

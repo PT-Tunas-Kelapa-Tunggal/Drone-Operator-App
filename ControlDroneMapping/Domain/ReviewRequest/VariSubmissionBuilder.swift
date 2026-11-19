@@ -182,7 +182,7 @@ public enum VariSubmissionBuilder {
             month: currentMonth,
             fertilizerHistory: history,
             harvest: harvest,
-            fertilizerBudgetRp: request.totalBudgetRp
+            fertilizerBudgetRp: Double(request.agronomy.fertilizationBudgetPerHa)
         )
     }
 }
