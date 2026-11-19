@@ -8,6 +8,8 @@ struct ContentView: View {
     @ObservedObject var farms: FarmAreaViewModel
     @ObservedObject var location: OperatorLocationViewModel
     @ObservedObject var planner: FlightPlannerViewModel
+    @ObservedObject var variAnalysis: VariAnalysisViewModel
+    @StateObject private var orthomosaic: OrthomosaicViewModel
     @State private var showingPlanner = false
     @State private var plannerMissionID: UUID?
     @State private var plannerFarm: FarmArea?
@@ -19,13 +21,17 @@ struct ContentView: View {
 
     init(
         model: ControlViewModel, link: LocalLink, farms: FarmAreaViewModel,
-        location: OperatorLocationViewModel, planner: FlightPlannerViewModel
+        location: OperatorLocationViewModel, planner: FlightPlannerViewModel,
+        variAnalysis: VariAnalysisViewModel
     ) {
         self.model = model
         self.link = link
         self.farms = farms
         self.location = location
         self.planner = planner
+        self.variAnalysis = variAnalysis
+        _orthomosaic = StateObject(
+            wrappedValue: ControlDependencies.orthomosaicViewModel(store: link.store, demo: model.isDemo))
     }
     private func openPlanner(farm: FarmArea? = nil) {
         let mission = model.hasMissionDetail ? model.selectedMission : nil
@@ -44,7 +50,15 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 sidebar
                 VStack(spacing: 0) {
-                    header
+                    // Inside a mission the workspace bar carries the title and status instead.
+                    if !inMissionDetail { header }
+                    if selectedSection == .settings {
+                        sectionNavigation
+                    }
+                    VariGlobalActivityStrip(variAnalysis: variAnalysis)
+                        .onChange(of: variAnalysis.navigationRequest) { _, request in
+                            handleVariNavigation(request)
+                        }
                     if let error = model.errorMessage {
                         HStack {
                             Image(systemName: "exclamationmark.triangle.fill")
@@ -58,13 +72,17 @@ struct ContentView: View {
                         .font(.callout).foregroundStyle(.orange).padding(12).background(
                             Color.orange.opacity(0.1))
                     }
-                    if model.step == .mission && model.hasMissionDetail {
-                        MissionWorkspaceView(
+                    if selectedSection == .review {
+                        ReviewWorkspaceView(
                             model: model, link: link, farms: farms, location: location,
-                            planner: planner, openPlanner: { openPlanner(farm: model.selectedMission?.area) }
-                        )
-                        .id(model.selectedMissionID)
-                        .padding(.horizontal, 22).padding(.bottom, 18)
+                            planner: planner, processing: orthomosaic, variAnalysis: variAnalysis,
+                            search: search,
+                            openPlanner: { openPlanner(farm: model.selectedMission?.area) },
+                            createMission: {
+                                missionName = ""
+                                newMission = true
+                            },
+                            export: { exportMission = $0 })
                     } else {
                         ScrollView {
                             VStack(spacing: 16) {
@@ -85,21 +103,21 @@ struct ContentView: View {
                                 case .settings:
                                     AppSettingsView(model: model)
                                 case .datasets:
-                                    DatasetListView(model: model, link: link, search: search) {
+                                    DatasetListView(
+                                        model: model, link: link, processing: orthomosaic, search: search,
+                                        resetSearch: { search = "" }
+                                    ) {
                                         exportMission = $0
                                     }
                                 case .mission:
-                                    MissionListView(model: model, search: search) {
-                                        missionName = ""
-                                        newMission = true
-                                    }
+                                    MissionListView(
+                                        model: model, planner: planner, processing: orthomosaic,
+                                        search: search)
                                 }
                             }.padding(22).frame(maxWidth: 1540).frame(maxWidth: .infinity)
                         }
                     }
-                    if (model.step == .mission && model.hasMissionDetail
-                        && model.selectedMission?.phase != .completed) || showingResults
-                    {
+                    if showingResults {
                         MissionFooterView(model: model, link: link)
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -114,6 +132,9 @@ struct ContentView: View {
         .sheet(item: $exportMission) { record in
             WebODMExportView(model: ControlDependencies.exportViewModel(record: record, store: link.store))
         }
+        .sheet(isPresented: $orthomosaic.showingEditor) {
+            OrthomosaicView(model: orthomosaic)
+        }
         .sheet(isPresented: $showingPlanner) {
             FlightPlannerView(
                 model: planner, farms: farms, location: location, missionID: plannerMissionID,
@@ -126,50 +147,153 @@ struct ContentView: View {
                 Button("Batal") { newMission = false }.keyboardShortcut(.cancelAction)
             }.padding(24).frame(width: 420)
         }
+        .task(id: cleanupDeferred) {
+            // Startup engine checks share the busy state with imports. Wait quietly,
+            // then retry once the app becomes idle instead of presenting a false error.
+            guard !model.isDemo, !cleanupDeferred else { return }
+            model.cleanDeletedMissionFiles(
+                legacyIDs: orthomosaic.legacyDeletedFileIDs(
+                    liveIDs: model.liveMissionFileIDs,
+                    hiddenIDs: model.missionLibrary.hiddenRemoteIDs)
+            ) { ids in
+                try orthomosaic.removeMissionFiles(ids)
+                planner.removeMissionRoutes(ids)
+            }
+        }
+        .onChange(of: link.receivedMissionID) { _, id in
+            if id != nil { model.refreshLocalDatasets() }
+        }
+        .onChange(of: planner.activeRecoveryMissionID) { _, recoveryID in
+            attemptMidFlightRecovery(recoveryID: recoveryID)
+        }
+        .onChange(of: model.missionLibrary.missions) { _, _ in
+            attemptMidFlightRecovery(recoveryID: planner.activeRecoveryMissionID)
+        }
         .onChange(of: model.step) { _, _ in search = "" }
         .onChange(of: model.selectedDatasetID) { _, _ in search = "" }
     }
-    private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            KropsBrand().padding(.horizontal, 10).padding(.top, 16).padding(.bottom, 20)
-            ForEach(ControlScreen.allCases.filter { $0 != .settings }) { screen in navigation(screen) }
-            Spacer()
-            navigation(.settings)
-            Divider().padding(.vertical, 10)
-            Label("Operator", systemImage: "person.crop.circle.fill").font(.callout).foregroundStyle(
-                .secondary
-            ).padding(12)
-        }.padding(12).frame(width: 176).frame(maxHeight: .infinity).background(.ultraThinMaterial)
-            .overlay(alignment: .trailing) { Rectangle().fill(KropsStyle.border).frame(width: 1) }
+
+    private func attemptMidFlightRecovery(recoveryID: UUID?) {
+        guard let activeDrone = QGCEngineManager.shared.activeVehicle,
+            activeDrone.isReachable && (activeDrone.armed || activeDrone.flying)
+        else { return }
+        let targetID =
+            recoveryID
+            ?? planner.routes.last(where: { $0.isPlanLocked })?.missionID
+            ?? model.selectedMissionID
+            ?? model.missionLibrary.missions.first?.id
+        guard let targetID, model.missionLibrary.missions.contains(where: { $0.id == targetID }) else {
+            return
+        }
+        if model.selectedMissionID != targetID || !model.missionDetailVisible || model.step != .mission {
+            model.openMission(targetID)
+        }
     }
-    private func navigation(_ screen: ControlScreen) -> some View {
-        Button {
-            model.navigate(screen)
-        } label: {
-            Label {
-                Text(screen.title).font(.body.weight(model.step == screen ? .semibold : .regular))
-            } icon: {
-                Image(systemName: screen.icon).font(.system(size: 16)).frame(width: 20)
+    private var cleanupDeferred: Bool {
+        orthomosaic.busy || orthomosaic.workingID != nil || orthomosaic.engineInstalling
+            || variAnalysis.busy || model.editingLocked
+    }
+
+    private func handleVariNavigation(_ request: VariNavigationRequest?) {
+        guard let request else { return }
+        if let missionID = request.missionID {
+            if model.selectedMission?.id != missionID || selectedSection != .review {
+                model.openMission(missionID)
             }
-            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 9)
-            .foregroundStyle(model.step == screen ? Color.white : Color.primary)
-            .background(
-                model.step == screen ? KropsStyle.selection : Color.clear,
-                in: RoundedRectangle(cornerRadius: 10))
-        }.buttonStyle(.plain).accessibilityLabel(screen.title)
+        } else if let recordID = request.recordID {
+            if model.selectedDatasetID != recordID || model.step != .datasets || selectedSection != .review {
+                model.showDatasets(missionID: recordID)
+            }
+        } else {
+            if let projectID = request.projectID {
+                orthomosaic.select(projectID)
+            }
+            if selectedSection != .review {
+                model.navigate(.mission)
+            }
+        }
     }
+
+    private var selectedSection: ControlPanelSection {
+        ControlPanelSection(screen: model.step)
+    }
+
+    private var sidebar: some View {
+        VStack(spacing: 0) {
+            Image("logokrops")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 36, height: 36)
+                .accessibilityLabel("Krops")
+                .padding(.top, 24)
+                .padding(.bottom, 48)
+
+            VStack(spacing: 28) {
+                navigation(.home)
+                navigation(.review)
+                navigation(.notifications)
+            }
+
+            Spacer(minLength: 40)
+            navigation(.settings)
+                .padding(.bottom, 24)
+        }
+        .frame(width: 88)
+        .frame(maxHeight: .infinity)
+        .background(KropsStyle.surface)
+        .overlay(alignment: .trailing) {
+            Rectangle().fill(KropsStyle.border).frame(width: 1)
+        }
+    }
+
+    private func navigation(_ section: ControlPanelSection) -> some View {
+        SidebarIconButton(section: section, isSelected: selectedSection == section) {
+            guard selectedSection != section else { return }
+            model.navigate(section.defaultScreen)
+        }
+    }
+
+    private var sectionNavigation: some View {
+        HStack(spacing: 8) {
+            ForEach(selectedSection.screens) { screen in
+                Button {
+                    guard model.step != screen else { return }
+                    model.navigate(screen)
+                } label: {
+                    Text(screen.title)
+                        .font(.body.weight(model.step == screen ? .semibold : .regular))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 9)
+                        .foregroundStyle(model.step == screen ? KropsStyle.accent : Color.secondary)
+                        .background(
+                            model.step == screen ? KropsStyle.accent.opacity(0.1) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(model.step == screen ? .isSelected : [])
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 22)
+        .padding(.bottom, 12)
+    }
+
     private var header: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(model.step.title).font(KropsTypography.pageTitle)
-                Text(
-                    Date().formatted(
-                        .dateTime.weekday(.wide).day().month(.wide).year().locale(Locale(identifier: "id_ID"))
-                    )
-                ).font(.caption).foregroundStyle(.secondary)
+                if !inMissionDetail {
+                    Text(
+                        Date().formatted(
+                            .dateTime.weekday(.wide).day().month(.wide).year().locale(
+                                Locale(identifier: "id_ID"))
+                        )
+                    ).font(.caption).foregroundStyle(.secondary)
+                }
             }
             Spacer()
             if model.isDemo { Text("DEMO").font(.caption.bold()).foregroundStyle(.orange) }
+            QGCEngineStatusBadge()
             if model.step == .dashboard || model.step == .datasets
                 || (model.step == .mission && !model.hasMissionDetail)
             {
@@ -207,14 +331,32 @@ struct ContentView: View {
                     Label("Ekspor rute", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
                 }.kropsToolbarAction().disabled(model.editingLocked)
             }
-            Button {
-                missionName = ""
-                newMission = true
-            } label: {
-                Label("Misi baru", systemImage: "plus")
-            }.kropsToolbarAction().disabled(model.editingLocked)
-        }.padding(.horizontal, 22).padding(.vertical, 14)
+            if model.step == .mission && !model.hasMissionDetail {
+                Button {
+                    Task {
+                        await model.syncCloudKitRequests()
+                    }
+                } label: {
+                    Label(
+                        model.isSyncingCloudKit ? "Menyinkronkan…" : "Segarkan",
+                        systemImage: "arrow.clockwise"
+                    )
+                }
+                .kropsToolbarAction()
+                .disabled(model.isSyncingCloudKit)
+                .help("Segarkan daftar misi dari CloudKit")
+                .accessibilityLabel("Segarkan daftar misi dari CloudKit")
+            } else {
+                Button {
+                    missionName = ""
+                    newMission = true
+                } label: {
+                    Label("Misi baru", systemImage: "plus")
+                }.kropsToolbarAction().disabled(true)
+            }
+        }.padding(.horizontal, 22).padding(.vertical, inMissionDetail ? 8 : 14)
     }
+    private var inMissionDetail: Bool { model.step == .mission && model.hasMissionDetail }
     private var requestsPage: some View {
         ControlPanel("Permintaan petani", state: nil) {
             VStack(spacing: 16) {
@@ -225,16 +367,18 @@ struct ContentView: View {
                 Button("Buat misi manual") {
                     missionName = ""
                     newMission = true
-                }.kropsPrimaryAction().disabled(model.editingLocked)
+                }.kropsPrimaryAction().disabled(true)
             }.frame(maxWidth: .infinity).padding(.vertical, 70)
         }
     }
     private var createForm: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Misi dapat dibuat tanpa iPhone. Koneksi dan persiapan kamera tersedia di panel Perangkat.")
-                .font(
-                    .caption
-                ).foregroundStyle(.secondary)
+            Text(
+                "Mulai dengan nama dan rencana area. Lanjutkan ke Kamera & uji, Capture, lalu Foto dan Hasil dalam misi yang sama. Misi tersimpan otomatis di Mac."
+            )
+            .font(
+                .caption
+            ).foregroundStyle(.secondary)
             TextField("Nama misi", text: $missionName).textFieldStyle(.roundedBorder)
             HStack {
                 Spacer()
@@ -242,11 +386,61 @@ struct ContentView: View {
                     model.createMission(name: missionName)
                     if model.errorMessage == nil { newMission = false }
                 }
-                .keyboardShortcut(.defaultAction).kropsPrimaryAction().tint(KropsStyle.accent)
+                .keyboardShortcut(.defaultAction).kropsPrimaryAction()
                 .disabled(
                     missionName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         || missionName.count > 70 || model.editingLocked)
             }
         }
     }
+}
+
+#Preview("Navigasi Krops") {
+    let dependencies = ControlDependencies(demo: true)
+    ContentView(
+        model: dependencies.viewModel, link: dependencies.link, farms: dependencies.farms,
+        location: dependencies.location, planner: dependencies.planner,
+        variAnalysis: dependencies.variAnalysis
+    )
+    .frame(width: 1440, height: 900)
+    .preferredColorScheme(.light)
+}
+
+private struct SidebarIconButton: View {
+    let section: ControlPanelSection
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: section.icon)
+                .font(.system(size: 24, weight: isSelected ? .semibold : .regular))
+                .symbolVariant(isSelected ? .fill : .none)
+                .foregroundStyle(Color.primary)
+                .frame(width: 56, height: 56)
+                .background(
+                    Color.primary.opacity(isSelected ? 0.08 : isHovered ? 0.04 : 0),
+                    in: RoundedRectangle(cornerRadius: 16)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help(section.title)
+        .accessibilityLabel(section.title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+#Preview("Daftar misi") {
+    let dependencies = ControlDependencies(demo: true)
+    let _ = dependencies.viewModel.showMissionList()
+    ContentView(
+        model: dependencies.viewModel, link: dependencies.link, farms: dependencies.farms,
+        location: dependencies.location, planner: dependencies.planner,
+        variAnalysis: dependencies.variAnalysis
+    )
+    .frame(width: 1280, height: 800)
+    .preferredColorScheme(.light)
 }

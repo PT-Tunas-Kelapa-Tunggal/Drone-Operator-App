@@ -9,13 +9,52 @@ import SwiftUI
 
 @main
 struct ControlDroneMappingApp: App {
+    @NSApplicationDelegateAdaptor(AppLifecycleDelegate.self) private var appDelegate
     @StateObject private var model: ControlViewModel
     @StateObject private var location: OperatorLocationViewModel
     @StateObject private var planner: FlightPlannerViewModel
     private let link: LocalLink
     @StateObject private var farms: FarmAreaViewModel
+    @StateObject private var variAnalysis: VariAnalysisViewModel
+    @AppStorage(IPhoneConnectionSettings.enabledKey) private var iphoneConnectionEnabled = true
 
     init() {
+        // Exercise the actual signed app and inherited helper sandbox without opening a window.
+        let checkFeatures = ProcessInfo.processInfo.arguments.contains("--check-orthomosaic-features")
+        if checkFeatures || ProcessInfo.processInfo.arguments.contains("--check-orthomosaic-engine") {
+            do {
+                guard let runtime = BundledOrthomosaicEngine.embeddedDirectory,
+                    let worker = Bundle.main.url(forResource: "orthomosaic_worker", withExtension: "py")
+                else { throw MappingError.invalid("Engine bawaan belum disertakan dalam build.") }
+                let message = try LocalOrthomosaicProcessor(worker: worker).check(
+                    runtime: runtime, cancellation: OrthomosaicCancellation(), features: checkFeatures)
+                print(message)
+                exit(0)
+            } catch {
+                FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
+                exit(1)
+            }
+        }
+        if ProcessInfo.processInfo.arguments.contains("--check-qgc-engine") {
+            do {
+                let message = try BundledQGCEngine.check()
+                print(message)
+                exit(0)
+            } catch {
+                FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
+                exit(1)
+            }
+        }
+        if ProcessInfo.processInfo.arguments.contains("--check-vari-engine") {
+            do {
+                let message = try BundledVariEngine.check()
+                print(message)
+                exit(0)
+            } catch {
+                FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
+                exit(1)
+            }
+        }
         let demo =
             ProcessInfo.processInfo.arguments.contains("--demo")
             || Bundle.main.object(forInfoDictionaryKey: "DroneControlDemoMode") as? Bool == true
@@ -25,15 +64,39 @@ struct ControlDroneMappingApp: App {
         link = dependencies.link
         _farms = StateObject(wrappedValue: dependencies.farms)
         _model = StateObject(wrappedValue: dependencies.viewModel)
+        _variAnalysis = StateObject(wrappedValue: dependencies.variAnalysis)
+
+        // Auto-start QGC companion engine on normal launch
+        QGCEngineManager.shared.startEngine()
+
+        // Confirm quit while VARI & HARA is running and stop engines cleanly on exit.
+        appDelegate.configure(variAnalysis: dependencies.variAnalysis)
     }
     @AppStorage("dashboardAppearance") private var appearance = "light"
+
+    private var windowTitle: String {
+        let base = model.isDemo ? "Krops - Demo" : "Krops"
+        if let badge = AppConfiguration.current.environment.windowBadge {
+            return "\(base) [\(badge)]"
+        }
+        return base
+    }
+
     var body: some Scene {
-        WindowGroup(model.isDemo ? "Krops - Demo" : "Krops") {
-            ContentView(model: model, link: link, farms: farms, location: location, planner: planner)
-                .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
-                .tint(KropsStyle.accent)
-                .font(.body)
-                .controlSize(.regular)
+        WindowGroup(windowTitle) {
+            ContentView(
+                model: model, link: link, farms: farms, location: location, planner: planner,
+                variAnalysis: variAnalysis
+            )
+            .onChange(of: iphoneConnectionEnabled) { _, enabled in
+                link.setEnabled(enabled && !model.isDemo)
+            }
+            .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
+            .tint(KropsStyle.accent)
+            // Every bordered and glass button is a capsule; icon-only buttons opt into a circle.
+            .buttonBorderShape(.capsule)
+            .font(.body)
+            .controlSize(.regular)
         }.defaultSize(width: 1440, height: 900)
     }
 }

@@ -13,7 +13,7 @@ extension ControlViewModel {
     }
     var capturePreparationAdvice: String {
         if !link.connected || !freshness() || !selectedMissionIsCurrent || hasLocalDraft {
-            return "Selesaikan koneksi dan persiapan iPhone di panel Perangkat."
+            return "Buka langkah Kamera & uji untuk menghubungkan iPhone dan menyiapkan misi ini."
         }
         if !geometry.reviewed { return "Periksa rencana survei misi ini sebelum mulai." }
         return readiness().blockers.first.map { "Perangkat: " + $0 } ?? "Siap memulai capture."
@@ -63,7 +63,7 @@ extension ControlViewModel {
         case .connection:
             return draftNeedsRetry
                 ? "Setelah memperbaiki masalah, pilih Coba siapkan misi."
-                : "Misi tetap tersimpan di Mac. Koneksi dan persiapan iPhone tersedia di panel Perangkat."
+                : "Misi tetap tersimpan di Mac. Lanjutkan ke langkah Kamera & uji."
         default: return "Tunggu operasi selesai sebelum melanjutkan."
         }
     }
@@ -76,6 +76,12 @@ extension ControlViewModel {
     func hasLocalDataset(_ id: UUID) -> Bool {
         FileManager.default.fileExists(
             atPath: link.store.directory(id).appendingPathComponent("mission.json").path)
+    }
+    func refreshLocalDatasets() {
+        let local = link.store.records()
+        records = (records.filter { remote in !local.contains(where: { $0.id == remote.id }) } + local)
+            .filter { !missionLibrary.hiddenRemoteIDs.contains($0.id) }
+            .sorted { $0.createdAt > $1.createdAt }
     }
     func openDatasetFolder(missionID: UUID? = nil) {
         let folder = missionID.map { link.store.directory($0) } ?? link.store.root

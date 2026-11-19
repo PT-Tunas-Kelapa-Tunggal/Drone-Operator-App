@@ -1,0 +1,38 @@
+{
+  "formatVersion": 1,
+  "engines": {
+    "orthomosaic": {
+      "version": "v1.1",
+      "url": "https://github.com/PT-Tunas-Kelapa-Tunggal/opensfm/releases/download/v1.1/OrthomosaicEngine-macOS-arm64.tar.gz",
+      "sha256": "deb761daf6c13d09d76ac1a302dfc32c5f27b0bb4328c2586676954e05198cec",
+      "layout": "python-runtime",
+      "folder": "OrthomosaicEngine",
+      "helper": "OrthomosaicPython",
+      "helperIdentifierSuffix": "engine.python",
+      "entitlements": "python-engine-helper.entitlements",
+      "opensfmCommit": "8b6b77efddebf4429044d3206c7dc21c4e767e08",
+      "architecture": "arm64"
+    },
+    "qgc": {
+      "version": "http-api-v0.5.1",
+      "url": "https://github.com/PT-Tunas-Kelapa-Tunggal/qgc-over-http/releases/download/http-api-v0.5.1/QGroundControl-macOS-arm64.tar.gz",
+      "sha256": "1b3e3665d589fbf468c7f622ba3d93bd9c0230150224932cd36f1e30b114530d",
+      "layout": "helper-app",
+      "folder": "QGroundControl.app",
+      "helper": "Contents/MacOS/QGroundControl",
+      "entitlements": "qgc-helper.entitlements",
+      "architecture": "arm64"
+    },
+    "vari": {
+      "version": "v0.3.2-test3",
+      "url": "https://github.com/PT-Tunas-Kelapa-Tunggal/machine-learning/releases/download/v0.3.2-test3/VariEngine-macOS-arm64.tar.gz",
+      "sha256": "b5fd914960e2ed34f3540de0a69cf08e7567798bd5fd6f5565d5766d3ae36dcb",
+      "layout": "python-runtime",
+      "folder": "VariEngine",
+      "helper": "VariPython",
+      "helperIdentifierSuffix": "engine.vari",
+      "entitlements": "python-engine-helper.entitlements",
+      "architecture": "arm64"
+    }
+  }
+}

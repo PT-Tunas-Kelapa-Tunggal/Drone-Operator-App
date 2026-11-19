@@ -20,28 +20,81 @@ struct KropsBrand: View {
     }
 }
 
-private struct PrimaryActionAppearance: ViewModifier {
-    var size: ControlSize
-    @ViewBuilder func body(content: Content) -> some View {
-        if #available(macOS 26, *) {
-            content.buttonStyle(.glassProminent).controlSize(size).font(.body)
-        } else {
-            content.buttonStyle(.borderedProminent).controlSize(size).font(.body)
+/// Size variants for primary buttons. Each view has at most one primary action, and
+/// buttons that sit side by side share one size.
+enum KropsButtonSize {
+    /// Inside list and table rows, next to small secondary controls.
+    case compact
+    /// Inside content sections, forms, sheets and dialogs.
+    case regular
+    /// The main action of a screen: footers, side panels and map overlays.
+    case large
+
+    var controlSize: ControlSize {
+        switch self {
+        case .compact: return .small
+        case .regular: return .regular
+        case .large: return .large
         }
     }
 }
-private struct ToolbarActionAppearance: ViewModifier {
+
+// One appearance for every primary action: prominent glass and the brand tint, sized
+// by variant. The capsule shape comes from the app root like every other button.
+private struct PrimaryActionAppearance: ViewModifier {
+    var size: KropsButtonSize
     @ViewBuilder func body(content: Content) -> some View {
         if #available(macOS 26, *) {
-            content.buttonStyle(.glass).controlSize(.regular).font(.body)
+            content.buttonStyle(.glassProminent)
+                .controlSize(size.controlSize).tint(KropsStyle.accent)
         } else {
-            content.buttonStyle(.bordered).controlSize(.regular).font(.body)
+            content.buttonStyle(.borderedProminent)
+                .controlSize(size.controlSize).tint(KropsStyle.accent)
         }
+    }
+}
+// Secondary actions use the same size variants as primary ones, in neutral glass.
+private struct ToolbarActionAppearance: ViewModifier {
+    var size: KropsButtonSize
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            // Neutral glass: drop the brand tint inherited from the app root.
+            content.buttonStyle(.glass).controlSize(size.controlSize).tint(nil)
+        } else {
+            content.buttonStyle(.bordered).controlSize(size.controlSize).tint(nil)
+        }
+    }
+}
+// Controls floating over the map use glass; earlier systems get a material chip.
+private struct FloatingControlAppearance<S: Shape>: ViewModifier {
+    var shape: S
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content.glassEffect(.regular, in: shape)
+        } else {
+            content.background(.regularMaterial, in: shape)
+                .overlay(shape.stroke(KropsStyle.border))
+                .shadow(color: .black.opacity(0.18), radius: 10, y: 3)
+        }
+    }
+}
+// Text-heavy panels over satellite imagery stay opaque for legibility.
+private struct FloatingPanelAppearance: ViewModifier {
+    func body(content: Content) -> some View {
+        content.background(KropsStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(KropsStyle.border))
+            .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
     }
 }
 extension View {
-    func kropsPrimaryAction(size: ControlSize = .regular) -> some View {
+    func kropsPrimaryAction(size: KropsButtonSize = .regular) -> some View {
         modifier(PrimaryActionAppearance(size: size))
     }
-    func kropsToolbarAction() -> some View { modifier(ToolbarActionAppearance()) }
+    func kropsToolbarAction(size: KropsButtonSize = .regular) -> some View {
+        modifier(ToolbarActionAppearance(size: size))
+    }
+    func kropsFloatingControl<S: Shape>(in shape: S) -> some View {
+        modifier(FloatingControlAppearance(shape: shape))
+    }
+    func kropsFloatingPanel() -> some View { modifier(FloatingPanelAppearance()) }
 }

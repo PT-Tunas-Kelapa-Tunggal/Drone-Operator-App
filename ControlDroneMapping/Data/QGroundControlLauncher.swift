@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 enum QGroundControlLauncher {
     static var installedURL: URL? {
+        if let embedded = BundledQGCEngine.embeddedAppURL { return embedded }
         let path = UserDefaults.standard.string(forKey: "qgcAppPath") ?? ""
         if !path.isEmpty, FileManager.default.fileExists(atPath: path) { return URL(fileURLWithPath: path) }
         let candidates = [
