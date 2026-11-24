@@ -24,9 +24,9 @@
       "architecture": "arm64"
     },
     "vari": {
-      "version": "v0.3.2-test3",
-      "url": "https://github.com/PT-Tunas-Kelapa-Tunggal/machine-learning/releases/download/v0.3.2-test3/VariEngine-macOS-arm64.tar.gz",
-      "sha256": "b5fd914960e2ed34f3540de0a69cf08e7567798bd5fd6f5565d5766d3ae36dcb",
+      "version": "v0.3.4",
+      "url": "https://github.com/PT-Tunas-Kelapa-Tunggal/machine-learning/releases/download/v0.3.4/VariEngine-macOS-arm64.tar.gz",
+      "sha256": "73d4fcc6c653e03503c6517108634df14ad5987c8d0fd0e579d1846586745912",
       "layout": "python-runtime",
       "folder": "VariEngine",
       "helper": "VariPython",

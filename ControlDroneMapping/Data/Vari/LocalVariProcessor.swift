@@ -339,8 +339,8 @@ public struct LocalVariProcessor: VariProcessing {
             let zoneLabel = zoneID.map { "Z\($0)" } ?? "-"
             let prodName = p["product"] as? String ?? ""
             let nutrient = p["nutrient"] as? String
-            let supp = (p["product_kg_per_zone_per_year"] as? NSNumber)?.doubleValue ?? 0.0
-            let perTreeKg = (p["product_kg_per_palm_per_year"] as? NSNumber)?.doubleValue
+            let supp = (p["base_plus_supplement_product_kg_per_zone_per_year"] as? NSNumber)?.doubleValue ?? 0.0
+            let perTreeKg = (p["base_plus_supplement_product_kg_per_palm_per_year"] as? NSNumber)?.doubleValue
             let base = (p["base_product_kg_per_zone_per_year"] as? NSNumber)?.doubleValue ?? 0.0
             let comb = supp + base
             let estBags = comb / 50.0

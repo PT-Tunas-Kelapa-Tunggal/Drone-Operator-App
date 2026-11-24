@@ -36,10 +36,10 @@ struct FertilizerCostPredictionTests {
         ) throws -> VariScanResult {
             var product: [String: Any] = [
                 "zone_id": 1, "product": "dolomite_Mg_cheaper", "nutrient": "Mg",
-                "product_kg_per_zone_per_year": perZone,
+                "base_plus_supplement_product_kg_per_zone_per_year": perZone,
                 "base_product_kg_per_zone_per_year": 8.0,
             ]
-            product["product_kg_per_palm_per_year"] = treeValue
+            product["base_plus_supplement_product_kg_per_palm_per_year"] = treeValue
             var analysis: [String: Any] = [
                 "closest_to_budget_ranking": ["ranked_options": [ranked] + additionalRanked],
                 "selected_zone_topup_cost_idr": 200,
