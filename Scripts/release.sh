@@ -6,12 +6,12 @@
 #
 # Subcommands:
 #   dmg                        Build (if APP_PATH unset), verify, and package ControlDroneMapping.dmg
+#   check-release-ref         Validate the CI release ref and required source branch
 #   version [TAG]              Derive marketing_version, build_number, prerelease, app_environment, dmg_name
 #   select-xcode [VER]         Select Xcode version on CI runner and export DEVELOPER_DIR
-#   check-config               Run offline config, CloudKit contract, and version-routing checks
-#   build-check                Run static config/schema audit, unsigned macOS + iOS builds, and engine smoke checks
-#   export-cloudkit-schema     Export live CloudKit container schema to Config/CloudKit/schema.ckdb
-#   sync-cloudkit-schema       Import Config/CloudKit/schema.ckdb to Development & verify Production schema
+#   check-config               Run offline entitlements, configuration, and version-routing checks
+#   build-check                Run static config audit, unsigned macOS + iOS builds, and engine smoke checks
+#   export-cloudkit-schema     Manually export the selected live schema to CloudKitContract/schema.ckdb
 #   setup-signing              Create temp keychain, import Developer ID .p12 & provisioning profile
 #   cleanup-signing            Remove temp keychain, provisioning profile, and CI xcconfig
 #   archive                    Build Developer ID signed .xcarchive and extract .app to dist/
@@ -29,7 +29,7 @@ cd "$repo_root"
 STATE_FILE="$repo_root/.build/.ci-signing-state"
 
 usage() {
-    sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '3,23p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 read_xcconfig_var() {
@@ -42,6 +42,30 @@ read_xcconfig_var() {
             print $2
         }
     ' "$file" | tail -n 1 | tr -d '\r'
+}
+
+cmd_check_release_ref() {
+    if [[ "${GITHUB_EVENT_NAME:-}" == "workflow_dispatch" && "${GITHUB_REF:-}" == "refs/heads/dev" ]]; then
+        return 0
+    fi
+    local tag="${GITHUB_REF_NAME:-}"
+    local version_re='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
+    local source_branch
+    if [[ "${GITHUB_EVENT_NAME:-}" != "push" || "${GITHUB_REF_TYPE:-}" != "tag" ]]; then
+        echo "error: DMG releases require a tag push or manual dispatch from dev." >&2
+        return 1
+    elif [[ "$tag" =~ ${version_re}$ ]]; then
+        source_branch=prod
+    elif [[ "$tag" =~ ${version_re}-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*$ ]]; then
+        source_branch=dev
+    else
+        echo "error: Invalid DMG release tag '$tag'. Use vX.Y.Z or vX.Y.Z-rc1." >&2
+        return 1
+    fi
+    if ! git merge-base --is-ancestor HEAD "refs/remotes/origin/$source_branch"; then
+        echo "error: Tag '$tag' must point to a commit on $source_branch." >&2
+        return 1
+    fi
 }
 
 cmd_version() {
@@ -269,7 +293,6 @@ PY
 }
 
 cmd_check_config() {
-    python3 "$repo_root/Scripts/check_cloudkit_schema.py"
     python3 - "$repo_root" <<'PY'
 import pathlib, plistlib, subprocess, sys
 
@@ -315,7 +338,7 @@ PY
 }
 
 cmd_build_check() {
-    echo "=== [1/4] Auditing Entitlements, Version Routing & CloudKit Schema ==="
+    echo "=== [1/4] Auditing Entitlements & Version Routing ==="
     cmd_check_config
 
     if [[ ! -f "$repo_root/Config/Developer.xcconfig" ]]; then
@@ -372,7 +395,7 @@ cmd_export_cloudkit_schema() {
     local ck_env="${1:-development}"
     local team_id="${APPLE_TEAM_ID:-$(read_xcconfig_var DEVELOPMENT_TEAM)}"
     local container_id="${ICLOUD_CONTAINER_NAME:-$(read_xcconfig_var ICLOUD_CONTAINER_NAME)}"
-    local schema_file="$repo_root/Config/CloudKit/schema.ckdb"
+    local schema_file="$repo_root/ControlDroneMapping/CloudKitContract/schema.ckdb"
 
     if [[ -z "$team_id" ]]; then
         echo "error: APPLE_TEAM_ID (or DEVELOPMENT_TEAM in Config/Developer.xcconfig) is required" >&2
@@ -390,115 +413,23 @@ cmd_export_cloudkit_schema() {
     fi
 
     echo "=== Exporting CloudKit Schema ($container_id [$ck_env]) -> $schema_file ==="
+    local export_dir
+    export_dir="$(mktemp -d "${TMPDIR:-/tmp}/cloudkit-schema.XXXXXXXX")"
+    trap 'rm -rf "$export_dir"' EXIT
     xcrun cktool export-schema \
         ${token_args[@]+"${token_args[@]}"} \
         --team-id "$team_id" \
         --container-id "$container_id" \
         --environment "$ck_env" \
-        --output-file "$schema_file"
+        --output-file "$export_dir/schema.ckdb"
+    if [[ ! -s "$export_dir/schema.ckdb" ]]; then
+        echo "error: CloudKit did not return a schema for $container_id ($ck_env)." >&2
+        exit 1
+    fi
+    mv "$export_dir/schema.ckdb" "$schema_file"
+    rm -rf "$export_dir"
+    trap - EXIT
     echo "=== Schema exported successfully to $schema_file ==="
-}
-
-cmd_sync_cloudkit_schema() {
-    local team_id="${APPLE_TEAM_ID:-$(read_xcconfig_var DEVELOPMENT_TEAM)}"
-    local container_id="${ICLOUD_CONTAINER_NAME:-$(read_xcconfig_var ICLOUD_CONTAINER_NAME)}"
-    local schema_file="$repo_root/Config/CloudKit/schema.ckdb"
-
-    if [[ -z "$team_id" ]]; then
-        echo "error: APPLE_TEAM_ID (or DEVELOPMENT_TEAM in Config/Developer.xcconfig) is required" >&2
-        exit 1
-    fi
-    if [[ -z "$container_id" ]]; then
-        echo "error: ICLOUD_CONTAINER_NAME (in env or Config/Developer.xcconfig) is required" >&2
-        exit 1
-    fi
-    if [[ ! -f "$schema_file" ]]; then
-        echo "error: Schema file not found at $schema_file" >&2
-        exit 1
-    fi
-
-    local token_args=()
-    if [[ -n "${CLOUDKIT_MANAGEMENT_TOKEN:-}" ]]; then
-        token_args=(--token "$CLOUDKIT_MANAGEMENT_TOKEN")
-    fi
-
-    echo "=== [1/2] Importing & Validating CloudKit Schema into $container_id (development) ==="
-    xcrun cktool import-schema \
-        ${token_args[@]+"${token_args[@]}"} \
-        --team-id "$team_id" \
-        --container-id "$container_id" \
-        --environment development \
-        --validate \
-        --file "$schema_file"
-
-    echo "=== [2/2] Verifying CloudKit Production Schema for $container_id ==="
-    local prod_schema_tmp="${RUNNER_TEMP:-/tmp}/ck-prod-schema-$$.ckdb"
-    trap 'rm -f "${prod_schema_tmp:-}"' RETURN
-
-    if ! xcrun cktool export-schema \
-        ${token_args[@]+"${token_args[@]}"} \
-        --team-id "$team_id" \
-        --container-id "$container_id" \
-        --environment production \
-        --output-file "$prod_schema_tmp"; then
-        echo "error: Unable to export Production schema for container '$container_id'." >&2
-        echo "Note: The latest schema has been imported into '$container_id' (Development)." >&2
-        echo "Please open CloudKit Console (https://icloud.developer.apple.com/dashboard), select '$container_id', click 'Deploy Schema Changes…' to Production, and re-run." >&2
-        exit 1
-    fi
-
-    python3 - "$schema_file" "$prod_schema_tmp" "$container_id" <<'PY'
-import pathlib, re, sys
-
-expected_path = pathlib.Path(sys.argv[1])
-prod_path = pathlib.Path(sys.argv[2])
-container_id = sys.argv[3]
-
-def parse_ckdb(text: str):
-    roles = set(re.findall(r'CREATE\s+ROLE\s+"([^"]+)"', text))
-    records = {}
-    for m in re.finditer(r'RECORD\s+TYPE\s+([A-Za-z0-9_]+)\s*\((.*?)\)\s*;', text, re.DOTALL):
-        rec_name = m.group(1)
-        body = m.group(2)
-        items = set()
-        for raw_line in body.splitlines():
-            line = re.sub(r'\s+', ' ', raw_line.strip().rstrip(','))
-            if line:
-                items.add(line)
-        records[rec_name] = items
-    return roles, records
-
-exp_roles, exp_records = parse_ckdb(expected_path.read_text())
-prod_roles, prod_records = parse_ckdb(prod_path.read_text())
-
-missing = []
-for role in sorted(exp_roles - prod_roles):
-    missing.append(f'Missing ROLE: "{role}"')
-
-for rec_name, exp_items in sorted(exp_records.items()):
-    if rec_name not in prod_records:
-        missing.append(f"Missing RECORD TYPE: {rec_name}")
-        continue
-    prod_items = prod_records[rec_name]
-    for item in sorted(exp_items - prod_items):
-        missing.append(f"In RECORD TYPE {rec_name}, missing or mismatched definition: '{item}'")
-
-if missing:
-    print(f"error: CloudKit Production schema for '{container_id}' is out of sync with Config/CloudKit/schema.ckdb:", file=sys.stderr)
-    for m in missing:
-        print(f"  - {m}", file=sys.stderr)
-    print(
-        f"\nACTION REQUIRED: Config/CloudKit/schema.ckdb has already been automatically staged into '{container_id}' (Development).\n"
-        f"Open CloudKit Console (https://icloud.developer.apple.com/dashboard), select '{container_id}',\n"
-        f"click 'Deploy Schema Changes…' to promote Development -> Production, and re-run this job.",
-        file=sys.stderr,
-    )
-    sys.exit(1)
-
-print(f"Verified CloudKit Production schema for '{container_id}' matches Config/CloudKit/schema.ckdb.")
-PY
-    rm -f "$prod_schema_tmp"
-    trap - RETURN
 }
 
 cmd_setup_signing() {
@@ -1193,12 +1124,12 @@ shift || true
 
 case "$subcmd" in
     dmg)                    cmd_dmg "$@" ;;
+    check-release-ref)     cmd_check_release_ref "$@" ;;
     version)                cmd_version "$@" ;;
     select-xcode)           cmd_select_xcode "$@" ;;
     check-config)           cmd_check_config "$@" ;;
     build-check)            cmd_build_check "$@" ;;
     export-cloudkit-schema) cmd_export_cloudkit_schema "$@" ;;
-    sync-cloudkit-schema)   cmd_sync_cloudkit_schema "$@" ;;
     setup-signing)          cmd_setup_signing "$@" ;;
     cleanup-signing)        cmd_cleanup_signing "$@" ;;
     archive)                cmd_archive "$@" ;;

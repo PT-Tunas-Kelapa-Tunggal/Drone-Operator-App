@@ -1,0 +1,53 @@
+name: CloudKit schema
+
+on:
+  workflow_call:
+    inputs:
+      contract:
+        required: true
+        type: string
+      container:
+        required: true
+        type: string
+      partition:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: Compare CloudKit schema
+    runs-on: xcode-27
+    timeout-minutes: 8
+    environment: cloudkit-${{ inputs.container }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+      CONTRACT: ${{ inputs.contract }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Export and compare selected CloudKit partition
+        env:
+          TARGET_CONTAINER: ${{ inputs.container }}
+          PARTITION: ${{ inputs.partition }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          STAGING_CONTAINER: ${{ vars.CLOUDKIT_STAGING_CONTAINER_ID }}
+          PRODUCTION_CONTAINER: ${{ vars.CLOUDKIT_PRODUCTION_CONTAINER_ID }}
+          CLOUDKIT_MANAGEMENT_TOKEN: ${{ secrets.CLOUDKIT_MANAGEMENT_TOKEN }}
+        run: |
+          if [[ "$STAGING_CONTAINER" != iCloud.* || "$PRODUCTION_CONTAINER" != iCloud.* || "$STAGING_CONTAINER" == "$PRODUCTION_CONTAINER" ]]; then
+            echo "::error::Configure distinct staging and production CloudKit container IDs in Actions variables."
+            exit 1
+          fi
+          case "$TARGET_CONTAINER" in
+            staging) container="$STAGING_CONTAINER" ;;
+            production) container="$PRODUCTION_CONTAINER" ;;
+            *) echo "::error::Invalid CloudKit container selection."; exit 1 ;;
+          esac
+          : "${APPLE_TEAM_ID:?Configure APPLE_TEAM_ID in Actions variables}"
+          python3 .github/scripts/check_cloudkit_schema.py \
+            --schema "$CONTRACT/schema.ckdb" --team-id "$APPLE_TEAM_ID" \
+            --container "$container" --partition "$PARTITION"

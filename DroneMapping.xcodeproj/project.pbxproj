@@ -12,6 +12,16 @@
 		ABC000000000000000000015 /* Config/Developer.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Developer.xcconfig; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		ABC000000000000000000031 /* Exclude CloudKit schema snapshot from app target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				CloudKitContract/schema.ckdb,
+			);
+			target = 2F62F991307A21EF00B1968B;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		2F62F982307A216600B1968B /* DroneMapping */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -20,6 +30,7 @@
 		};
 		2F62F993307A21EF00B1968B /* ControlDroneMapping */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (ABC000000000000000000031);
 			path = ControlDroneMapping;
 			sourceTree = "<group>";
 		};
