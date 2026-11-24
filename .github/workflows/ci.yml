@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [dev, main]
+    branches: [dev, main, prod]
   push:
-    branches: [dev, main]
+    branches: [dev, main, prod]
     tags: ['v*']
   workflow_dispatch:
 
@@ -16,32 +16,52 @@ permissions:
   contents: read
 
 jobs:
+  route:
+    name: Validate DMG release ref
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      marketing_version: ${{ steps.version.outputs.marketing_version }}
+      build_number: ${{ steps.version.outputs.build_number }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      app_environment: ${{ steps.version.outputs.app_environment }}
+      dmg_name: ${{ steps.version.outputs.dmg_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate tag and source branch
+        run: Scripts/release.sh check-release-ref
+      - name: Derive version and target environment
+        id: version
+        run: Scripts/release.sh version
+
+  branch-schema:
+    name: Verify branch CloudKit schema
+    if: github.event_name == 'push' && github.ref_type == 'branch'
+    uses: ./.github/workflows/cloudkit-schema.yml
+    with:
+      contract: ControlDroneMapping/CloudKitContract
+      container: ${{ github.ref_name == 'dev' && 'staging' || 'production' }}
+      partition: ${{ github.ref_name == 'dev' && 'development' || 'production' }}
+
   validate:
     name: Validate Deps, Schema & Build
-    runs-on: ${{ vars.MACOS_RUNNER || 'macos-26' }}
+    runs-on: xcode-27
     timeout-minutes: 45
-    outputs:
-      tag_name: ${{ steps.v.outputs.tag_name }}
-      marketing_version: ${{ steps.v.outputs.marketing_version }}
-      build_number: ${{ steps.v.outputs.build_number }}
-      prerelease: ${{ steps.v.outputs.prerelease }}
-      app_environment: ${{ steps.v.outputs.app_environment }}
-      dmg_name: ${{ steps.v.outputs.dmg_name }}
     env:
       ENGINES_STRICT: '1'
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - name: Derive version and target environment
-        id: v
-        run: Scripts/release.sh version
-
-      - name: Select Xcode
-        run: Scripts/release.sh select-xcode "${{ vars.XCODE_VERSION || '27.1' }}"
-
-      - name: Test CloudKit schema checks
-        run: python3 -m unittest discover -s Scripts/Tests -p 'test_cloudkit_schema.py' -v
+      - name: Verify Xcode
+        run: xcodebuild -version
 
       - name: Seed developer config template
         run: cp Config/Developer.xcconfig.example Config/Developer.xcconfig
@@ -66,34 +86,41 @@ jobs:
       - name: Audit config, compile macOS + iOS & smoke-check engines
         run: Scripts/release.sh build-check
 
+  release-schema:
+    name: Verify release CloudKit schema
+    needs: [route, validate]
+    uses: ./.github/workflows/cloudkit-schema.yml
+    with:
+      contract: ControlDroneMapping/CloudKitContract
+      container: ${{ needs.route.outputs.app_environment }}
+      partition: production
+
   release:
-    name: Release Signed & Notarized DMG (${{ needs.validate.outputs.app_environment }})
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    needs: validate
-    runs-on: ${{ vars.MACOS_RUNNER || 'macos-26' }}
-    environment: ${{ needs.validate.outputs.app_environment }}
+    name: Release Signed & Notarized DMG (${{ needs.route.outputs.app_environment }})
+    needs: [route, release-schema]
+    runs-on: xcode-27
+    environment: ${{ needs.route.outputs.app_environment }}
     timeout-minutes: 150
     permissions:
       contents: write
     env:
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
       APP_BUNDLE_PREFIX: ${{ vars.APP_BUNDLE_PREFIX }}
-      ICLOUD_CONTAINER_NAME: ${{ vars.ICLOUD_CONTAINER_NAME }}
-      APP_ENVIRONMENT: ${{ needs.validate.outputs.app_environment }}
+      ICLOUD_CONTAINER_NAME: ${{ needs.route.outputs.app_environment == 'staging' && vars.CLOUDKIT_STAGING_CONTAINER_ID || vars.CLOUDKIT_PRODUCTION_CONTAINER_ID }}
+      APP_ENVIRONMENT: ${{ needs.route.outputs.app_environment }}
       ENGINES_STRICT: '1'
-      CLOUDKIT_MANAGEMENT_TOKEN: ${{ secrets.CLOUDKIT_MANAGEMENT_TOKEN }}
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
       NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_API_KEY_P8_BASE64 }}
       NOTARY_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
       NOTARY_ISSUER_ID: ${{ secrets.NOTARY_API_ISSUER_ID }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - name: Select Xcode
-        run: Scripts/release.sh select-xcode "${{ vars.XCODE_VERSION || '27.1' }}"
-
-      - name: Sync & verify CloudKit container schema
-        run: Scripts/release.sh sync-cloudkit-schema
+      - name: Verify Xcode
+        run: xcodebuild -version
 
       - name: Cache precompiled engines
         uses: actions/cache@v4
@@ -122,14 +149,14 @@ jobs:
 
       - name: Archive with Developer ID signing
         env:
-          MARKETING_VERSION: ${{ needs.validate.outputs.marketing_version }}
-          BUILD_NUMBER: ${{ needs.validate.outputs.build_number }}
+          MARKETING_VERSION: ${{ needs.route.outputs.marketing_version }}
+          BUILD_NUMBER: ${{ needs.route.outputs.build_number }}
           PROFILE_UUID: ${{ steps.signing.outputs.profile_uuid }}
         run: Scripts/release.sh archive
 
       - name: Verify app signatures, entitlements & engine self-checks
         env:
-          MARKETING_VERSION: ${{ needs.validate.outputs.marketing_version }}
+          MARKETING_VERSION: ${{ needs.route.outputs.marketing_version }}
         run: Scripts/release.sh verify-app dist/ControlDroneMapping.app
 
       - name: Notarize & staple app bundle
@@ -138,7 +165,7 @@ jobs:
       - name: Package, sign, notarize & verify DMG
         env:
           APP_PATH: dist/ControlDroneMapping.app
-          DMG_PATH: dist/${{ needs.validate.outputs.dmg_name }}
+          DMG_PATH: dist/${{ needs.route.outputs.dmg_name }}
           SKIP_ENGINE_SELF_CHECKS: '1'
         run: |
           Scripts/release.sh dmg
@@ -149,10 +176,10 @@ jobs:
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ needs.validate.outputs.dmg_name }}
+          name: ${{ needs.route.outputs.dmg_name }}
           path: |
-            dist/${{ needs.validate.outputs.dmg_name }}
-            dist/${{ needs.validate.outputs.dmg_name }}.sha256
+            dist/${{ needs.route.outputs.dmg_name }}
+            dist/${{ needs.route.outputs.dmg_name }}.sha256
           retention-days: 14
 
       - name: Publish GitHub Release
@@ -161,12 +188,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           prerelease_flag=()
-          if [[ "${{ needs.validate.outputs.prerelease }}" == "true" ]]; then
+          if [[ "${{ needs.route.outputs.prerelease }}" == "true" ]]; then
             prerelease_flag=(--prerelease)
           fi
           gh release create "$GITHUB_REF_NAME" \
-            "dist/${{ needs.validate.outputs.dmg_name }}" \
-            "dist/${{ needs.validate.outputs.dmg_name }}.sha256" \
+            "dist/${{ needs.route.outputs.dmg_name }}" \
+            "dist/${{ needs.route.outputs.dmg_name }}.sha256" \
             --title "ControlDroneMapping $GITHUB_REF_NAME" \
             --generate-notes \
             ${prerelease_flag[@]+"${prerelease_flag[@]}"}
