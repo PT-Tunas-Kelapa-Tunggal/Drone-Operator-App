@@ -11,8 +11,8 @@ Document contract changes here. During current development, `ContractInfo.versio
 - Schema deploy: REQUIRED if not already present (add `fertilizer_cost_predictions` as a STRING on `PlantationScanRequest`); sync the contract folder to iOS.
 
 ## 1 — 2026-11-17
-- Renamed `FertilizerNeedItem.recommendedDosage` to `recommendedDosagePerZonePerYear` in Swift, preserving the `recommended_dosage` JSON key. Zone-specific recommendations now copy VARI's `product_kg_per_zone_per_year` without adding the base amount or rounding; general NPK entries retain their farm-wide annual amount.
-- Added optional `recommendedDosagePerTreePerZonePerYear` (`recommended_dosage_per_tree_per_zone_per_year` in JSON), copied from VARI's `product_kg_per_palm_per_year`. Existing records without this key still decode, and general NPK entries omit it.
+- Renamed `FertilizerNeedItem.recommendedDosage` to `recommendedDosagePerZonePerYear` in Swift, preserving the `recommended_dosage` JSON key. Zone-specific recommendations now copy VARI's `base_plus_supplement_product_kg_per_zone_per_year` without adding the base amount or rounding; general NPK entries retain their farm-wide annual amount.
+- Added optional `recommendedDosagePerTreePerZonePerYear` (`recommended_dosage_per_tree_per_zone_per_year` in JSON), copied from VARI's `base_plus_supplement_product_kg_per_palm_per_year`. Existing records without this key still decode, and general NPK entries omit it.
 - No top-level CloudKit fields were added; the new value is inside the existing `fertilizerNeedPerZone` JSON envelope.
 
 ## 1 — 2026-11-17
