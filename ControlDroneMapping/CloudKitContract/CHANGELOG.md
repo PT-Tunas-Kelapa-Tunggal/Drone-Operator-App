@@ -2,6 +2,10 @@
 
 Document contract changes here. During current development, `ContractInfo.version` remains 1; coordinate future release version changes explicitly.
 
+## 1 — 2026-11-24
+
+- Added the versioned CloudKit schema snapshot. The export-only drift checker lives in each repository's CI scripts.
+
 ## 1 — 2026-11-17
 - Added macOS-owned `fertilizer_cost_predictions` (String), a JSON envelope whose payload is an object keyed by `ContractFertilizerType.rawValue`.
 - Each entry contains `total_bags_needed` (Int), `total_kg` (Double, kg), and `total_cost` (Double, IDR). Values come directly from supported NPK `ranked_options`: `age_adjusted_full_bags_farm_year`, `total_kg`, and `npk_full_bag_cost_farm_year_rp` respectively. Missing or invalid mass/price predictions remain null; mass is not recalculated from the bag count.

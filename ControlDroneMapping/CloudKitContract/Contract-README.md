@@ -54,6 +54,36 @@ Read it with `ScanRequestRecord.fertilizerCostPredictions()` and write it with
 is unavailable. Missing fields on older records are expected; choose the fallback at the call site.
 Deploy the new STRING field before uploading results and copy this folder to the iOS repository.
 
+## CloudKit schema snapshots
+
+`schema.ckdb` records the live CloudKit schema that the branch expects. Copy the
+snapshot together with the Swift contract into the corresponding
+branch in the other repository. Development and production branches can carry
+different snapshots during a rollout.
+
+CI uses `cktool export-schema` to compare the snapshot with the partition the
+workflow selects. The check reports drift in records, fields, types, indexes,
+roles, and grants. To resolve drift, review the difference in CloudKit Console:
+
+- When the live schema is correct, export it to a temporary file, review the
+  diff, and replace the snapshot on both matching branches.
+- When a release partition is behind, apply the reviewed changes to the
+  target container's Development partition and choose **Deploy Schema Changes**
+  in CloudKit Console. Rerun the release once its Production partition matches.
+  CloudKit promotes within one container. Copy intended changes from staging to
+  the production container explicitly and preserve deployed production fields,
+  indexes, and grants.
+
+To export manually, first save your management token to your local Keychain with
+`xcrun cktool save-token --type management`. Then run the following command with
+the target team, container, and partition. Use `production` for either container's
+release build.
+
+```sh
+xcrun cktool export-schema --team-id TEAM_ID --container-id CONTAINER_ID \
+  --environment development --output-file /tmp/contract-schema.ckdb
+```
+
 ## Copy Procedure Between Repositories
 
 1. Update the contract in one repo and update `CHANGELOG.md`; keep the current development version unchanged.
